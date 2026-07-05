@@ -7,18 +7,24 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <div id="app">
+    <!-- Phase 1: lobby (create / join). Populated by src/ui/lobby.ts -->
+    <div id="lobby"></div>
+
+    <!-- Phase 2: in-game. Hidden until a game is entered. -->
+    <div id="game-root" class="hidden">
       <canvas id="game"></canvas>
 
-      <!-- Stats readout (top-left) -->
+      <div id="topbar" class="panel">
+        <span id="city-name" class="city"></span>
+        <span id="player-chip" class="chip"></span>
+        <button id="leave-btn">Leave</button>
+      </div>
+
       <div id="stats" class="panel"></div>
-
-      <!-- Build toolbar (bottom) -->
       <div id="toolbar" class="panel"></div>
-
-      <!-- Hint line -->
       <div id="hint" class="panel"></div>
     </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

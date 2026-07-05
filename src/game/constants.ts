@@ -1,8 +1,8 @@
 import type { UnitKind } from "./types";
 
 /**
- * Tunable game constants. Kept in one place so both the client and (future)
- * server share the exact same numbers — economy must be deterministic.
+ * Tunable game constants. Kept in one place so the client and the (fake or
+ * real) server share the exact same numbers — the economy must be deterministic.
  */
 
 /** Grid geometry, in world units (1 cell = CELL_SIZE px at zoom 1). */
@@ -13,14 +13,19 @@ export const PLOT_COLS = 8;
 export const MAX_ROWS = 20;
 /** Horizontal gap (in cells) between adjacent plots in the city strip. */
 export const PLOT_GAP_COLS = 2;
-/** How many stub neighbor plots to spawn on each side of the player. */
-export const NEIGHBOR_PLOTS_EACH_SIDE = 3;
 
 /** Player's starting cash. */
-export const STARTING_MONEY = 20000;
+export const STARTING_MONEY = 25000;
+/** One-time cost to claim an unowned plot. */
+export const CLAIM_COST = 4000;
 
-/** Real seconds between economy ticks. */
+/** Real seconds between economy ticks (server-driven). */
 export const TICK_SECONDS = 2;
+
+/** Lobby limits. */
+export const MAX_PLAYERS_LIMIT = 20;
+export const MIN_PLOTS = 3;
+export const MAX_PLOTS = 40;
 
 export interface UnitDef {
   kind: UnitKind;
@@ -95,3 +100,41 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
 
 /** Ordered list for the toolbar. */
 export const BUILD_ORDER: UnitKind[] = ["lobby", "office", "apartment", "elevator"];
+
+/** A selectable player color for the lobby. */
+export interface ColorOption {
+  id: string;
+  name: string;
+  hex: string;
+}
+
+/**
+ * 20 visually distinct player colors — one per max player, so color uniqueness
+ * is always satisfiable even in a full 20-player game.
+ */
+export const PLAYER_COLORS: ColorOption[] = [
+  { id: "crimson", name: "Crimson", hex: "#e0503f" },
+  { id: "vermilion", name: "Vermilion", hex: "#e56a33" },
+  { id: "amber", name: "Amber", hex: "#e79a2f" },
+  { id: "gold", name: "Gold", hex: "#d9c23e" },
+  { id: "chartreuse", name: "Chartreuse", hex: "#a6cf3c" },
+  { id: "lime", name: "Lime", hex: "#77c33f" },
+  { id: "emerald", name: "Emerald", hex: "#3fb96b" },
+  { id: "jade", name: "Jade", hex: "#34c0a0" },
+  { id: "teal", name: "Teal", hex: "#33b3bd" },
+  { id: "cyan", name: "Cyan", hex: "#38a8e0" },
+  { id: "azure", name: "Azure", hex: "#4a86e0" },
+  { id: "indigo", name: "Indigo", hex: "#5b63e0" },
+  { id: "violet", name: "Violet", hex: "#7d54e0" },
+  { id: "purple", name: "Purple", hex: "#9d47d6" },
+  { id: "magenta", name: "Magenta", hex: "#c94ad1" },
+  { id: "fuchsia", name: "Fuchsia", hex: "#e04bab" },
+  { id: "rose", name: "Rose", hex: "#e0577f" },
+  { id: "coral", name: "Coral", hex: "#e07161" },
+  { id: "slate", name: "Slate", hex: "#8792a6" },
+  { id: "steel", name: "Steel", hex: "#6d7a99" },
+];
+
+export function colorHexById(id: string): string | undefined {
+  return PLAYER_COLORS.find((c) => c.id === id)?.hex;
+}

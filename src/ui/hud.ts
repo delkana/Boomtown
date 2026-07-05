@@ -1,59 +1,83 @@
-import { BUILD_ORDER, TICK_SECONDS, UNIT_DEFS } from "../game/constants";
+import { BUILD_ORDER, CLAIM_COST, TICK_SECONDS, UNIT_DEFS } from "../game/constants";
 import { projectedNet } from "../game/tick";
-import type { GameState, UnitKind } from "../game/types";
+import type { GameConnection } from "../net/connection";
+import type { Tool } from "../render/renderer";
 
 /**
- * HUD: the DOM-based UI (stats readout + build toolbar + hint line). Like the
- * canvas renderer, it only READS state and turns clicks into tool selections;
- * it never touches state directly. Kept in plain DOM so it stays framework-free.
+ * HUD: the DOM-based in-game UI (city header, player chip, stats, build
+ * toolbar, hint line). Like the canvas renderer it only READS state (through
+ * the connection) and turns clicks into tool selections; it never mutates state.
  */
 export class Hud {
-  private statsEl: HTMLElement;
-  private toolbarEl: HTMLElement;
-  private hintEl: HTMLElement;
+  private cityEl = must("city-name");
+  private chipEl = must("player-chip");
+  private statsEl = must("stats");
+  private toolbarEl = must("toolbar");
+  private hintEl = must("hint");
 
   constructor(
-    private getState: () => GameState,
-    private getSelected: () => UnitKind | null,
-    private getLastError: () => string | null,
-    private onSelect: (kind: UnitKind | null) => void,
+    private conn: GameConnection,
+    private getSelected: () => Tool,
+    private onSelect: (tool: Tool) => void,
   ) {
-    this.statsEl = must("stats");
-    this.toolbarEl = must("toolbar");
-    this.hintEl = must("hint");
     this.buildToolbar();
+    this.buildHeader();
+  }
+
+  private buildHeader(): void {
+    const state = this.conn.getState();
+    this.cityEl.textContent = state.config.cityName;
+    const s = this.conn.session;
+    this.chipEl.innerHTML = `<span class="dot" style="background:${s.colorHex}"></span>${escapeHtml(
+      s.playerName,
+    )}`;
   }
 
   private buildToolbar(): void {
     this.toolbarEl.innerHTML = "";
+
+    // Claim tool first.
+    const claim = document.createElement("button");
+    claim.className = "tool";
+    claim.dataset.tool = "claim";
+    claim.innerHTML = `
+      <span class="swatch claim-swatch">＋</span>
+      <span class="tool-label">Claim Plot</span>
+      <span class="tool-cost">$${CLAIM_COST.toLocaleString()}</span>
+      <span class="tool-key">C</span>`;
+    claim.addEventListener("click", () => this.toggle("claim"));
+    this.toolbarEl.appendChild(claim);
+
     for (const kind of BUILD_ORDER) {
       const def = UNIT_DEFS[kind];
       const btn = document.createElement("button");
       btn.className = "tool";
-      btn.dataset.kind = kind;
+      btn.dataset.tool = kind;
       btn.innerHTML = `
         <span class="swatch" style="background:${def.color}"></span>
         <span class="tool-label">${def.label}</span>
         <span class="tool-cost">$${def.cost.toLocaleString()}</span>
         <span class="tool-key">${def.hotkey}</span>`;
-      btn.addEventListener("click", () => {
-        const next = this.getSelected() === kind ? null : kind;
-        this.onSelect(next);
-      });
+      btn.addEventListener("click", () => this.toggle(kind));
       this.toolbarEl.appendChild(btn);
     }
   }
 
-  /** Called on every state change / render. Cheap enough to run per frame. */
+  private toggle(tool: Exclude<Tool, null>): void {
+    this.onSelect(this.getSelected() === tool ? null : tool);
+  }
+
+  /** Refresh readouts. Called on each snapshot and on selection change. */
   update(): void {
-    const state = this.getState();
-    const player = state.players[state.localPlayerId];
-    const plot = state.plots[0];
-    const net = projectedNet(plot);
-    const floors = plot.units.reduce((m, u) => Math.max(m, u.row + 1), 0);
-    const revenueUnits = plot.units.filter(
-      (u) => UNIT_DEFS[u.kind].incomeAtFull > 0,
-    );
+    const state = this.conn.getState();
+    const me = this.conn.session.playerId;
+    const player = state.players[me];
+    if (!player) return;
+
+    const myPlots = Object.values(state.plots).filter((p) => p.ownerId === me);
+    const myUnits = myPlots.flatMap((p) => p.units);
+    const net = myPlots.reduce((sum, p) => sum + projectedNet(p), 0);
+    const revenueUnits = myUnits.filter((u) => UNIT_DEFS[u.kind].incomeAtFull > 0);
     const avgOcc =
       revenueUnits.length === 0
         ? 0
@@ -64,31 +88,33 @@ export class Hud {
       <div class="row big">$${player.money.toLocaleString()}</div>
       <div class="row"><span>Net / ${TICK_SECONDS}s</span>
         <span class="${netClass}">${net >= 0 ? "+" : ""}$${net.toLocaleString()}</span></div>
-      <div class="row"><span>Floors</span><span>${floors}</span></div>
-      <div class="row"><span>Units</span><span>${plot.units.length}</span></div>
+      <div class="row"><span>Plots owned</span><span>${myPlots.length}</span></div>
+      <div class="row"><span>Units</span><span>${myUnits.length}</span></div>
       <div class="row"><span>Occupancy</span><span>${Math.round(avgOcc * 100)}%</span></div>
       <div class="row muted"><span>Tick</span><span>${state.tick}</span></div>`;
 
-    // Toolbar selected state + affordability.
+    // Toolbar selected/affordability states.
     for (const el of Array.from(this.toolbarEl.children) as HTMLElement[]) {
-      const kind = el.dataset.kind as UnitKind;
-      const def = UNIT_DEFS[kind];
-      el.classList.toggle("selected", this.getSelected() === kind);
-      el.classList.toggle("unaffordable", player.money < def.cost);
+      const tool = el.dataset.tool as Exclude<Tool, null>;
+      const cost = tool === "claim" ? CLAIM_COST : UNIT_DEFS[tool].cost;
+      el.classList.toggle("selected", this.getSelected() === tool);
+      el.classList.toggle("unaffordable", player.money < cost);
     }
 
-    // Hint line: error takes priority, else a contextual tip.
-    const err = this.getLastError();
+    // Hint line.
+    const err = this.conn.lastError();
     const sel = this.getSelected();
     if (err) {
       this.hintEl.textContent = `⚠ ${err}`;
       this.hintEl.className = "panel warn";
+    } else if (sel === "claim") {
+      this.hintEl.textContent = `Claim mode — click an "Available" plot to buy it. Then build on it.`;
+      this.hintEl.className = "panel";
     } else if (sel) {
-      const def = UNIT_DEFS[sel];
-      this.hintEl.textContent = `Placing ${def.label} — click a cell. Right-click sells. Drag / arrow keys to pan. Esc to deselect.`;
+      this.hintEl.textContent = `Placing ${UNIT_DEFS[sel].label} — click a cell on a plot you own. Right-click sells. Esc deselects.`;
       this.hintEl.className = "panel";
     } else {
-      this.hintEl.textContent = `Pick a tool below (or press 1–4). Drag or use arrow keys to pan the city.`;
+      this.hintEl.textContent = `Pick a tool (1–4, or C to claim). Drag or use arrow keys to pan the city.`;
       this.hintEl.className = "panel";
     }
   }
@@ -98,4 +124,10 @@ function must(id: string): HTMLElement {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Missing #${id} element`);
   return el;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string,
+  );
 }

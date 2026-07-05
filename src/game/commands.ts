@@ -6,16 +6,28 @@ import type { UnitKind } from "./types";
  *
  * THIS IS THE MULTIPLAYER BOUNDARY.
  * --------------------------------
- * Single-player today:  input -> dispatch(cmd) -> reducer mutates local state.
- * Multiplayer later:    input -> send(cmd) over socket -> server reducer ->
- *                       server broadcasts new snapshot -> clients apply it.
+ * The seam is now real, just short-circuited to a LOCAL server:
  *
- * Because commands are plain serializable objects and the reducer is pure,
- * neither the reducer nor the tick need to change when the server appears —
- * only the transport around them (see src/net/*, stubbed in README).
+ *   Client:  input -> connection.dispatch(cmd) -> [transport] -> server
+ *   Server:  applyCommand(worldState, cmd) -> broadcast(serialize(state))
+ *   Client:  onSnapshot(deserialize(snap)) -> render
+ *
+ * Today `[transport]` is a direct in-process call (src/net/localServer.ts). To
+ * go networked, that transport becomes a WebSocket and NOTHING in this file,
+ * the reducer, or the tick changes — commands are already plain serializable
+ * objects and the reducer is already pure and authoritative.
+ *
+ * Every command carries `playerId`. Locally the client fills it from its
+ * session; a real server would IGNORE the client-supplied value and derive the
+ * acting player from the authenticated connection.
  */
 
 export type Command =
+  | {
+      type: "CLAIM_PLOT";
+      playerId: string;
+      plotIndex: number;
+    }
   | {
       type: "PLACE_UNIT";
       playerId: string;

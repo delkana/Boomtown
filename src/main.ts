@@ -1,51 +1,99 @@
-import { Game } from "./engine/game";
-import { GameLoop } from "./engine/loop";
+import { RenderLoop } from "./engine/loop";
 import { Camera } from "./render/camera";
 import { Renderer } from "./render/renderer";
 import { InputController } from "./input/input";
 import { Hud } from "./ui/hud";
+import { LobbyScreen } from "./ui/lobby";
+import { LocalServer } from "./net/localServer";
+import type { GameConnection } from "./net/connection";
 
 /**
- * Composition root. Wires the four layers together:
+ * Composition root. Two phases:
  *
- *   Game (STATE) ── dispatch(cmd) ◄── Input (produces commands)
- *      │  state                          │
- *      ▼                                 ▼ camera pan (view-only)
- *   Renderer (READ state -> canvas)   Hud (READ state -> DOM, emits selections)
+ *   1. LOBBY   — LobbyScreen talks to the GameServer (create/join a game) and
+ *                hands back a GameConnection.
+ *   2. IN-GAME — Camera + Renderer + Input + HUD are wired to that connection.
  *
- * Only this file knows about all layers at once. In multiplayer, `Game` here
- * becomes a networked shell (send commands, receive snapshots) and NOTHING else
- * in this file has to change — that's the payoff of the clean separation.
+ * The server owns the state and the tick clock; the client only sends commands
+ * and renders snapshots. Swapping LocalServer for a networked client is the
+ * ONLY change needed to go multiplayer — this file's wiring stays identical.
  */
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
+const lobbyEl = document.getElementById("lobby")!;
+const gameRoot = document.getElementById("game-root")!;
+const leaveBtn = document.getElementById("leave-btn")!;
 
-const game = new Game();
-const camera = new Camera();
-const renderer = new Renderer(canvas, camera);
+const server = new LocalServer();
 
-const input = new InputController(
-  canvas,
-  camera,
-  () => game.state,
-  game.dispatch,
-  () => hud.update(),
-);
+/** Everything tied to one active in-game session; torn down on leave. */
+interface Session {
+  conn: GameConnection;
+  camera: Camera;
+  input: InputController;
+  loop: RenderLoop;
+  unsub: () => void;
+}
+let active: Session | null = null;
 
-const hud = new Hud(
-  () => game.state,
-  () => input.selectedKind,
-  () => game.lastError,
-  (kind) => {
-    input.setSelected(kind);
+const lobby = new LobbyScreen(lobbyEl, server, enterGame);
+lobby.render();
+
+leaveBtn.addEventListener("click", leaveGame);
+
+function enterGame(conn: GameConnection): void {
+  lobby.hide();
+  gameRoot.classList.remove("hidden");
+
+  const camera = new Camera();
+  const renderer = new Renderer(canvas, camera);
+  let hud: Hud;
+
+  const input = new InputController(canvas, camera, conn, () => hud.update());
+  hud = new Hud(conn, () => input.selectedTool, (tool) => {
+    input.setSelected(tool);
     hud.update();
-  },
-);
+  });
 
-// Keep the canvas matched to its display size (handles DPR for crisp art).
-// Falls back to the window size if CSS layout hasn't settled yet (the module
-// can run before the external stylesheet applies, leaving clientWidth at 0).
-function resize(): void {
+  // Size the canvas and center on the middle of the city.
+  sizeCanvas(camera);
+  const mid = Math.floor(conn.getState().config.plotCount / 2);
+  camera.offsetX = camera.plotLeftWorldX(mid) - camera.viewW / 2;
+
+  const unsub = conn.onSnapshot(() => hud.update());
+  hud.update();
+
+  const loop = new RenderLoop((dt) => {
+    input.update(dt);
+    renderer.render(conn.getState(), conn.session.playerId, input.hover, input.selectedTool);
+  });
+  loop.start();
+
+  active = { conn, camera, input, loop, unsub };
+
+  // Debug handle (also used for headless verification where rAF is suspended).
+  (window as unknown as { boomtown: unknown }).boomtown = {
+    server,
+    conn,
+    camera,
+    input,
+    renderOnce: () =>
+      renderer.render(conn.getState(), conn.session.playerId, input.hover, input.selectedTool),
+  };
+}
+
+function leaveGame(): void {
+  if (!active) return;
+  active.loop.stop();
+  active.input.detach();
+  active.unsub();
+  active.conn.leave();
+  active = null;
+  gameRoot.classList.add("hidden");
+  lobby.show();
+}
+
+function sizeCanvas(camera: Camera): void {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth || window.innerWidth;
   const h = canvas.clientHeight || window.innerHeight;
@@ -53,40 +101,13 @@ function resize(): void {
   canvas.height = Math.round(h * dpr);
   const ctx = canvas.getContext("2d")!;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const first = camera.viewW === 0;
   camera.resize(w, h);
-  // Center the camera on the player's plot the first time we get real dims.
-  if (first && w > 0) {
-    camera.offsetX = camera.plotLeftWorldX(0) - w / 2 + w * 0.2;
-  }
 }
-window.addEventListener("resize", resize);
-// ResizeObserver fires an initial callback once the canvas has a laid-out size,
-// which reliably fixes the 0×0 case above regardless of stylesheet timing.
-new ResizeObserver(resize).observe(canvas);
-resize();
 
-// Re-render the HUD whenever state changes (in addition to the render loop).
-game.onChange(() => hud.update());
-
-const loop = new GameLoop({
-  onTick: () => game.tick(),
-  onRender: (dt) => {
-    input.update(dt);
-    renderer.render(game.state, input.hover, input.selectedKind);
-  },
-});
-
-hud.update();
-loop.start();
-
-// Expose for debugging in the console.
-(window as unknown as { boomtown: unknown }).boomtown = {
-  game,
-  camera,
-  input,
-  // Force one render frame regardless of the rAF loop (used for headless checks
-  // where the tab is hidden and requestAnimationFrame is suspended).
-  renderOnce: () => renderer.render(game.state, input.hover, input.selectedKind),
-  tickOnce: () => game.tick(),
-};
+// Keep the active game's canvas matched to its display size.
+function onResize(): void {
+  if (!active) return;
+  sizeCanvas(active.camera);
+}
+window.addEventListener("resize", onResize);
+new ResizeObserver(onResize).observe(canvas);

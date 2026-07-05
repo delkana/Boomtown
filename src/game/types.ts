@@ -3,19 +3,15 @@
  *
  * ARCHITECTURE NOTE
  * -----------------
- * Everything in `src/game/` is pure data + pure functions. It has NO reference
- * to the DOM, canvas, timers, or `window`. That is deliberate: this layer is
- * the "authoritative simulation" and is designed to run unchanged on a server
- * once we go multiplayer. See README.md ("Multiplayer boundary").
+ * Everything in `src/game/` is pure data + pure functions with NO reference to
+ * the DOM, canvas, timers, or `window`. This layer is the authoritative
+ * simulation and runs unchanged on the server. In this milestone it already
+ * runs on a *local* fake server (`src/net/localServer.ts`); swapping that for a
+ * real WebSocket server changes nothing in here. See README ("Multiplayer").
  *
- * The layer exposes:
- *   - State   : a plain serializable object (JSON-friendly)
- *   - Commands: player intents (see commands.ts)
- *   - reducer : applyCommand(state, cmd) -> mutates/returns state
- *   - tick    : advanceTick(state) -> advances the economy one step
- *
- * Rendering (src/render) and input (src/input) only READ state and PRODUCE
- * commands. They never mutate state directly.
+ * Note what is NOT here: there is no `localPlayerId`. Which player a given
+ * CLIENT is acting as is per-connection information (see PlayerSession in
+ * src/net/protocol.ts), not part of the shared authoritative world.
  */
 
 /** What kind of thing can occupy a grid cell on a tower floor. */
@@ -39,40 +35,54 @@ export interface Unit {
 }
 
 /**
- * A plot is one parcel of land in the city strip. For the MVP only the player's
- * plot is buildable; the neighbors are stubs that represent other players'
- * future buildings.
+ * A plot is one parcel of land in the shared city strip. Any player can claim
+ * an unowned plot (CLAIM_PLOT); once owned, only the owner may build on it.
  */
 export interface Plot {
   id: string;
-  /** Index along the city strip (…, -1, 0, +1, …). Player starts at 0. */
+  /** Index along the city strip, 0-based left to right. */
   index: number;
-  /** Owner id. `null` = unclaimed/stub neighbor plot. */
+  /** Owning player id, or `null` if the plot is unclaimed / for sale. */
   ownerId: string | null;
-  /** Display name for the owner (stub flavor for neighbors). */
-  ownerName: string;
   units: Unit[];
 }
 
-/** Per-player wallet + identity. In MVP there is exactly one local player. */
+/** Per-player wallet + identity within a single game. */
 export interface Player {
   id: string;
   name: string;
+  /** Hex color chosen in the lobby; unique among a game's players. */
+  color: string;
   money: number;
 }
 
+/** Immutable-ish game settings chosen by the creator in the lobby. */
+export interface GameConfig {
+  /** Display name of the city (also the basis for the game id). */
+  cityName: string;
+  /** Number of plots in the city strip. */
+  plotCount: number;
+  /** Max concurrent players (hard-capped by MAX_PLAYERS_LIMIT). */
+  maxPlayers: number;
+  /** Whether a password is required to join (the password itself lives only on the server). */
+  hasPassword: boolean;
+}
+
 /**
- * The complete authoritative game state. Fully serializable to JSON so it can
- * be snapshotted, sent over the wire, and rehydrated.
+ * The complete authoritative game state for ONE game. Fully serializable to
+ * JSON so it can be snapshotted, broadcast, and rehydrated by clients.
  */
 export interface GameState {
+  /** Game id (equals the city slug). */
+  id: string;
   /** Monotonic tick counter (increments once per economy step). */
   tick: number;
+  config: GameConfig;
   players: Record<string, Player>;
-  /** Id of the local/acting player (server would derive this per-connection). */
-  localPlayerId: string;
   /** All plots in the city strip, keyed by index for O(1) lookup. */
   plots: Record<number, Plot>;
-  /** Counter used to mint unique unit ids deterministically. */
+  /** Counter for minting unique unit ids deterministically. */
   nextUnitSeq: number;
+  /** Counter for minting unique player ids deterministically. */
+  nextPlayerSeq: number;
 }

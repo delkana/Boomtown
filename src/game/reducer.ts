@@ -1,18 +1,18 @@
 import type { Command } from "./commands";
 import type { GameState, Plot, Unit, UnitKind } from "./types";
-import { MAX_ROWS, PLOT_COLS, UNIT_DEFS } from "./constants";
+import { CLAIM_COST, MAX_ROWS, PLOT_COLS, UNIT_DEFS } from "./constants";
 
 /**
  * The reducer applies a single command to the authoritative state.
  *
  * It is deterministic and side-effect free (no DOM, no time, no randomness),
- * so the exact same function can run on a server. It mutates the passed state
- * in place and also returns it for convenience; callers that need immutability
- * can clone beforehand.
+ * so the same function runs on the server. It mutates the passed state in place
+ * and returns a result describing success/failure.
  *
- * Every command is VALIDATED here — the client UI also pre-checks (to grey out
- * illegal actions), but the reducer is the authority and must never trust the
- * caller. This matters for multiplayer, where clients are untrusted.
+ * Every command is VALIDATED here — the client greys out illegal actions for
+ * UX, but the reducer is the authority and never trusts the caller. This is
+ * essential for multiplayer, where clients are untrusted: ownership, funds, and
+ * placement legality are all enforced here.
  */
 
 export interface CommandResult {
@@ -23,16 +23,34 @@ export interface CommandResult {
 
 export function applyCommand(state: GameState, cmd: Command): CommandResult {
   switch (cmd.type) {
+    case "CLAIM_PLOT":
+      return claimPlot(state, cmd);
     case "PLACE_UNIT":
       return placeUnit(state, cmd);
     case "SELL_UNIT":
       return sellUnit(state, cmd);
     default: {
-      // Exhaustiveness guard.
       const _never: never = cmd;
       return { ok: false, error: `Unknown command ${(_never as Command).type}` };
     }
   }
+}
+
+function claimPlot(
+  state: GameState,
+  cmd: Extract<Command, { type: "CLAIM_PLOT" }>,
+): CommandResult {
+  const player = state.players[cmd.playerId];
+  if (!player) return fail("No such player");
+  const plot = state.plots[cmd.plotIndex];
+  if (!plot) return fail("No such plot");
+  if (plot.ownerId === cmd.playerId) return fail("You already own this plot");
+  if (plot.ownerId) return fail("Plot already claimed by another player");
+  if (player.money < CLAIM_COST) return fail("Not enough money to claim");
+
+  plot.ownerId = cmd.playerId;
+  player.money -= CLAIM_COST;
+  return ok();
 }
 
 function placeUnit(
@@ -44,6 +62,7 @@ function placeUnit(
 
   const plot = state.plots[cmd.plotIndex];
   if (!plot) return fail("No such plot");
+  if (plot.ownerId === null) return fail("Claim this plot before building");
   if (plot.ownerId !== cmd.playerId) return fail("You don't own this plot");
 
   const def = UNIT_DEFS[cmd.kind];
@@ -135,5 +154,4 @@ function fail(error: string): CommandResult {
   return { ok: false, error };
 }
 
-/** Re-exported for callers that want the type without importing constants. */
 export type { UnitKind };
