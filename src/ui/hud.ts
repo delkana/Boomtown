@@ -183,6 +183,7 @@ export class Hud {
       <div class="insp-row"><span>Noise</span><span>${Math.round(noise / n)}</span></div>
       <div class="insp-row"><span>Foot traffic</span><span>${Math.round(foot / n)}</span></div>
       ${revenue ? `<div class="insp-row"><span>Appeal</span><span>${appeal}%</span></div>` : ""}
+      ${unit.kind === "office" || unit.kind === "medical" || unit.kind === "hotel" ? `<div class="insp-row"><span>Cleanliness</span><span>${Math.round(unit.cleanliness ?? 100)}%</span></div>` : ""}
       ${prefs ? `<div class="insp-prefs">Prefers ${prefs}</div>` : ""}
       <div class="insp-row"><span>Upkeep / day</span><span class="neg">-$${def.upkeep.toLocaleString()}</span></div>
       <div class="insp-row net"><span>Net / day</span><span class="${dailyNet >= 0 ? "pos" : "neg"}">${dailyNet < 0 ? "-" : "+"}$${Math.abs(dailyNet).toLocaleString()}</span></div>
@@ -245,6 +246,7 @@ export class Hud {
       { k: "view", label: "View" },
       { k: "noise", label: "Noise" },
       { k: "foot", label: "Traffic" },
+      { k: "cleanliness", label: "Clean" },
     ];
     this.overlayEl.innerHTML = `<span class="overlay-title">Heatmap</span>`;
     for (const o of opts) {
@@ -516,9 +518,9 @@ export class Hud {
 /** Toolbar categories — each opens a sub-menu of its tools. */
 const TOOL_CATEGORIES: { id: string; label: string; icon: string; tools: string[] }[] = [
   { id: "construction", label: "Construction", icon: "🏗", tools: ["girder", "lobby", "elevator", "elevatorCar"] },
-  { id: "offices", label: "Offices", icon: "🏢", tools: ["office", "medical"] },
+  { id: "offices", label: "Offices", icon: "🏢", tools: ["office", "medical", "janitor"] },
   { id: "apartments", label: "Apartments", icon: "🏠", tools: ["apartment"] },
-  { id: "hotels", label: "Hotels", icon: "🛎", tools: ["hotel"] },
+  { id: "hotels", label: "Hotels", icon: "🛎", tools: ["hotel", "housekeeping"] },
   { id: "retail", label: "Retail", icon: "🛍", tools: ["store", "restaurant"] },
 ];
 

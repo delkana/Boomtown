@@ -25,6 +25,8 @@ export type UnitKind =
   | "store"
   | "restaurant"
   | "hotel"
+  | "housekeeping"
+  | "janitor"
   | "elevator";
 
 /** A single structural-support cell (girder) in a tower's frame. */
@@ -128,6 +130,12 @@ export interface Unit {
   occupancy: number;
   /** The current tenant, or null/undefined if the room is vacant. */
   tenant?: Tenant | null;
+  /**
+   * Room cleanliness 0..100 (100 = spotless). Offices/clinics get grubbier the
+   * more they're worked; hotel rooms drop sharply on each checkout. Janitors and
+   * housekeepers restore it. Dirty rooms are less appealing to tenants/guests.
+   */
+  cleanliness?: number;
 }
 
 /**

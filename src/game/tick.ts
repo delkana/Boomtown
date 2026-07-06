@@ -1,10 +1,27 @@
-import type { GameState, Plot } from "./types";
-import { TICKS_PER_DAY, TICK_MINUTES, UNIT_DEFS, VISITOR_HISTORY_DAYS } from "./constants";
+import type { GameState, Plot, Unit } from "./types";
+import {
+  CLEANLINESS_MAX,
+  HOTEL_CHECKOUT_DIRT,
+  OFFICE_DIRT_PER_HOUR,
+  TICKS_PER_DAY,
+  TICK_MINUTES,
+  UNIT_DEFS,
+  VISITOR_HISTORY_DAYS,
+} from "./constants";
 import { roomSatisfaction } from "./heatmaps";
 import { servicedRows } from "./elevator";
-import { generateTenant, hasTrades } from "./tenants";
+import { generateTenant, hasTrades, tenantOpen } from "./tenants";
 import { hashString } from "./hash";
 import { isVisitorKind, visitCount } from "./visitors";
+
+const FIVE_AM_TICK = (5 * 60) / TICK_MINUTES; // janitors finish the offices overnight
+const ELEVEN_AM_TICK = (11 * 60) / TICK_MINUTES; // hotel checkout / housekeeping
+
+/** How much a dirty room's rent (and appeal) is discounted: 40% when filthy → 100% spotless. */
+export function cleanlinessFactor(unit: Unit): number {
+  const c = unit.cleanliness ?? CLEANLINESS_MAX;
+  return 0.4 + 0.6 * Math.max(0, Math.min(1, c / CLEANLINESS_MAX));
+}
 
 /**
  * advanceTick: the economy step. Pure and deterministic — server-ownable.
@@ -19,6 +36,10 @@ import { isVisitorKind, visitCount } from "./visitors";
 export function advanceTick(state: GameState): void {
   state.tick += 1;
   const isMidnight = state.tick % TICKS_PER_DAY === 0;
+  const tod = state.tick % TICKS_PER_DAY; // ticks elapsed into the current day
+  const day = Math.floor(state.tick / TICKS_PER_DAY);
+  const hourF = (tod * TICK_MINUTES) / 60;
+  const weekday = ((day % 7) + 7) % 7;
 
   for (const key of Object.keys(state.plots)) {
     const plot = state.plots[Number(key)];
@@ -27,6 +48,8 @@ export function advanceTick(state: GameState): void {
     if (!owner) continue;
 
     const hasLobby = plot.units.some((u) => u.kind === "lobby");
+    const hasJanitor = plot.units.some((u) => u.kind === "janitor");
+    const hasHousekeeping = plot.units.some((u) => u.kind === "housekeeping");
     const elevatorRows = servicedRows(plot);
 
     // Tenants move in and out.
@@ -40,7 +63,6 @@ export function advanceTick(state: GameState): void {
         if (appeal > 0) {
           // Appeal% is the chance a tenant signs a lease on THIS day; if they do,
           // they arrive at a random hour of the day (deterministic per day).
-          const day = Math.floor(state.tick / TICKS_PER_DAY);
           const signs = hashString(`${plot.id}:${unit.id}:movein:${day}`) % 10000 < appeal * 10000;
           if (signs) {
             const moveHour = 6 + (hashString(`${plot.id}:${unit.id}:hour:${day}`) % 14); // 6am–7pm
@@ -52,6 +74,29 @@ export function advanceTick(state: GameState): void {
         }
       }
       unit.occupancy = unit.tenant ? 1 : 0;
+
+      // --- Cleanliness ---
+      if (unit.cleanliness == null) unit.cleanliness = CLEANLINESS_MAX;
+      // Offices/clinics get grubbier every hour they're open + worked.
+      if (
+        unit.tenant &&
+        (unit.kind === "office" || unit.kind === "medical") &&
+        tenantOpen(unit.tenant, hourF, weekday)
+      ) {
+        unit.cleanliness = Math.max(0, unit.cleanliness - (OFFICE_DIRT_PER_HOUR * TICK_MINUTES) / 60);
+      }
+      // Janitors clean the offices overnight (once, at end of their shift) if a
+      // janitor's closet exists in the tower.
+      if (tod === FIVE_AM_TICK && hasJanitor && (unit.kind === "office" || unit.kind === "medical")) {
+        unit.cleanliness = CLEANLINESS_MAX;
+      }
+      // Hotel rooms: a checkout each morning drops cleanliness sharply; a
+      // housekeeping crew (if present) turns the room over back to spotless.
+      if (tod === ELEVEN_AM_TICK && unit.kind === "hotel" && unit.tenant) {
+        const booked = hashString(`${plot.id}:${unit.id}:book:${day - 1}`) % 10000 < (unit.tenant.appeal ?? 0) * 10000;
+        if (booked) unit.cleanliness = Math.max(0, unit.cleanliness - HOTEL_CHECKOUT_DIRT);
+        if (hasHousekeeping) unit.cleanliness = CLEANLINESS_MAX;
+      }
     }
 
     // Rent + upkeep settle once a day, at midnight — and we snapshot the day's
@@ -78,7 +123,8 @@ export function projectedDailyNet(plot: Plot): number {
   let net = 0;
   for (const unit of plot.units) {
     net -= UNIT_DEFS[unit.kind].upkeep;
-    if (unit.tenant) net += unit.tenant.dailyRent;
+    // A dirty room earns less rent, so keeping it clean pays for the cleaners.
+    if (unit.tenant) net += Math.round(unit.tenant.dailyRent * cleanlinessFactor(unit));
   }
   return net;
 }

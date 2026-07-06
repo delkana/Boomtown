@@ -27,7 +27,7 @@ export class Camera {
 
   /** Pixels from the bottom of the canvas to the ground line (row 0's base). */
   readonly groundMargin = 80;
-  readonly minZoom = 0.4;
+  readonly minZoom = 0.27; // ~50% more zoom-out range than before (was 0.4)
   readonly maxZoom = 1.8;
 
   resize(w: number, h: number): void {

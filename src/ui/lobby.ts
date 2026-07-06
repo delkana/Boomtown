@@ -751,7 +751,7 @@ const SHELL = `
         <span class="field-note">Pick an archetype, then name it or roll a random one.</span>
       </label>
       <div class="field-row">
-        <label class="field">Properties<input id="cf-plots" type="number" value="12" /></label>
+        <label class="field">Properties<input id="cf-plots" type="number" value="20" /></label>
         <label class="field">Max players<input id="cf-max" type="number" value="8" min="1" /></label>
       </div>
       <label class="field">Your name<input id="cf-name" type="text" maxlength="18" placeholder="Your name" /></label>

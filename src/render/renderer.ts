@@ -934,6 +934,10 @@ export class Renderer {
         return this.drawRestaurantInterior(x, y, w, h, facade, underground, lit, occupied, subset);
       case "hotel":
         return this.drawHotelInterior(x, y, w, h, facade, underground, lit, occupied);
+      case "housekeeping":
+        return this.drawServiceInterior(x, y, w, h, facade, underground, lit, [176, 132, 106], false);
+      case "janitor":
+        return this.drawServiceInterior(x, y, w, h, facade, underground, lit, [107, 114, 128], true);
       default:
         this.ctx.fillStyle = UNIT_DEFS[kind].color;
         this.ctx.fillRect(x, y, w, h);
@@ -1277,6 +1281,19 @@ export class Renderer {
     this.wallBand(s, 0.34, 0.5, 0.7, 0.9, "rgba(74,54,32,0.92)");
     this.wallBand(s, 0.54, 0.66, 0.72, 0.9, "rgba(70,110,70,0.7)");
     if (lit) this.ceilingPanels(s, [0.28, 0.72]);
+  }
+
+  /** A plain service room (janitor's closet / housekeeping): shelving + a cart. */
+  private drawServiceInterior(
+    x: number, y: number, w: number, h: number,
+    facade: Facade, ug: boolean, lit: boolean, base: number[], windowless: boolean,
+  ): void {
+    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [230, 228, 224], 0.45)) }, lit);
+    if (!windowless) this.drawFacade(s, facade, ug); // interior closets have no windows
+    // Supply shelving on the back wall + a cleaning cart beside it.
+    this.wallBand(s, 0.08, 0.46, 0.36, 0.9, "rgba(60,50,40,0.82)");
+    this.wallBand(s, 0.56, 0.9, 0.5, 0.9, "rgba(120,120,128,0.7)");
+    if (lit) this.ceilingPanels(s, [0.5]);
   }
 
   /** A set of double doors on the lobby's left or right side wall. */

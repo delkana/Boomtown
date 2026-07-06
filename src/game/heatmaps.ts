@@ -8,7 +8,12 @@ import type { Plot, Unit } from "./types";
  * Each `*Rating` returns a raw score; `heatT` normalizes to 0..1 where 1 is
  * "good" (green) and 0 is "bad" (red) for the overlay.
  */
-export type HeatmapKind = "none" | "elevator" | "view" | "noise" | "foot";
+export type HeatmapKind = "none" | "elevator" | "view" | "noise" | "foot" | "cleanliness";
+
+/** The unit occupying a cell, if any. */
+function unitAt(plot: Plot, col: number, row: number): Unit | undefined {
+  return plot.units.find((u) => row === u.row && col >= u.col && col < u.col + u.width);
+}
 
 function cellHasRoom(plot: Plot, col: number, row: number): boolean {
   return plot.units.some((u) => row === u.row && col >= u.col && col < u.col + u.width);
@@ -130,7 +135,11 @@ export function roomSatisfaction(plot: Plot, unit: Unit): number {
       den += Math.abs(w);
     }
   }
-  return den === 0 ? 1 : num / den;
+  const base = den === 0 ? 1 : num / den;
+  // Rooms dislike being dirty (offices/clinics that go un-janitored, hotels that
+  // go without housekeeping). Clean rooms are unaffected.
+  const clean = Math.max(0, Math.min(1, (unit.cleanliness ?? 100) / 100));
+  return base * (0.55 + 0.45 * clean);
 }
 
 /** Normalized 0..1 rating (1 = good/green, 0 = bad/red) for the overlay. */
@@ -144,6 +153,10 @@ export function heatT(kind: HeatmapKind, plot: Plot, col: number, row: number): 
       return 1 - Math.min(1, noiseRating(plot, col, row) / 90);
     case "foot":
       return footTraffic(plot, col, row) / 100;
+    case "cleanliness": {
+      const u = unitAt(plot, col, row);
+      return u ? Math.max(0, Math.min(1, (u.cleanliness ?? 100) / 100)) : 1;
+    }
     default:
       return 1;
   }

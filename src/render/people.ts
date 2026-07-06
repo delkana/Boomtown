@@ -65,6 +65,7 @@ interface Person {
   shaftCol: number; // elevator column they use (−1 if their office is on the ground)
   doorSide: "left" | "right"; // which side the shaft's cabin doors are on (where to queue)
   homeX: number; // this person's preferred building exit (left or right edge), persistent
+  outX: number; // a tile OUTSIDE the building on that side — where they spawn/despawn
   openDays: number[];
   arriveHour: number;
   departHour: number;
@@ -241,7 +242,7 @@ export class PeopleSim {
           p.officeRow = unit.row;
           p.shaftCol = shaftCol ?? -1;
           p.doorSide = (plot.cars ?? []).find((c) => c.col === shaftCol)?.doorSide ?? "right";
-          p.homeX = this.exitX(plot, id);
+          { const ex = this.exitPoints(plot, id); p.homeX = ex.homeX; p.outX = ex.outX; }
           if (!isHotel) this.applySchedule(p);
           this.people.set(id, p);
         }
@@ -306,7 +307,7 @@ export class PeopleSim {
       p.officeRow = unit.row;
       p.shaftCol = shaftCol;
       p.doorSide = (plot.cars ?? []).find((c) => c.col === shaftCol)?.doorSide ?? "right";
-      p.homeX = this.exitX(plot, id);
+      { const ex = this.exitPoints(plot, id); p.homeX = ex.homeX; p.outX = ex.outX; }
       p.openDays = [weekday];
       p.arriveHour = v.arrive;
       p.departHour = v.depart;
@@ -315,13 +316,16 @@ export class PeopleSim {
   }
 
   /**
-   * A person's preferred exit point on the ground floor: some head for the left
-   * edge of the building, others the right. Deterministic per person, so their
-   * choice persists every time they come and go.
+   * A person's exit points: the door they use on the ground floor (`homeX`, left
+   * or right edge, deterministic + persistent) and a spot one tile OUTSIDE the
+   * building on that side (`outX`) where they actually spawn in / disappear — so
+   * they walk fully in from, and out past, the building before (dis)appearing.
    */
-  private exitX(plot: Plot, id: string): number {
+  private exitPoints(plot: Plot, id: string): { homeX: number; outX: number } {
     const right = hashString(`${id}:exit`) % 2 === 0;
-    return right ? Math.max(ENTRANCE_X, plot.cols - ENTRANCE_X) : ENTRANCE_X;
+    return right
+      ? { homeX: Math.max(ENTRANCE_X, plot.cols - ENTRANCE_X), outX: plot.cols + 1 }
+      : { homeX: ENTRANCE_X, outX: -1 };
   }
 
   private createPerson(id: string, plotIndex: number): Person {
@@ -350,6 +354,7 @@ export class PeopleSim {
       depth: 0.08 + ((h >>> 17) % 100) / 100 * 0.06, // 0.08–0.14 cells back from the front edge
       color: WORKER_COLORS[(h >>> 3) % WORKER_COLORS.length],
       homeX: ENTRANCE_X, // set to the person's preferred exit side in reconcile()
+      outX: -1, // set alongside homeX in reconcile()
       x: ENTRANCE_X,
       floor: 0,
       yOff: 0,
@@ -671,7 +676,7 @@ export class PeopleSim {
     switch (p.st) {
       case "away":
         if (active) {
-          p.x = p.homeX + p.spread;
+          p.x = p.outX + p.spread; // appear a tile outside, then walk in
           p.floor = 0;
           p.car = null;
           p.st = ground ? "toRoom" : "toLift";
@@ -729,7 +734,7 @@ export class PeopleSim {
       }
       case "toExit":
         p.floor = 0;
-        if (walk(p.homeX + p.spread)) p.st = "away";
+        if (walk(p.outX + p.spread)) p.st = "away"; // walk out past the door, then vanish
         break;
     }
     // While in the office, stand back from the room's front (bottom) edge.

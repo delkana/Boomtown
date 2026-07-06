@@ -460,6 +460,37 @@ describe("room types & preferences", () => {
     expect(p.foot ?? 0).toBe(0);
   });
 
+  it("offices get dirty while worked, and a janitor's closet cleans them overnight", () => {
+    const s = freshGame();
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0], [2, 0], [4, 0], [5, 0]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "office", col: 4, row: 0 });
+    const office = s.plots[0].units.find((u) => u.kind === "office")!;
+    for (let i = 0; i < 1600; i++) advanceTick(s); // lease + several worked open-days
+    expect(office.tenant).toBeTruthy();
+    expect(office.cleanliness!).toBeLessThan(100); // grubby from use
+
+    // Rent scales with cleanliness (same units → no upkeep noise in the compare).
+    office.cleanliness = 100;
+    const cleanNet = projectedDailyNet(s.plots[0]);
+    office.cleanliness = 40;
+    expect(projectedDailyNet(s.plots[0])).toBeLessThan(cleanNet); // a dirty office earns less
+
+    // A janitor's closet restores offices to spotless overnight.
+    frame(s, "p1", 0, [[7, 0]]);
+    expect(applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "janitor", col: 7, row: 0 }).ok).toBe(true);
+    let maxClean = 0;
+    for (let i = 0; i < 288; i++) {
+      // one in-game day
+      advanceTick(s);
+      maxClean = Math.max(maxClean, office.cleanliness!);
+    }
+    expect(maxClean).toBe(100); // janitors restored it to spotless overnight
+  });
+
   it("snapshots daily visitor counts for a leased store", () => {
     const s = freshGame();
     s.players["p1"].money = 1_000_000;

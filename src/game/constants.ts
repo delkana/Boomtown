@@ -56,6 +56,15 @@ export const TICKS_PER_DAY = (24 * 60) / TICK_MINUTES;
 /** How many days of per-unit visitor counts to keep for the inspector chart. */
 export const VISITOR_HISTORY_DAYS = 14;
 
+/** Room cleanliness (0..100). */
+export const CLEANLINESS_MAX = 100;
+/** Cleaners target rooms whose cleanliness has dropped below this. */
+export const CLEAN_THRESHOLD = 80;
+/** Cleanliness a hotel room loses on each guest checkout. */
+export const HOTEL_CHECKOUT_DIRT = 50;
+/** Cleanliness an office/clinic loses per hour it's open + worked. */
+export const OFFICE_DIRT_PER_HOUR = 1;
+
 /** Lobby limits. */
 export const MAX_PLAYERS_LIMIT = 20;
 export const MIN_PLOTS = 3;
@@ -105,6 +114,13 @@ export interface UnitDef {
   /** Only one lobby allowed, and it must sit on the ground floor. */
   groundOnly?: boolean;
   unique?: boolean;
+  /** No exterior windows (e.g. an interior janitor's closet). */
+  windowless?: boolean;
+  /**
+   * A service room that is always staffed by its own crew and earns no rent
+   * (janitor's closet, housekeeping) — excluded from tenant/appeal simulation.
+   */
+  service?: boolean;
 }
 
 export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
@@ -150,7 +166,7 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
   },
   apartment: {
     kind: "apartment",
-    label: "Apartment",
+    label: "Studio Apartment",
     hotkey: "4",
     width: 2,
     cost: 2500,
@@ -189,7 +205,7 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
   },
   hotel: {
     kind: "hotel",
-    label: "Hotel Room",
+    label: "Hotel Room (Single Bed)",
     hotkey: "7",
     width: 1,
     cost: 1800,
@@ -199,6 +215,31 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     color: "#6a7fc0",
     // A quiet room with a view, good access, away from the bustle.
     prefs: { elevator: 0.9, view: 0.8, noise: 0.9, foot: -0.6 },
+  },
+  housekeeping: {
+    kind: "housekeeping",
+    label: "Housekeeping",
+    hotkey: "",
+    width: 2,
+    cost: 2200,
+    upkeep: 520, // wages for its housekeeping crew
+    incomeAtFull: 0,
+    fillRate: 0,
+    color: "#b0846a",
+    service: true,
+  },
+  janitor: {
+    kind: "janitor",
+    label: "Janitor's Closet",
+    hotkey: "",
+    width: 1,
+    cost: 1400,
+    upkeep: 420, // wages for its two janitors
+    incomeAtFull: 0,
+    fillRate: 0,
+    color: "#6b7280",
+    service: true,
+    windowless: true,
   },
   elevator: {
     kind: "elevator",
@@ -218,10 +259,12 @@ export const BUILD_ORDER: UnitKind[] = [
   "lobby",
   "office",
   "medical",
+  "janitor",
   "apartment",
   "store",
   "restaurant",
   "hotel",
+  "housekeeping",
   "elevator",
 ];
 
@@ -240,8 +283,8 @@ export interface ColorOption {
 }
 
 /**
- * 20 visually distinct player colors — one per max player, so color uniqueness
- * is always satisfiable even in a full 20-player game.
+ * 40 visually distinct player colors — the first 20 span the main hue wheel, the
+ * next 20 add deeper/muted/tertiary shades, so players have plenty of choice.
  */
 export const PLAYER_COLORS: ColorOption[] = [
   { id: "crimson", name: "Crimson", hex: "#e0503f" },
@@ -264,6 +307,26 @@ export const PLAYER_COLORS: ColorOption[] = [
   { id: "coral", name: "Coral", hex: "#e07161" },
   { id: "slate", name: "Slate", hex: "#8792a6" },
   { id: "steel", name: "Steel", hex: "#6d7a99" },
+  { id: "brick", name: "Brick", hex: "#b0392e" },
+  { id: "terracotta", name: "Terracotta", hex: "#c05a3a" },
+  { id: "bronze", name: "Bronze", hex: "#a9762f" },
+  { id: "olive", name: "Olive", hex: "#8a8f2a" },
+  { id: "moss", name: "Moss", hex: "#6f8f3a" },
+  { id: "fern", name: "Fern", hex: "#4f9e57" },
+  { id: "pine", name: "Pine", hex: "#2f7d5e" },
+  { id: "seafoam", name: "Seafoam", hex: "#66c2a5" },
+  { id: "aqua", name: "Aqua", hex: "#3fbfcf" },
+  { id: "sky", name: "Sky", hex: "#74c0e8" },
+  { id: "cobalt", name: "Cobalt", hex: "#3a5fd0" },
+  { id: "sapphire", name: "Sapphire", hex: "#3949ab" },
+  { id: "periwinkle", name: "Periwinkle", hex: "#8e94e6" },
+  { id: "lilac", name: "Lilac", hex: "#b088e0" },
+  { id: "orchid", name: "Orchid", hex: "#c060c0" },
+  { id: "mulberry", name: "Mulberry", hex: "#9e4a72" },
+  { id: "maroon", name: "Maroon", hex: "#8e3a4e" },
+  { id: "salmon", name: "Salmon", hex: "#ef9080" },
+  { id: "sand", name: "Sand", hex: "#cbb079" },
+  { id: "graphite", name: "Graphite", hex: "#59647a" },
 ];
 
 export function colorHexById(id: string): string | undefined {
