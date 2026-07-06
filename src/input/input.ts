@@ -3,6 +3,8 @@ import type { Tool, PersonHit } from "../render/renderer";
 import type { Camera } from "../render/camera";
 import type { HoverState } from "../render/renderer";
 import type { Worker } from "../game/types";
+import { girderSupported, hasGirder } from "../game/reducer";
+import { MAX_DEPTH, MAX_ROWS } from "../game/constants";
 
 /** A room being inspected (hovered transiently, or clicked to pin). */
 export interface InspectRef {
@@ -229,8 +231,11 @@ export class InputController {
       return;
     }
 
-    // Girder tool: click-and-drag paints girders instead of panning the view.
-    if (this.selectedTool === "girder") {
+    // Girder tool: click-and-drag paints girders — but only when the press starts
+    // on a spot where a girder can actually go. Pressing anywhere else (sky, plot
+    // gaps, unowned/occupied/unsupported cells) falls through to panning, so you
+    // can still move around while the girder tool is selected.
+    if (this.selectedTool === "girder" && this.canPlaceGirderAt(this.camera.screenToCell(x, y))) {
       this.painting = true;
       this.lastPaintKey = null;
       this.lastPaintPt = { x, y };
@@ -379,6 +384,23 @@ export class InputController {
       }
     });
   };
+
+  /**
+   * Would placing a girder at this cell succeed for the local player? Mirrors the
+   * reducer's geometric/ownership rules (owned buildable plot, in bounds, empty,
+   * supported) so girder mode only hijacks the pointer for a real placement and
+   * otherwise lets the press pan the view. Money is intentionally not checked —
+   * being broke on a valid spot is a harmless no-op, not a reason to start panning.
+   */
+  private canPlaceGirderAt(cell: ReturnType<Camera["screenToCell"]>): boolean {
+    if (!cell) return false;
+    const plot = this.conn.getState().plots[cell.plotIndex];
+    if (!plot || plot.feature || plot.ownerId !== this.conn.session.playerId) return false;
+    if (cell.row >= MAX_ROWS || cell.row < -MAX_DEPTH) return false;
+    if (cell.col < 0 || cell.col >= plot.cols) return false;
+    if (hasGirder(plot, cell.col, cell.row)) return false;
+    return girderSupported(plot, cell.col, cell.row);
+  }
 
   /** Place a girder at a screen point (used by the drag-paint stroke). */
   private paintGirderAt(x: number, y: number): void {
