@@ -619,12 +619,15 @@ export class Renderer {
     for (const p of this.people.peopleIn(plot.index)) {
       const px = camera.worldToScreenX(leftWorld + p.x * CELL_SIZE);
       const py = camera.groundScreenY - p.floor * cell - p.yOff * cell; // stand back from the front edge
-      this.drawPerson(px, py, cell, p.color);
+      this.drawPerson(px, py, cell, p.color, p.sleeping);
       if (p.worker && cell >= 8) {
+        // A sleeping person lies down, so their hit box is wider and shorter.
+        const hw = p.sleeping ? 0.28 : 0.16;
+        const hTop = p.sleeping ? 0.2 : 0.42;
         this.personHits.push({
-          x0: px - cell * 0.16,
-          y0: py - cell * 0.42,
-          x1: px + cell * 0.16,
+          x0: px - cell * hw,
+          y0: py - cell * hTop,
+          x1: px + cell * hw,
           y1: py + cell * 0.06,
           id: p.id,
           worker: p.worker,
@@ -815,9 +818,13 @@ export class Renderer {
   }
 
   /** A little person standing on the floor line at (px, py) — feet at py. */
-  private drawPerson(px: number, py: number, cell: number, color: string): void {
+  private drawPerson(px: number, py: number, cell: number, color: string, sleeping = false): void {
     if (cell < 8) return; // too small to make out when zoomed way out
     const { ctx } = this;
+    if (sleeping) {
+      this.drawSleeper(px, py, cell, color);
+      return;
+    }
     const bodyH = cell * 0.26;
     const bw = Math.max(2, cell * 0.13);
     const headR = Math.max(1.3, cell * 0.07);
@@ -844,6 +851,45 @@ export class Renderer {
     ctx.fillStyle = "#caa07a";
     ctx.beginPath();
     ctx.arc(px, bTop - headR * 0.55, headR, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /** A person asleep, lying sideways in bed at (px, py) — feet at the floor line. */
+  private drawSleeper(px: number, py: number, cell: number, color: string): void {
+    const { ctx } = this;
+    const TAU = Math.PI * 2;
+    const len = cell * 0.46; // head-to-toe length
+    const th = cell * 0.15; // body/blanket thickness
+    const cy = py - cell * 0.08; // lying centreline, just off the floor
+    const left = px - len / 2;
+    const right = px + len / 2;
+    const rr = (x: number, y: number, w: number, h: number, r: number): void => {
+      const rad = Math.min(r, w / 2, h / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + rad, y);
+      ctx.arcTo(x + w, y, x + w, y + h, rad);
+      ctx.arcTo(x + w, y + h, x, y + h, rad);
+      ctx.arcTo(x, y + h, x, y, rad);
+      ctx.arcTo(x, y, x + w, y, rad);
+      ctx.closePath();
+      ctx.fill();
+    };
+    // Contact shadow.
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.beginPath();
+    ctx.ellipse(px, py, len * 0.55, Math.max(1, cell * 0.03), 0, 0, TAU);
+    ctx.fill();
+    // Pillow at the head (left) end.
+    const pillow = cell * 0.12;
+    ctx.fillStyle = "#d7dde4";
+    rr(left - pillow * 0.35, cy - th * 0.6, pillow, th * 1.2, pillow * 0.4);
+    // Blanket/body, a horizontal capsule from the shoulders to the feet.
+    ctx.fillStyle = color;
+    rr(left + pillow * 0.5, cy - th / 2, right - (left + pillow * 0.5), th, th * 0.5);
+    // Head resting on the pillow.
+    ctx.fillStyle = "#caa07a";
+    ctx.beginPath();
+    ctx.arc(left + pillow * 0.15, cy, cell * 0.075, 0, TAU);
     ctx.fill();
   }
 

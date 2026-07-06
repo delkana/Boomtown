@@ -1038,3 +1038,45 @@ describe("hotel guests (people sim)", () => {
     expect(sim.roomLight("p:u1", "hotel")).toBe(false); // hotel with no booking = dark
   });
 });
+
+describe("apartment sleep (people sim)", () => {
+  function aptState(): GameState {
+    const resident = { name: "Rex Sleeper", title: "", dailySalary: 0, days: [0, 1, 2, 3, 4], startHour: 9, endHour: 17, lunchHour: -1 };
+    const tenant = {
+      name: "Home", subset: "residential", trade: "Residences", openHour: 16, closeHour: 24,
+      openDays: [0, 1, 2, 3, 4, 5, 6], employees: 1, workers: [resident], appeal: 1, dailyRent: 100,
+    };
+    const plot: Plot = {
+      id: "p", index: 0, cols: 6, name: "P", feature: null, ownerId: "x",
+      girders: [], units: [{ id: "a1", kind: "apartment", col: 1, row: 0, width: 2, occupancy: 1, tenant }], cars: [],
+    };
+    return {
+      id: "g", tick: 0, speed: 1,
+      config: { cityName: "c", archetype: "pacifica", backgroundNear: "none", backgroundFar: "clear", latitude: 0, plotCount: 1, maxPlayers: 4, hasPassword: false },
+      players: {}, plots: { 0: plot }, nextUnitSeq: 2, nextPlayerSeq: 1,
+    };
+  }
+  const settle = (sim: PeopleSim, state: GameState, absHour: number): void => {
+    for (let s = 0; s < 60; s++) sim.update(state, absHour % 24, Math.floor(absHour / 24) % 7, absHour, 0.1);
+  };
+
+  it("resident is up in the evening, asleep overnight, out at work", () => {
+    const sim = new PeopleSim();
+    const state = aptState();
+    // 6pm Monday: home from work, awake → light on, drawn standing.
+    settle(sim, state, 18);
+    expect(sim.roomLight("p:a1", "apartment")).toBe(true);
+    expect(sim.peopleIn(0).some((v) => !v.sleeping)).toBe(true);
+    // 3am Tuesday: asleep → light off, but still present (lying in bed).
+    settle(sim, state, 27);
+    expect(sim.roomLight("p:a1", "apartment")).toBe(false);
+    expect(sim.peopleIn(0).some((v) => v.sleeping)).toBe(true);
+    // 1pm Monday: at their (external) job → gone, light off.
+    settle(sim, state, 13);
+    expect(sim.roomLight("p:a1", "apartment")).toBe(false);
+    expect(sim.peopleIn(0).length).toBe(0);
+    // Awake and clear of work ≥2h: at 7am (2h before the 9am start) they're up.
+    settle(sim, state, 24 + 7);
+    expect(sim.peopleIn(0).some((v) => v.sleeping)).toBe(false);
+  });
+});

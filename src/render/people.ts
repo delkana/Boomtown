@@ -92,6 +92,7 @@ export interface PersonView {
   x: number;
   floor: number;
   yOff: number; // upward offset in cells (stand back from the floor's front edge)
+  sleeping: boolean; // asleep in bed → drawn lying down
   color: string;
   worker: Worker | null;
 }
@@ -158,8 +159,9 @@ export class PeopleSim {
   peopleIn(plotIndex: number): PersonView[] {
     const out: PersonView[] = [];
     for (const p of this.people.values()) {
-      if (p.plotIndex === plotIndex && p.st !== "away" && !p.sleeping) {
-        out.push({ id: p.id, x: p.x, floor: p.floor, yOff: p.yOff, color: p.color, worker: p.worker });
+      if (p.plotIndex === plotIndex && p.st !== "away") {
+        const sleeping = p.sleeping && p.st === "atRoom"; // lie down only in the room
+        out.push({ id: p.id, x: p.x, floor: p.floor, yOff: p.yOff, sleeping, color: p.color, worker: p.worker });
       }
     }
     return out;
@@ -275,6 +277,37 @@ export class PeopleSim {
       p.arriveHour = start - 1 + ((h % 40) - 20) / 60;
       p.departHour = end + (((h >>> 5) % 15) + 1) / 60;
     }
+  }
+
+  // --- resident sleep --------------------------------------------------------
+
+  /** Whether an apartment resident is in their overnight sleep window right now. */
+  private residentSleeping(p: Person, absHour: number): boolean {
+    const today = Math.floor(absHour / 24);
+    // Sleep runs overnight, so check a window that started this evening or last.
+    for (const D of [today, today - 1]) {
+      const s = this.residentSleepWindow(p, D);
+      if (absHour >= s.bed && absHour < s.wake) return true;
+    }
+    return false;
+  }
+
+  /**
+   * A resident's 8-hour sleep window for the night beginning on day `D` (times
+   * in absolute hours). Kept ≥2h clear of their work shift on either side, with
+   * a ±15-minute nightly wobble on when they nod off and wake.
+   */
+  private residentSleepWindow(p: Person, D: number): { bed: number; wake: number } {
+    const w = p.worker;
+    const ws = w ? w.startHour : 9;
+    const we = w ? w.endHour : 17;
+    const lo = Math.max(we + 2, 20); // asleep no earlier than 2h after work / 8pm
+    const hi = Math.max(lo, ws + 14); // awake ≥2h before next day's start (ws+24-2-8)
+    const baseBed = lo + (hashString(`${p.id}:bedbase`) % 1000) / 1000 * (hi - lo);
+    const j = hashString(`${p.id}:sleep:${D}`);
+    const jBed = ((j % 31) - 15) / 60; // ±15 min
+    const jWake = (((j >>> 8) % 31) - 15) / 60;
+    return { bed: D * 24 + baseBed + jBed, wake: D * 24 + baseBed + 8 + jWake };
   }
 
   // --- hotel nightly bookings ------------------------------------------------
@@ -477,6 +510,7 @@ export class PeopleSim {
     // `active` = should be in the room; `leaving` = should head out.
     let active: boolean;
     let leaving: boolean;
+    p.sleeping = false; // hotel/resident set this when in their sleep window
     if (p.isHotel) {
       // Hotel guest: present between arrival and checkout for tonight's booking
       // (if any), asleep in bed during their sleep window.
@@ -489,22 +523,20 @@ export class PeopleSim {
         active = true;
         leaving = false;
       } else {
-        p.sleeping = false;
         active = false; // no booking → not arrived, or already checked out
         leaving = true; // if still in the room after checkout, head out
       }
+    } else if (p.isResident) {
+      // Home EXCEPT during work hours (they commute out); asleep overnight.
+      const onDay = p.openDays.includes(dayIndex);
+      const away = onDay && hourF >= p.arriveHour && hourF < p.departHour;
+      active = !away;
+      leaving = away;
+      if (!away) p.sleeping = this.residentSleeping(p, absHour);
     } else {
       const onDay = p.openDays.includes(dayIndex);
-      // Workers are in the room during work hours; residents are home EXCEPT
-      // during work hours (they commute out), so the two triggers invert.
-      if (p.isResident) {
-        const away = onDay && hourF >= p.arriveHour && hourF < p.departHour;
-        active = !away;
-        leaving = away;
-      } else {
-        active = onDay && hourF >= p.arriveHour && hourF < p.departHour;
-        leaving = hourF >= p.departHour || !onDay;
-      }
+      active = onDay && hourF >= p.arriveHour && hourF < p.departHour;
+      leaving = !active; // head out whenever off the clock (robust across midnight)
     }
     const ground = p.officeRow === 0;
     const walk = (target: number, speed = WALK_SPEED): boolean => {
@@ -552,6 +584,8 @@ export class PeopleSim {
         p.floor = p.officeRow;
         if (leaving) {
           p.st = ground ? "toExit" : "leaveToLift";
+        } else if (p.sleeping) {
+          walk(p.deskX, MILL_SPEED); // settle at their bed spot and stay
         } else {
           walk(this.millTarget(p), MILL_SPEED); // stand at a desk / amble about
         }
