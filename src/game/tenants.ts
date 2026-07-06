@@ -386,6 +386,7 @@ export function generateTenant(
     openDays: days,
     employees,
     workers: buildWorkers(kind, sub.id, seed, archetypeId, employees, days, sub.open, sub.close),
+    appeal: Math.max(0, Math.min(1, appeal)),
     dailyRent,
   };
 }

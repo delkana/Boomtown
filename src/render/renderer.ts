@@ -170,11 +170,12 @@ export class Renderer {
     const h = camera.viewH;
     const groundY = camera.groundScreenY; // follows vertical pan (offsetY)
 
-    this.hourF = ((state.tick * TICK_MINUTES) / 60) % 24; // for room lights
+    const absHour = (state.tick * TICK_MINUTES) / 60; // continuous in-game hours
+    this.hourF = absHour % 24; // for room lights
     this.dayIndex = dayOfWeek(state.tick);
     // People commute and elevator cars answer their calls — a continuous,
     // visual-only sim independent of the economy tick, scaled by game speed.
-    this.people.update(state, this.hourF, this.dayIndex, (dtMs / 1000) * (state.speed || 1));
+    this.people.update(state, this.hourF, this.dayIndex, absHour, (dtMs / 1000) * (state.speed || 1));
     this.personHits.length = 0; // rebuilt as people are drawn this frame
     this.trackedScreen = null;
 
@@ -570,7 +571,17 @@ export class Renderer {
       // only when the lobby (always) or a tenant's business hours say so.
       const g = (plot.girders ?? []).find((gg) => gg.col === unit.col && gg.row === unit.row);
       const occupied = !!unit.tenant;
-      const lit = unit.kind === "lobby" ? true : occupied && tenantLit(unit.tenant!, this.hourF, this.dayIndex);
+      // Apartments/hotels light up by actual occupancy (someone home / an awake
+      // guest); everything else follows the tenant's business hours.
+      let lit: boolean;
+      if (unit.kind === "lobby") {
+        lit = true;
+      } else if (occupied) {
+        const occ = this.people.roomLight(`${plot.id}:${unit.id}`, unit.kind);
+        lit = occ !== null ? occ : tenantLit(unit.tenant!, this.hourF, this.dayIndex);
+      } else {
+        lit = false;
+      }
       const subset = unit.tenant?.subset ?? "";
       this.drawRoomInterior(unit.kind, x + 1, y + 1, wpx - 2, cell - 2, facadeById(g?.style), unit.row < 0, lit, occupied, subset);
 

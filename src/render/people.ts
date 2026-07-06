@@ -1,6 +1,7 @@
 import type { GameState, Plot, Worker } from "../game/types";
 import { elevatorRuns, stepCar } from "../game/elevator";
 import { hashString } from "../game/hash";
+import { personName } from "../game/names";
 
 /**
  * PeopleSim — a client-side, visual-only simulation of the people moving through
@@ -24,6 +25,13 @@ const DWELL_TIME = 1.4; // seconds a car holds at a floor with its doors open
 const REACT_MAX = 0.4; // people take up to this long to react + step on/off
 const MILL_PERIOD = 7; // seconds between a worker picking a new spot to stand
 
+// Hotel timings (in-game hours). Check-in mid-afternoon, guests drift in over
+// the next few hours, sleep overnight, and check out by late morning.
+const HOTEL_CHECKIN = 15; // 3pm
+const HOTEL_ARRIVE_WINDOW = 6; // arrive up to 6h after check-in
+const HOTEL_CHECKOUT = 11; // final checkout 11am next day
+const HOTEL_SLOTS = 2; // up to 2 guests per booking
+
 type PState =
   | "away"
   | "toLift"
@@ -40,6 +48,10 @@ interface Person {
   id: string;
   plotIndex: number;
   isResident: boolean; // lives here + commutes OUT to work (vs. commuting IN)
+  isHotel: boolean; // a hotel guest on a nightly booking (arrive → sleep → check out)
+  roomId: string; // "${plot.id}:${unit.id}" — for per-room booking + lights
+  appeal: number; // room appeal (drives hotel booking chance)
+  sleeping: boolean; // hotel guest asleep in bed → hidden, light off
   worker: Worker | null; // identity (name, title, shift…)
   roomLeft: number; // office footprint, for milling bounds
   roomW: number;
@@ -88,18 +100,24 @@ const WORKER_COLORS = ["#39424f", "#4a3f2f", "#2f3a44", "#463a4a", "#3a4a3a", "#
 
 /**
  * Room kinds whose people the sim animates: workers who commute IN to work
- * (offices/clinics/shops/restaurants) and apartment residents who live here and
- * commute OUT to a job (see the resident inversion in stepPerson).
+ * (offices/clinics/shops/restaurants), apartment residents who live here and
+ * commute OUT to a job, and hotel guests on nightly bookings (see stepPerson).
  */
-const PEOPLE_KINDS = new Set(["office", "medical", "store", "restaurant", "apartment"]);
+const PEOPLE_KINDS = new Set(["office", "medical", "store", "restaurant", "apartment", "hotel"]);
 
 export class PeopleSim {
   private people = new Map<string, Person>();
   private cars = new Map<string, Car>();
   private t = 0; // accumulated sim seconds (drives milling)
+  private archetype = "pacifica"; // city archetype (for hotel guest names)
 
-  /** Advance the simulation. `hourF` 0..24, `dayIndex` 0=Mon, `dtSec` scaled by speed. */
-  update(state: GameState, hourF: number, dayIndex: number, dtSec: number): void {
+  /**
+   * Advance the simulation. `hourF` 0..24, `dayIndex` 0=Mon, `absHour` is the
+   * continuous in-game hour (for cross-midnight hotel bookings), `dtSec` scaled
+   * by speed.
+   */
+  update(state: GameState, hourF: number, dayIndex: number, absHour: number, dtSec: number): void {
+    this.archetype = state.config.archetype ?? "pacifica";
     this.reconcile(state);
     const dt = Math.min(dtSec, 0.1); // clamp long frame gaps
     this.t += dt;
@@ -109,7 +127,21 @@ export class PeopleSim {
       if (!plot.cars || plot.cars.length === 0) continue;
       this.dispatch(plot, dt);
     }
-    for (const p of this.people.values()) this.stepPerson(p, hourF, dayIndex, dt);
+    for (const p of this.people.values()) this.stepPerson(p, hourF, dayIndex, absHour, dt);
+  }
+
+  /**
+   * Whether an apartment/hotel room's light should be on: a resident is home, or
+   * a hotel guest is in the room and awake. Null for other kinds (use tenant
+   * hours). `roomId` is "${plot.id}:${unit.id}".
+   */
+  roomLight(roomId: string, kind: string): boolean | null {
+    if (kind !== "apartment" && kind !== "hotel") return null;
+    for (const p of this.people.values()) {
+      if (p.roomId !== roomId) continue;
+      if (p.st === "atRoom" && !p.sleeping) return true;
+    }
+    return false;
   }
 
   /** Smoothed car position (falls back to the authoritative one). */
@@ -126,7 +158,7 @@ export class PeopleSim {
   peopleIn(plotIndex: number): PersonView[] {
     const out: PersonView[] = [];
     for (const p of this.people.values()) {
-      if (p.plotIndex === plotIndex && p.st !== "away") {
+      if (p.plotIndex === plotIndex && p.st !== "away" && !p.sleeping) {
         out.push({ id: p.id, x: p.x, floor: p.floor, yOff: p.yOff, color: p.color, worker: p.worker });
       }
     }
@@ -163,14 +195,21 @@ export class PeopleSim {
         if (!unit.tenant || !PEOPLE_KINDS.has(unit.kind)) continue;
         const shaftCol = unit.row === 0 ? -1 : this.shaftFor(plot, unit.col, unit.row);
         if (unit.row !== 0 && shaftCol === null) continue; // room unreachable by lift → no people
-        const count = Math.max(1, unit.tenant.employees);
+        const roomId = `${plot.id}:${unit.id}`;
+        const isHotel = unit.kind === "hotel";
+        // Hotels always get 2 guest slots; whether each is actually booked is
+        // decided per night (by appeal) in stepPerson.
+        const count = isHotel ? HOTEL_SLOTS : Math.max(1, unit.tenant.employees);
         for (let i = 0; i < count; i++) {
-          const id = `${plot.id}:${unit.id}:w${i}`;
+          const id = `${roomId}:${isHotel ? "g" : "w"}${i}`;
           desired.add(id);
           const p = this.people.get(id) ?? this.createPerson(id, plot.index);
           // Keep identity/location/schedule fresh (tenant or layout may have changed).
           p.isResident = unit.kind === "apartment";
-          p.worker = unit.tenant.workers[i] ?? null;
+          p.isHotel = isHotel;
+          p.roomId = roomId;
+          p.appeal = unit.tenant.appeal ?? 0.5;
+          if (!isHotel) p.worker = unit.tenant.workers[i] ?? null; // hotel identity set per booking
           p.roomLeft = unit.col;
           p.roomW = unit.width;
           // Desks sit slightly inset from the side walls (not right at the edges).
@@ -178,7 +217,7 @@ export class PeopleSim {
           p.deskX = unit.col + margin + ((i + 0.5) / count) * (unit.width - 2 * margin);
           p.officeRow = unit.row;
           p.shaftCol = shaftCol ?? -1;
-          this.applySchedule(p);
+          if (!isHotel) this.applySchedule(p);
           this.people.set(id, p);
         }
       }
@@ -194,6 +233,10 @@ export class PeopleSim {
       id,
       plotIndex,
       isResident: false,
+      isHotel: false,
+      roomId: "",
+      appeal: 0.5,
+      sleeping: false,
       worker: null,
       roomLeft: 0,
       roomW: 1,
@@ -232,6 +275,52 @@ export class PeopleSim {
       p.arriveHour = start - 1 + ((h % 40) - 20) / 60;
       p.departHour = end + (((h >>> 5) % 15) + 1) / 60;
     }
+  }
+
+  // --- hotel nightly bookings ------------------------------------------------
+
+  /** The active booking for a hotel guest slot at `absHour`, or null. */
+  private hotelBooking(
+    p: Person,
+    absHour: number,
+  ): { arrival: number; bedtime: number; wake: number; checkout: number; name: string } | null {
+    const slot = p.id.endsWith(":g1") ? 1 : 0;
+    const today = Math.floor(absHour / 24);
+    // A booking checks in this afternoon, or checked in yesterday and is still
+    // sleeping/checking out this morning — so consider today and yesterday.
+    for (const day of [today, today - 1]) {
+      const b = this.bookingFor(p.roomId, p.appeal, day, slot);
+      if (b && absHour >= b.arrival && absHour < b.checkout) return b;
+    }
+    return null;
+  }
+
+  /**
+   * The booking a room+slot has for check-in day `D` (times in absolute hours),
+   * or null if the room isn't booked that night or the slot is unused. Whether a
+   * room is booked is a per-night dice roll weighted by the room's appeal; 1 in 4
+   * bookings is for 2 people.
+   */
+  private bookingFor(
+    roomId: string,
+    appeal: number,
+    D: number,
+    slot: number,
+  ): { arrival: number; bedtime: number; wake: number; checkout: number; name: string } | null {
+    if (D < 0) return null;
+    if (hashString(`${roomId}:book:${D}`) % 10000 >= appeal * 10000) return null; // not booked tonight
+    const guests = hashString(`${roomId}:cnt:${D}`) % 100 < 25 ? 2 : 1;
+    if (slot >= guests) return null;
+    const h = hashString(`${roomId}:g${slot}:${D}`);
+    const base = D * 24;
+    const arrival = base + HOTEL_CHECKIN + (h % (HOTEL_ARRIVE_WINDOW * 60)) / 60; // 3pm + 0–6h
+    let bedtime = base + 20 + ((h >>> 6) % (4 * 60)) / 60; // 8pm–midnight
+    if (bedtime < arrival + 1) bedtime = arrival + 1;
+    const wake = bedtime + 6 + ((h >>> 12) % (3 * 60)) / 60; // sleep 6–9h
+    const limit = base + 24 + HOTEL_CHECKOUT; // 11am the next day
+    let checkout = wake + 0.25 + ((h >>> 18) % 90) / 60; // 15min–1h45 after waking
+    if (checkout > limit) checkout = limit;
+    return { arrival, bedtime, wake, checkout, name: personName(this.archetype, h) };
   }
 
   /** Nearest elevator column reaching both the ground and the office floor. */
@@ -384,20 +473,38 @@ export class PeopleSim {
 
   // --- per-worker state machine ---------------------------------------------
 
-  private stepPerson(p: Person, hourF: number, dayIndex: number, dt: number): void {
-    const onDay = p.openDays.includes(dayIndex);
-    // `active` = should be in the room; `leaving` = should head out. Workers are
-    // in the room during work hours; residents are home EXCEPT during work hours
-    // (they commute out), so the two triggers invert.
+  private stepPerson(p: Person, hourF: number, dayIndex: number, absHour: number, dt: number): void {
+    // `active` = should be in the room; `leaving` = should head out.
     let active: boolean;
     let leaving: boolean;
-    if (p.isResident) {
-      const away = onDay && hourF >= p.arriveHour && hourF < p.departHour; // out at their job
-      active = !away;
-      leaving = away;
+    if (p.isHotel) {
+      // Hotel guest: present between arrival and checkout for tonight's booking
+      // (if any), asleep in bed during their sleep window.
+      const b = this.hotelBooking(p, absHour);
+      if (b) {
+        p.sleeping = absHour >= b.bedtime && absHour < b.wake;
+        if (!p.worker || p.worker.name !== b.name) {
+          p.worker = { name: b.name, title: "", dailySalary: 0, days: [], startHour: 0, endHour: 0, lunchHour: -1 };
+        }
+        active = true;
+        leaving = false;
+      } else {
+        p.sleeping = false;
+        active = false; // no booking → not arrived, or already checked out
+        leaving = true; // if still in the room after checkout, head out
+      }
     } else {
-      active = onDay && hourF >= p.arriveHour && hourF < p.departHour;
-      leaving = hourF >= p.departHour || !onDay;
+      const onDay = p.openDays.includes(dayIndex);
+      // Workers are in the room during work hours; residents are home EXCEPT
+      // during work hours (they commute out), so the two triggers invert.
+      if (p.isResident) {
+        const away = onDay && hourF >= p.arriveHour && hourF < p.departHour;
+        active = !away;
+        leaving = away;
+      } else {
+        active = onDay && hourF >= p.arriveHour && hourF < p.departHour;
+        leaving = hourF >= p.departHour || !onDay;
+      }
     }
     const ground = p.officeRow === 0;
     const walk = (target: number, speed = WALK_SPEED): boolean => {

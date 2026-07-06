@@ -102,6 +102,8 @@ export interface Tenant {
   employees: number;
   /** The roster of people who work / live here (names, titles, shifts). */
   workers: Worker[];
+  /** Room appeal (0..1) at move-in; drives hotel nightly-booking chance. */
+  appeal: number;
   /** Rent paid to the plot owner each day at midnight. */
   dailyRent: number;
 }

@@ -11,7 +11,8 @@ import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
 import { servicedRows, elevatorRuns, stepCar, CAR_SPEED, MAX_CARS_PER_SHAFT } from "../src/game/elevator";
 import { facadeById, DEFAULT_FACADE } from "../src/game/facades";
 import { generateTenant, tenantLit, hasTrades } from "../src/game/tenants";
-import type { GameState } from "../src/game/types";
+import { PeopleSim } from "../src/render/people";
+import type { GameState, Plot } from "../src/game/types";
 
 /** Indices of the first `n` buildable (non-feature) plots. */
 function buildable(s: GameState, n: number): number[] {
@@ -981,5 +982,59 @@ describe("serialize / deserialize", () => {
     // And it's a real copy, not a shared reference.
     copy.players["p1"].money = 0;
     expect(s.players["p1"].money).not.toBe(0);
+  });
+});
+
+describe("hotel guests (people sim)", () => {
+  function hotelState(appeal: number): GameState {
+    const tenant = {
+      name: "Grand", subset: "hotel", trade: "Suites", openHour: 14, closeHour: 24,
+      openDays: [0, 1, 2, 3, 4, 5, 6], employees: 2, workers: [], appeal, dailyRent: 100,
+    };
+    const plot: Plot = {
+      id: "p", index: 0, cols: 6, name: "P", feature: null, ownerId: "x",
+      girders: [], units: [{ id: "u1", kind: "hotel", col: 1, row: 0, width: 2, occupancy: 1, tenant }], cars: [],
+    };
+    return {
+      id: "g", tick: 0, speed: 1,
+      config: { cityName: "c", archetype: "pacifica", backgroundNear: "none", backgroundFar: "clear", latitude: 0, plotCount: 1, maxPlayers: 4, hasPassword: false },
+      players: {}, plots: { 0: plot }, nextUnitSeq: 2, nextPlayerSeq: 1,
+    };
+  }
+
+  // Settle the sim at a fixed continuous hour (lets guests walk to/from the room).
+  const settle = (sim: PeopleSim, state: GameState, absHour: number): void => {
+    for (let s = 0; s < 40; s++) sim.update(state, absHour % 24, Math.floor(absHour / 24) % 7, absHour, 0.1);
+  };
+
+  it("books rooms by appeal — guests arrive, light the room, then check out", () => {
+    const sim = new PeopleSim();
+    const state = hotelState(1); // always booked
+    let everLit = false, everPresent = false, everEmpty = false;
+    for (let hr = 0; hr < 48; hr++) {
+      settle(sim, state, hr);
+      const lit = sim.roomLight("p:u1", "hotel");
+      const present = sim.peopleIn(0).length > 0;
+      if (lit) everLit = true;
+      if (present) everPresent = true;
+      if (!present && lit === false) everEmpty = true;
+    }
+    expect(everLit).toBe(true); // an awake guest lights the room
+    expect(everPresent).toBe(true); // guests are drawn while up
+    expect(everEmpty).toBe(true); // and the room empties out between bookings
+  });
+
+  it("never books a zero-appeal room", () => {
+    const sim = new PeopleSim();
+    const state = hotelState(0);
+    for (let hr = 0; hr < 48; hr++) settle(sim, state, hr);
+    expect(sim.roomLight("p:u1", "hotel")).toBe(false);
+    expect(sim.peopleIn(0).length).toBe(0);
+  });
+
+  it("only overrides lighting for apartments and hotels", () => {
+    const sim = new PeopleSim();
+    expect(sim.roomLight("p:u1", "office")).toBeNull(); // offices use business hours
+    expect(sim.roomLight("p:u1", "hotel")).toBe(false); // hotel with no booking = dark
   });
 });
