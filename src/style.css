@@ -1135,56 +1135,63 @@ button.primary.big {
     max-width: 66vw;
   }
 
-  /* Bottom: one horizontally-scrollable toolbar row (no ragged wrap). */
+  /* Bottom: one horizontally-scrollable toolbar row (no ragged wrap), kept
+     compact so it takes as little of the screen as possible. */
   #toolbar {
     left: 6px;
     right: 6px;
     transform: none;
     max-width: none;
-    bottom: calc(8px + env(safe-area-inset-bottom));
+    bottom: calc(6px + env(safe-area-inset-bottom));
     flex-wrap: nowrap;
     overflow-x: auto;
     overflow-y: hidden;
     justify-content: flex-start;
-    gap: 6px;
-    padding: 8px;
+    gap: 5px;
+    padding: 5px;
     -webkit-overflow-scrolling: touch;
   }
   .tool {
     flex: 0 0 auto;
+    min-width: 0;
+    padding: 5px 8px;
+    gap: 1px 6px;
+  }
+  .tool .tool-label {
+    font-size: 12px;
+  }
+  .tool .tool-cost {
+    font-size: 10px;
+  }
+  .tool .tool-key {
+    display: none; /* keyboard shortcut hint is meaningless on touch */
   }
 
-  /* Nav controls sit just above the toolbar, right-aligned. */
+  /* Nav controls sit just above the toolbar, right-aligned. Zoom buttons are
+     dropped on touch — pinch to zoom instead. */
   #nav-controls {
-    bottom: calc(66px + env(safe-area-inset-bottom));
+    bottom: calc(52px + env(safe-area-inset-bottom));
     right: calc(8px + env(safe-area-inset-right));
+    gap: 5px;
+    padding: 6px;
   }
   #nav-controls #zoom-in,
   #nav-controls #zoom-out {
-    width: 44px;
-    height: 44px;
+    display: none;
   }
   #nav-controls button {
-    min-height: 40px;
+    min-height: 32px;
   }
 
-  /* The hint pill must wrap on a narrow screen, and gets out of the way when a
-     category sub-menu is open (it would otherwise overlap the sub-menu items). */
+  /* No hint pill on mobile — it just eats screen space. */
   #hint {
-    white-space: normal;
-    max-width: 92vw;
-    text-align: center;
-  }
-  #hint.raised,
-  #hint.raised2 {
     display: none;
   }
 
-  /* Bigger, easier-to-hit controls. */
-  #topbar .speed button,
+  /* Slightly bigger tap targets for the small panel controls. */
   .floor-btn,
   .door-btn {
-    min-height: 36px;
+    min-height: 34px;
   }
 
   /* Lobby / create-city modal: stack paired fields and use the modal as the
