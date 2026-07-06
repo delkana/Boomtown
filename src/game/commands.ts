@@ -78,6 +78,14 @@ export type Command =
       /** A cell in the shaft; the car nearest this floor is removed. */
       col: number;
       row: number;
+    }
+  | {
+      type: "SET_CAR_HOME";
+      playerId: string;
+      plotIndex: number;
+      /** Shaft column; every car in it gets this idle-return floor. */
+      col: number;
+      home: number;
     };
 
 /** A function that accepts commands. Local dispatcher today; socket send later. */

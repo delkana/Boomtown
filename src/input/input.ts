@@ -39,6 +39,8 @@ export class InputController {
   private keys = new Set<string>();
   /** A room clicked to "pin" its inspector panel open. */
   private pinned: { plotIndex: number; unitId: string } | null = null;
+  /** An elevator shaft clicked to open its settings panel. */
+  private pinnedShaft: { plotIndex: number; col: number } | null = null;
   private lastInspectKey: string | null = null;
 
   constructor(
@@ -59,6 +61,7 @@ export class InputController {
    * the hovered room while in inspect (no-tool) mode. Null if nothing to show.
    */
   inspected(): InspectRef | null {
+    if (this.pinnedShaft) return null; // the shaft panel takes over
     const state = this.conn.getState();
     if (this.pinned) {
       const plot = state.plots[this.pinned.plotIndex];
@@ -79,10 +82,25 @@ export class InputController {
     return plot?.units.find((u) => u.row === row && col >= u.col && col < u.col + u.width);
   }
 
+  /** The elevator shaft whose settings panel is open (still exists), or null. */
+  inspectedShaft(): { plotIndex: number; col: number } | null {
+    if (!this.pinnedShaft) return null;
+    const plot = this.conn.getState().plots[this.pinnedShaft.plotIndex];
+    if (!plot?.units.some((u) => u.kind === "elevator" && u.col === this.pinnedShaft!.col)) {
+      this.pinnedShaft = null;
+      return null;
+    }
+    return this.pinnedShaft;
+  }
+
   /** Fire onInspect only when the inspected room actually changes. */
   private notifyInspectIfChanged(): void {
     const cur = this.inspected();
-    const key = cur ? `${cur.pinned ? "P" : "H"}:${cur.plotIndex}:${cur.unitId}` : null;
+    const shaft = this.inspectedShaft();
+    const key =
+      (cur ? `${cur.pinned ? "P" : "H"}:${cur.plotIndex}:${cur.unitId}` : "") +
+      "|" +
+      (shaft ? `S:${shaft.plotIndex}:${shaft.col}` : "");
     if (key !== this.lastInspectKey) {
       this.lastInspectKey = key;
       this.onInspect();
@@ -216,9 +234,22 @@ export class InputController {
     this.dragging = false;
     if (wasDrag) return;
 
-    // Inspect mode (no tool): click toggles the pinned room inspector.
+    // Inspect mode (no tool): click toggles a room inspector or a shaft panel.
     if (!this.selectedTool) {
       const cell = this.camera.screenToCell(x, y);
+      const plot = cell ? this.conn.getState().plots[cell.plotIndex] : undefined;
+      const onShaft =
+        !!cell && !!plot?.units.some((u) => u.kind === "elevator" && u.col === cell.col && u.row === cell.row);
+      if (onShaft && cell) {
+        this.pinned = null;
+        this.pinnedShaft =
+          this.pinnedShaft && this.pinnedShaft.plotIndex === cell.plotIndex && this.pinnedShaft.col === cell.col
+            ? null // click the same shaft again → close
+            : { plotIndex: cell.plotIndex, col: cell.col };
+        this.notifyInspectIfChanged();
+        return;
+      }
+      this.pinnedShaft = null;
       const room = cell ? this.roomAt(cell.plotIndex, cell.col, cell.row) : undefined;
       if (room && cell) {
         this.pinned =
@@ -299,12 +330,12 @@ export class InputController {
   }
 
   /**
-   * Suppress the browser context menu on the canvas. Right-click deliberately
-   * does NOT delete anything — demolition is only via the Destroy tool, so it
-   * can't be triggered by accident.
+   * Right-click cancels: it exits build mode by deselecting the current tool
+   * (it deliberately does NOT delete — demolition is only via the Destroy tool).
    */
   private onContextMenu = (e: MouseEvent): void => {
     e.preventDefault();
+    if (this.selectedTool) this.setSelected(null);
   };
 
   /**
@@ -360,8 +391,9 @@ export class InputController {
     };
     if (map[e.key]) this.setSelected(map[e.key]);
     if (e.key === "Escape") {
-      if (this.pinned) {
+      if (this.pinned || this.pinnedShaft) {
         this.pinned = null;
+        this.pinnedShaft = null;
         this.notifyInspectIfChanged();
       }
       this.setSelected(null);

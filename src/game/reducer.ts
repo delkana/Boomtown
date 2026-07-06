@@ -43,6 +43,8 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
       return placeElevatorCar(state, cmd);
     case "SELL_ELEVATOR_CAR":
       return sellElevatorCar(state, cmd);
+    case "SET_CAR_HOME":
+      return setCarHome(state, cmd);
     default: {
       const _never: never = cmd;
       return { ok: false, error: `Unknown command ${(_never as Command).type}` };
@@ -206,7 +208,7 @@ function placeUnit(
   player.money -= roomCost + carCost;
   if (withCar) {
     if (!plot.cars) plot.cars = [];
-    plot.cars.push({ id: `car${state.nextUnitSeq++}`, col: cmd.col, position: cmd.row, dir: 1 });
+    plot.cars.push({ id: `car${state.nextUnitSeq++}`, col: cmd.col, position: cmd.row, home: cmd.row });
   }
   return ok();
 }
@@ -257,8 +259,28 @@ function placeElevatorCar(
   if (player.money < ELEVATOR_CAR_COST) return fail("Not enough money");
 
   if (!plot.cars) plot.cars = [];
-  plot.cars.push({ id: `car${state.nextUnitSeq++}`, col: cmd.col, position: cmd.row, dir: 1 });
+  // A new car idles at the floor it was installed on.
+  plot.cars.push({ id: `car${state.nextUnitSeq++}`, col: cmd.col, position: cmd.row, home: cmd.row });
   player.money -= ELEVATOR_CAR_COST;
+  return ok();
+}
+
+function setCarHome(
+  state: GameState,
+  cmd: Extract<Command, { type: "SET_CAR_HOME" }>,
+): CommandResult {
+  const owned = ownedBuildablePlot(state, cmd.playerId, cmd.plotIndex);
+  if (!owned.ok) return fail(owned.error);
+  const plot = owned.plot;
+
+  const cars = (plot.cars ?? []).filter((c) => c.col === cmd.col);
+  if (cars.length === 0) return fail("No elevator cars in this shaft");
+  const run = runContaining(plot, cmd.col, Math.round(cars[0].position));
+  if (!run) return fail("No shaft here");
+  const home = Math.max(run.from, Math.min(run.to, Math.round(cmd.home)));
+  for (const c of cars) {
+    if (Math.round(c.position) >= run.from && Math.round(c.position) <= run.to) c.home = home;
+  }
   return ok();
 }
 

@@ -93,7 +93,7 @@ function enterGame(conn: GameConnection): void {
     conn,
     () => hud.update(),
     (sx, sy, delta) => renderer.addMoneyPopup(sx, sy, delta),
-    () => hud.renderInspector(),
+    () => hud.renderInspect(),
   );
   hud = new Hud(
     conn,
@@ -109,6 +109,9 @@ function enterGame(conn: GameConnection): void {
       input.girderStyle = id;
       hud.update();
     },
+    () => input.inspectedShaft(),
+    (plotIndex, col, home) =>
+      conn.dispatch({ type: "SET_CAR_HOME", playerId: conn.session.playerId, plotIndex, col, home }),
   );
 
   const totalPlots = Object.keys(conn.getState().plots).length;

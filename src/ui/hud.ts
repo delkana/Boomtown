@@ -21,6 +21,7 @@ import {
   type HeatmapKind,
 } from "../game/heatmaps";
 import { headcountLabel, hasTrades, tenantOpen, daysLabel } from "../game/tenants";
+import { elevatorRuns, runContaining } from "../game/elevator";
 import { dayOfWeek } from "../game/clock";
 import { projectedDailyNet } from "../game/tick";
 import type { GameConnection } from "../net/connection";
@@ -54,6 +55,7 @@ export class Hud {
   private lastSelectedTool: Tool = "claim";
   private overlayEl = must("overlay");
   private inspectorEl = must("inspector");
+  private shaftPanelEl = must("shaft-panel");
   private hintEl = must("hint");
 
   /** Which heatmap overlay to draw (read by the render loop each frame). */
@@ -70,6 +72,8 @@ export class Hud {
     private getInspected: () => InspectRef | null,
     private getGirderStyle: () => string,
     private onGirderStyle: (id: string) => void,
+    private getInspectedShaft: () => { plotIndex: number; col: number } | null,
+    private onSetCarHome: (plotIndex: number, col: number, home: number) => void,
   ) {
     this.buildToolbar();
     this.buildGirderStyles();
@@ -162,6 +166,46 @@ export class Hud {
       <div class="insp-row net"><span>Net / day</span><span class="${dailyNet >= 0 ? "pos" : "neg"}">${dailyNet < 0 ? "-" : "+"}$${Math.abs(dailyNet).toLocaleString()}</span></div>
       <div class="insp-hint">${info.pinned ? "Click again or Esc to close" : "Click to pin"}</div>`;
     this.inspectorEl.classList.remove("hidden");
+  }
+
+  /** Render both the room inspector and the shaft-settings panel. */
+  renderInspect(): void {
+    this.renderInspector();
+    this.renderShaftPanel();
+  }
+
+  /** Settings panel for a clicked elevator shaft: set the cars' idle floor. */
+  renderShaftPanel(): void {
+    const ref = this.getInspectedShaft();
+    if (!ref) {
+      this.shaftPanelEl.classList.add("hidden");
+      return;
+    }
+    const plot = this.conn.getState().plots[ref.plotIndex];
+    const cars = (plot?.cars ?? []).filter((c) => c.col === ref.col);
+    const run = plot
+      ? runContaining(plot, ref.col, cars.length ? Math.round(cars[0].position) : 0) ??
+        elevatorRuns(plot).find((r) => r.col === ref.col)
+      : undefined;
+    if (!plot || !run) {
+      this.shaftPanelEl.classList.add("hidden");
+      return;
+    }
+    const home = cars.length ? cars[0].home : run.from;
+    const floorLabel = (f: number): string => (f === 0 ? "G" : f > 0 ? String(f) : `B${-f}`);
+    let buttons = "";
+    for (let f = run.to; f >= run.from; f--)
+      buttons += `<button class="floor-btn${f === home ? " active" : ""}" data-floor="${f}">${floorLabel(f)}</button>`;
+
+    this.shaftPanelEl.innerHTML = `
+      <div class="insp-title">Elevator Bank</div>
+      <div class="insp-sub">${cars.length} car${cars.length === 1 ? "" : "s"} · Floors ${floorLabel(run.from)}–${floorLabel(run.to)}</div>
+      <div class="shaft-note">Idle return floor</div>
+      <div class="floor-grid">${buttons}</div>
+      <div class="insp-hint">Cars wait here until a passenger calls them (coming soon). Esc to close.</div>`;
+    for (const el of Array.from(this.shaftPanelEl.querySelectorAll<HTMLElement>("[data-floor]")))
+      el.addEventListener("click", () => this.onSetCarHome(ref.plotIndex, ref.col, Number(el.dataset.floor)));
+    this.shaftPanelEl.classList.remove("hidden");
   }
 
   private buildOverlay(): void {
@@ -303,7 +347,7 @@ export class Hud {
     for (const el of Array.from(this.overlayEl.children) as HTMLElement[]) {
       if (el.dataset.hm) el.classList.toggle("active", el.dataset.hm === this.heatmap);
     }
-    this.renderInspector(); // keep pinned/hovered room stats live
+    this.renderInspect(); // keep pinned/hovered room + shaft panels live
 
     const myPlots = Object.values(state.plots).filter((p) => p.ownerId === me);
     const myUnits = myPlots.flatMap((p) => p.units);
@@ -354,6 +398,7 @@ export class Hud {
       this.lastSelectedTool = sel0;
       const c = categoryOf(sel0);
       if (c) this.openCategory = c;
+      else if (sel0 === null) this.openCategory = null; // deselect exits the menu
     }
     this.renderToolSubmenu();
 
@@ -403,8 +448,10 @@ export class Hud {
       this.hintEl.textContent = `Girders first (G, drag to paint), then rooms (1–7), a shaft (8) + its cars (9). C to claim. Drag or arrows to pan.`;
       this.hintEl.className = "panel";
     }
-    // Lift the hint above any open sub-menus so nothing overlaps.
-    this.hintEl.classList.toggle("raised", this.openCategory !== null || sel === "girder");
+    // Lift the hint above whichever sub-menus are open so nothing overlaps.
+    const girderOpen = sel === "girder"; // the facade strip shows too
+    this.hintEl.classList.toggle("raised", this.openCategory !== null && !girderOpen);
+    this.hintEl.classList.toggle("raised2", girderOpen);
   }
 
   /** Roster of everyone in this city, with owner color and holdings. */

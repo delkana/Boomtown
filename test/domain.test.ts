@@ -570,21 +570,30 @@ describe("elevator cars", () => {
     expect(overflow.ok).toBe(false);
   });
 
-  it("cars travel continuously and bounce at the shaft ends (stepCar)", () => {
-    // Motion is time-based (not tick-based): step up from the bottom of a 0..4 shaft.
-    let st = stepCar(0, 1, 0, 4, 0.5);
-    expect(st.pos).toBeGreaterThan(0); // moved up off the ground
-    // Run for a long time; must always stay within [from,to].
+  it("cars ease toward a target floor and then hold there (stepCar)", () => {
+    // From the ground, head to floor 4 (time-based motion, not tick-based).
+    let st = stepCar(0, 4, 0, 4, 0.5);
+    expect(st.pos).toBeGreaterThan(0); // started moving up
     for (let i = 0; i < 400; i++) {
-      st = stepCar(st.pos, st.dir, 0, 4, 0.25);
+      st = stepCar(st.pos, 4, 0, 4, 0.25);
       expect(st.pos).toBeGreaterThanOrEqual(0);
       expect(st.pos).toBeLessThanOrEqual(4);
     }
-    // It reverses at the ends rather than overshooting.
-    expect(stepCar(4, 1, 0, 4, 1).dir).toBe(-1);
-    expect(stepCar(0, -1, 0, 4, 1).dir).toBe(1);
-    // A single-floor shaft has nowhere to go.
-    expect(stepCar(2, 1, 2, 2, 0.5).pos).toBe(2);
+    expect(st.pos).toBeCloseTo(4, 5); // reaches the target and stays
+    // A car already at its target stays put; target clamps to the shaft.
+    expect(stepCar(2, 2, 0, 4, 1).pos).toBe(2);
+    expect(stepCar(1, -3, 0, 4, 1).pos).toBeLessThan(1); // clamps toward 0
+    expect(stepCar(2, 2, 2, 2, 0.5).pos).toBe(2); // single-floor shaft
+  });
+
+  it("sets the shaft cars' idle home floor (clamped to the shaft)", () => {
+    const s = shaftTower(4); // shaft floors 0..4, auto car idling at 0
+    expect(s.plots[0].cars[0].home).toBe(0);
+    const r = applyCommand(s, { type: "SET_CAR_HOME", playerId: "p1", plotIndex: 0, col: 2, home: 3 });
+    expect(r.ok).toBe(true);
+    expect(s.plots[0].cars[0].home).toBe(3);
+    applyCommand(s, { type: "SET_CAR_HOME", playerId: "p1", plotIndex: 0, col: 2, home: 99 });
+    expect(s.plots[0].cars[0].home).toBe(4); // clamped to the top floor
   });
 
   it("removing the shaft prunes its now-orphaned car", () => {

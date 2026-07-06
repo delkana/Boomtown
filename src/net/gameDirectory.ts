@@ -191,8 +191,11 @@ export class GameDirectory {
         if (!plot.cars) {
           plot.cars = [];
           for (const run of elevatorRuns(plot)) {
-            plot.cars.push({ id: `car${carSeq++}`, col: run.col, position: run.from, dir: 1 });
+            plot.cars.push({ id: `car${carSeq++}`, col: run.col, position: run.from, home: run.from });
           }
+        } else {
+          // Older saves: cars had a patrol `dir` and no idle `home`.
+          for (const c of plot.cars) if (typeof (c as { home?: number }).home !== "number") c.home = c.position;
         }
       }
       g.state.nextUnitSeq = carSeq;

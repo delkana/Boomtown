@@ -52,8 +52,11 @@ export interface ElevatorCar {
   col: number;
   /** Current floor as a fractional row (interpolates while moving). */
   position: number;
-  /** Current travel direction: +1 up, −1 down. */
-  dir: number;
+  /**
+   * The floor the car returns to and waits at when idle. Cars don't patrol —
+   * they sit here until given a new home (or, later, a passenger call).
+   */
+  home: number;
 }
 
 /**

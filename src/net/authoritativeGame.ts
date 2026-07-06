@@ -132,7 +132,7 @@ export class AuthoritativeGame {
         id: `car${this.state.nextUnitSeq++}`,
         col: run.col,
         position: run.from,
-        dir: 1,
+        home: run.from,
       });
     }
   }

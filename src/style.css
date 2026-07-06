@@ -44,6 +44,9 @@ body {
   padding: 40px 24px 60px;
 }
 
+.lobby-header {
+  text-align: center;
+}
 .lobby-header h1 {
   margin: 0;
   font-size: 44px;
@@ -633,11 +636,39 @@ button.primary.big {
 }
 
 /* Room inspector — right side, above the nav controls. */
-#inspector {
+#inspector,
+#shaft-panel {
   right: 16px;
   bottom: 70px;
   width: 190px;
   font-variant-numeric: tabular-nums;
+}
+.shaft-note {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 8px 0 5px;
+}
+.floor-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.floor-btn {
+  min-width: 26px;
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.floor-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.floor-btn.active {
+  border-color: var(--accent);
+  background: rgba(91, 143, 176, 0.25);
 }
 .insp-title {
   font-size: 13px;
@@ -838,9 +869,12 @@ button.primary.big {
   color: #ffd27a;
   border-color: rgba(255, 210, 122, 0.4);
 }
-/* Lifted above the sub-menus when one is open, so nothing overlaps. */
+/* Lifted above the sub-menus when they're open, so nothing overlaps. */
 #hint.raised {
-  bottom: 214px;
+  bottom: 190px; /* above the tool sub-menu */
+}
+#hint.raised2 {
+  bottom: 272px; /* above the tool sub-menu + the girder-facade strip */
 }
 
 /* Tool sub-menu — the open category's tools, sitting right above the toolbar. */
@@ -875,7 +909,7 @@ button.primary.big {
 
 /* Girder facade sub-menu — a strip above the tool sub-menu while girder is on. */
 #girder-styles {
-  bottom: 160px;
+  bottom: 188px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;

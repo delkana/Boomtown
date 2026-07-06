@@ -67,6 +67,9 @@ interface RoomShell {
   wall(f: number, g: number): Pt;
   ceil(f: number, g: number): Pt;
   floor(f: number, g: number): Pt;
+  /** Left/right side walls, parametrized (d: 0 front → 1 back, g: 0 top → 1 bottom). */
+  leftWall(d: number, g: number): Pt;
+  rightWall(d: number, g: number): Pt;
   base: number[];
   w: number;
   h: number;
@@ -85,7 +88,7 @@ export class Renderer {
   private bgCtx: CanvasRenderingContext2D;
   private popups: Popup[] = [];
   /** Smoothly-animated car positions (per car id), advanced every frame. */
-  private carAnim = new Map<string, { pos: number; dir: number }>();
+  private carAnim = new Map<string, { pos: number }>();
   /** Current in-game hour (0..24) + weekday (0=Mon), for room lights. */
   private hourF = 12;
   private dayIndex = 0;
@@ -245,17 +248,17 @@ export class Renderer {
         live.add(car.id);
         let a = this.carAnim.get(car.id);
         if (!a) {
-          a = { pos: car.position, dir: car.dir || 1 };
+          a = { pos: car.position };
           this.carAnim.set(car.id, a);
         }
         const run =
           runs.find((r) => r.col === car.col && Math.round(a!.pos) >= r.from && Math.round(a!.pos) <= r.to) ??
           runs.find((r) => r.col === car.col);
         if (!run) continue;
+        // Cars ease toward their idle home floor and then sit still.
+        const target = car.home ?? car.position;
         if (dtSec > 0) {
-          const next = stepCar(a.pos, a.dir, run.from, run.to, Math.min(dtSec, 0.1)); // clamp long frame gaps
-          a.pos = next.pos;
-          a.dir = next.dir;
+          a.pos = stepCar(a.pos, target, run.from, run.to, Math.min(dtSec, 0.1)).pos; // clamp long frame gaps
         } else {
           a.pos = Math.max(run.from, Math.min(run.to, a.pos));
         }
@@ -939,6 +942,8 @@ export class Renderer {
       wall: (f, g) => lp(lp(bTL, bTR, f), lp(bBL, bBR, f), g),
       ceil: (f, g) => lp(lp(TL, TR, f), lp(bTL, bTR, f), g),
       floor: (f, g) => lp(lp(BL, BR, f), lp(bBL, bBR, f), g),
+      leftWall: (d, g) => lp(lp(TL, bTL, d), lp(BL, bBL, d), g),
+      rightWall: (d, g) => lp(lp(TR, bTR, d), lp(BR, bBR, d), g),
       base,
       w,
       h,
@@ -1080,20 +1085,41 @@ export class Renderer {
       lit,
     );
     this.drawFacade(s, facade, ug);
-    // Entrance doors set into the facade (a taller, darker glazed bay, centre).
-    this.wallBand(s, 0.42, 0.58, 0.34, 1, "rgba(26,32,40,0.5)");
-    const { ctx } = this;
-    ctx.strokeStyle = rgb(mix(hexRgb(facade.frame), [0, 0, 0], 0.2));
-    ctx.lineWidth = Math.max(0.6, w * 0.012);
-    const a = s.wall(0.5, 0.34), b = s.wall(0.5, 1);
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
+    // Double doors on BOTH side walls (a grand cross-through lobby).
+    this.sideDoors(s, "left", facade.frame);
+    this.sideDoors(s, "right", facade.frame);
     // Reception desk to one side + a marble planter on the other.
-    this.wallBand(s, 0.08, 0.32, 0.68, 0.9, "rgba(74,54,32,0.92)");
-    this.wallBand(s, 0.78, 0.92, 0.66, 0.9, "rgba(70,110,70,0.7)");
+    this.wallBand(s, 0.34, 0.5, 0.7, 0.9, "rgba(74,54,32,0.92)");
+    this.wallBand(s, 0.54, 0.66, 0.72, 0.9, "rgba(70,110,70,0.7)");
     if (lit) this.ceilingPanels(s, [0.28, 0.72]);
+  }
+
+  /** A set of double doors on the lobby's left or right side wall. */
+  private sideDoors(s: RoomShell, side: "left" | "right", frame: string): void {
+    const { ctx } = this;
+    const wf = side === "left" ? s.leftWall : s.rightWall;
+    const d0 = 0.32, d1 = 0.78, g0 = 0.32, g1 = 0.98;
+    const pts = [wf(d0, g0), wf(d1, g0), wf(d1, g1), wf(d0, g1)];
+    s.quad(pts, "rgba(26,32,40,0.72)"); // dark glazed doorway
+    ctx.strokeStyle = frame;
+    ctx.lineWidth = Math.max(0.6, s.w * 0.01);
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (const p of pts) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(pts[0].x, pts[0].y);
+    // Centre mullion — the split between the two door leaves.
+    const dm = (d0 + d1) / 2;
+    const m0 = wf(dm, g0), m1 = wf(dm, g1);
+    ctx.moveTo(m0.x, m0.y);
+    ctx.lineTo(m1.x, m1.y);
+    ctx.stroke();
+    // A handle on each leaf.
+    ctx.fillStyle = frame;
+    const gh = (g0 + g1) * 0.55;
+    for (const d of [dm - 0.06, dm + 0.06]) {
+      const p = wf(d, gh);
+      ctx.fillRect(p.x - Math.max(0.6, s.w * 0.008), p.y - s.w * 0.02, Math.max(1.2, s.w * 0.016), s.w * 0.04);
+    }
   }
 
   /** Office: bare shell when vacant; subset-specific furniture when leased. */

@@ -128,29 +128,18 @@ export function servicedRows(plot: Plot): Set<number> {
 }
 
 /**
- * Advance one car along a shaft [from,to] by `dt` seconds (already scaled by
- * game speed). Cars patrol end-to-end for now, bouncing at each end; passenger
- * routing will later drive the target instead. Pure — returns the new position
- * and direction.
+ * Move a car toward `target` floor by `dt` seconds (already scaled by game
+ * speed), clamped to the shaft [from,to], stopping exactly at the target (no
+ * overshoot). Cars sit still once they reach it — passenger routing will later
+ * drive the target. Pure — returns the new position.
  */
-export function stepCar(
-  pos: number,
-  dir: number,
-  from: number,
-  to: number,
-  dt: number,
-): { pos: number; dir: number } {
-  if (from === to) return { pos: from, dir }; // single-floor shaft: nowhere to go
-  let d = dir === 0 ? 1 : dir;
-  let p = pos + CAR_SPEED * dt * d;
-  if (p >= to) {
-    p = to;
-    d = -1;
-  } else if (p <= from) {
-    p = from;
-    d = 1;
-  }
-  return { pos: p, dir: d };
+export function stepCar(pos: number, target: number, from: number, to: number, dt: number): { pos: number } {
+  const tgt = Math.max(from, Math.min(to, target));
+  const d = tgt - pos;
+  if (Math.abs(d) < 0.02) return { pos: tgt };
+  const next = pos + Math.sign(d) * CAR_SPEED * dt;
+  if ((d > 0 && next >= tgt) || (d < 0 && next <= tgt)) return { pos: tgt };
+  return { pos: next };
 }
 
 /**
