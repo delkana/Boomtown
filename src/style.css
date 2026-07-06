@@ -1175,7 +1175,7 @@ button.primary.big {
   /* Nav controls sit just above the toolbar, right-aligned. Zoom buttons are
      dropped on touch — pinch to zoom instead. */
   #nav-controls {
-    bottom: calc(52px + env(safe-area-inset-bottom));
+    bottom: calc(62px + env(safe-area-inset-bottom));
     right: calc(8px + env(safe-area-inset-right));
     gap: 5px;
     padding: 6px;
@@ -1186,6 +1186,34 @@ button.primary.big {
   }
   #nav-controls button {
     min-height: 32px;
+  }
+
+  /* Category sub-menu + facade picker: thin, horizontally-scrollable strips
+     stacked above the nav row instead of big wrapped blocks that blanket the
+     build area (so you can still tap the plot to place girders/rooms). */
+  #tool-submenu,
+  #girder-styles {
+    left: 6px;
+    right: 6px;
+    transform: none;
+    max-width: none;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    justify-content: flex-start;
+    gap: 5px;
+    padding: 5px 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+  #tool-submenu {
+    bottom: calc(114px + env(safe-area-inset-bottom));
+  }
+  #girder-styles {
+    bottom: calc(168px + env(safe-area-inset-bottom));
+  }
+  #tool-submenu .tool,
+  #girder-styles .gs-btn {
+    flex: 0 0 auto;
   }
 
   /* No hint pill on mobile — it just eats screen space. */
