@@ -66,8 +66,14 @@ export const HOTEL_CHECKOUT_DIRT = 50;
 export const OFFICE_DIRT_PER_HOUR = 1;
 /** Cleanliness a store loses per open hour of shopping (mess from purchases). */
 export const STORE_DIRT_PER_HOUR = 2;
-/** A store with a storeroom is kept tidied to at least this cleanliness. */
+/** Cleanliness a restaurant loses per open hour of dining. */
+export const RESTAURANT_DIRT_PER_HOUR = 3;
+/** A store/restaurant with a storeroom / bussing station is tidied to at least this. */
 export const STORE_TIDY_FLOOR = 90;
+/** Cleanliness a studio apartment loses each day. */
+export const APARTMENT_DIRT_PER_DAY = 3;
+/** When an apartment drops below this, a resident does laundry (if a laundromat exists). */
+export const LAUNDROMAT_THRESHOLD = 70;
 
 /** Lobby limits. */
 export const MAX_PLAYERS_LIMIT = 20;
@@ -247,6 +253,32 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     service: true,
     windowless: true,
   },
+  laundromat: {
+    kind: "laundromat",
+    label: "Laundromat",
+    hotkey: "",
+    width: 3,
+    cost: 2400,
+    upkeep: 300,
+    incomeAtFull: 0,
+    fillRate: 0,
+    color: "#5a9bb0",
+    service: true,
+    windowless: true,
+  },
+  bussing: {
+    kind: "bussing",
+    label: "Bussing Station",
+    hotkey: "",
+    width: 1,
+    cost: 700,
+    upkeep: 90,
+    incomeAtFull: 0,
+    fillRate: 0,
+    color: "#9a7b52",
+    service: true,
+    windowless: true,
+  },
   housekeeping: {
     kind: "housekeeping",
     label: "Housekeeping",
@@ -306,9 +338,11 @@ export const BUILD_ORDER: UnitKind[] = [
   "medical",
   "janitor",
   "apartment",
+  "laundromat",
   "store",
   "storeroom",
   "restaurant",
+  "bussing",
   "vending",
   "frontdesk",
   "hotel",

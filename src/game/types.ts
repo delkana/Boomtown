@@ -29,6 +29,8 @@ export type UnitKind =
   | "housekeeping"
   | "janitor"
   | "storeroom"
+  | "laundromat"
+  | "bussing"
   | "vending"
   | "elevator";
 

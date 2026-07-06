@@ -945,6 +945,10 @@ export class Renderer {
         return this.drawServiceInterior(x, y, w, h, facade, underground, lit, [138, 109, 176], true);
       case "storeroom":
         return this.drawServiceInterior(x, y, w, h, facade, underground, lit, [125, 106, 82], true);
+      case "laundromat":
+        return this.drawServiceInterior(x, y, w, h, facade, underground, lit, [90, 155, 176], true);
+      case "bussing":
+        return this.drawServiceInterior(x, y, w, h, facade, underground, lit, [154, 123, 82], true);
       default:
         this.ctx.fillStyle = UNIT_DEFS[kind].color;
         this.ctx.fillRect(x, y, w, h);

@@ -1,8 +1,11 @@
 import type { GameState, Plot, Unit } from "./types";
 import {
+  APARTMENT_DIRT_PER_DAY,
   CLEANLINESS_MAX,
   HOTEL_CHECKOUT_DIRT,
+  LAUNDROMAT_THRESHOLD,
   OFFICE_DIRT_PER_HOUR,
+  RESTAURANT_DIRT_PER_HOUR,
   STORE_DIRT_PER_HOUR,
   STORE_TIDY_FLOOR,
   TICKS_PER_DAY,
@@ -18,6 +21,7 @@ import { isVisitorKind, visitCount } from "./visitors";
 import { runMedicalDay } from "./medical";
 
 const FIVE_AM_TICK = (5 * 60) / TICK_MINUTES; // janitors finish the offices overnight
+const SEVEN_AM_TICK = (7 * 60) / TICK_MINUTES; // apartments get grubbier after residents wake
 const ELEVEN_AM_TICK = (11 * 60) / TICK_MINUTES; // hotel checkout / housekeeping
 
 /** How much a dirty room's rent (and appeal) is discounted: 40% when filthy → 100% spotless. */
@@ -59,6 +63,8 @@ export function advanceTick(state: GameState): void {
     const hasJanitor = plot.units.some((u) => u.kind === "janitor");
     const hasHousekeeping = plot.units.some((u) => u.kind === "housekeeping");
     const hasStoreroom = plot.units.some((u) => u.kind === "storeroom");
+    const hasBussing = plot.units.some((u) => u.kind === "bussing");
+    const hasLaundromat = plot.units.some((u) => u.kind === "laundromat");
     const elevatorRows = servicedRows(plot);
 
     // Tenants move in and out.
@@ -99,6 +105,17 @@ export function advanceTick(state: GameState): void {
       if (unit.tenant && unit.kind === "store" && tenantOpen(unit.tenant, hourF, weekday)) {
         unit.cleanliness = Math.max(0, unit.cleanliness - (STORE_DIRT_PER_HOUR * TICK_MINUTES) / 60);
         if (hasStoreroom) unit.cleanliness = Math.max(unit.cleanliness, STORE_TIDY_FLOOR);
+      }
+      // Restaurants get messy from diners; a bussing station keeps them tidy.
+      if (unit.tenant && unit.kind === "restaurant" && tenantOpen(unit.tenant, hourF, weekday)) {
+        unit.cleanliness = Math.max(0, unit.cleanliness - (RESTAURANT_DIRT_PER_HOUR * TICK_MINUTES) / 60);
+        if (hasBussing) unit.cleanliness = Math.max(unit.cleanliness, STORE_TIDY_FLOOR);
+      }
+      // Studio apartments get a little grubbier each morning; once they drop below
+      // 70 a resident does laundry (if the building has a laundromat) → back to 100.
+      if (unit.tenant && unit.kind === "apartment" && tod === SEVEN_AM_TICK) {
+        unit.cleanliness = Math.max(0, unit.cleanliness - APARTMENT_DIRT_PER_DAY);
+        if (hasLaundromat && unit.cleanliness < LAUNDROMAT_THRESHOLD) unit.cleanliness = CLEANLINESS_MAX;
       }
       // Janitors clean the offices overnight (once, at end of their shift) if a
       // janitor's closet exists in the tower.

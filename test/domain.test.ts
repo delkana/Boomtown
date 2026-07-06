@@ -518,6 +518,44 @@ describe("room types & preferences", () => {
     expect(roomDisplayName(plot, room)).toBe(`${brand} room #01`); // floor 0, first room
   });
 
+  it("a laundromat is loud: +70 in it, +40 beside it, +20 above/below", () => {
+    const s = freshGame();
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0], [5, 0], [6, 0], [7, 0]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    const plot = s.plots[0];
+    const bIn = noiseRating(plot, 6, 0), bSide = noiseRating(plot, 8, 0), bUp = noiseRating(plot, 6, 1);
+    expect(applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "laundromat", col: 5, row: 0 }).ok).toBe(true); // 3-wide (5–7)
+    expect(noiseRating(plot, 6, 0) - bIn).toBe(70); // inside the laundromat
+    expect(noiseRating(plot, 8, 0) - bSide).toBe(40); // one tile to its right
+    expect(noiseRating(plot, 6, 1) - bUp).toBe(20); // the floor directly above
+  });
+
+  it("studio apartments get grubbier daily; a laundromat resets them to spotless", () => {
+    const s = freshGame();
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0], [2, 0], [4, 0], [5, 0], [7, 0], [8, 0], [9, 0]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "apartment", col: 4, row: 0 });
+    const apt = s.plots[0].units.find((u) => u.kind === "apartment")!;
+    apt.tenant = generateTenant("apartment", `${s.plots[0].id}:${apt.id}`, 0.8, 2); // seat a resident directly
+    apt.cleanliness = 72;
+    for (let i = 0; i < 288; i++) advanceTick(s); // one day passes 7am once → −3, no laundromat
+    expect(apt.cleanliness).toBe(69);
+
+    expect(applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "laundromat", col: 7, row: 0 }).ok).toBe(true);
+    apt.cleanliness = 72;
+    let maxC = 0;
+    for (let i = 0; i < 288; i++) {
+      advanceTick(s);
+      maxC = Math.max(maxC, apt.cleanliness!);
+    }
+    expect(maxC).toBe(100); // dropped below 70 → laundry day → back to 100
+  });
+
   it("stores get dirty as they trade; a storeroom keeps them tidy", () => {
     const s = freshGame();
     s.players["p1"].money = 1_000_000;

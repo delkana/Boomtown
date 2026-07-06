@@ -79,6 +79,18 @@ export function noiseRating(plot: Plot, col: number, row: number): number {
       if (dx === 0) n += 10;
       else if (dx <= 2) n += 5;
     }
+    // A laundromat is LOUD: +70 in it, +40 easing off over ~5 tiles either side,
+    // and +20 on the floor directly above and below.
+    if (u.kind === "laundromat") {
+      const dx = Math.max(0, u.col - col, col - (u.col + u.width - 1));
+      const dy = Math.abs(u.row - row);
+      if (dy === 0) {
+        if (dx === 0) n += 70;
+        else if (dx <= 5) n += 40 * (1 - (dx - 1) / 5); // ~40 next to it, easing to ~0 by 5 tiles
+      } else if (dy === 1 && dx === 0) {
+        n += 20; // the floor just above / below
+      }
+    }
   }
   return n;
 }

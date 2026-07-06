@@ -197,7 +197,7 @@ export class Hud {
       <div class="insp-row"><span>Noise</span><span>${Math.round(noise / n)}</span></div>
       <div class="insp-row"><span>Foot traffic</span><span>${Math.round(foot / n)}</span></div>
       ${revenue ? `<div class="insp-row"><span>Appeal</span><span>${appeal}%</span></div>` : ""}
-      ${unit.kind === "office" || unit.kind === "medical" || unit.kind === "hotel" || unit.kind === "store" ? `<div class="insp-row"><span>Cleanliness</span><span>${Math.round(unit.cleanliness ?? 100)}%</span></div>` : ""}
+      ${["office", "medical", "hotel", "store", "restaurant", "apartment"].includes(unit.kind) ? `<div class="insp-row"><span>Cleanliness</span><span>${Math.round(unit.cleanliness ?? 100)}%</span></div>` : ""}
       ${prefs ? `<div class="insp-prefs">Prefers ${prefs}</div>` : ""}
       <div class="insp-row"><span>Upkeep / day</span><span class="neg">-$${def.upkeep.toLocaleString()}</span></div>
       <div class="insp-row net"><span>Net / day</span><span class="${dailyNet >= 0 ? "pos" : "neg"}">${dailyNet < 0 ? "-" : "+"}$${Math.abs(dailyNet).toLocaleString()}</span></div>
@@ -427,8 +427,9 @@ export class Hud {
     this.claimBtnEl.classList.toggle("selected", this.getSelected() === "claim");
     this.claimBtnEl.classList.toggle("unaffordable", player.money < cheapestClaim);
 
-    // Girder facade sub-menu: visible only while the girder tool is active.
-    const showStyles = this.getSelected() === "girder";
+    // Girder facade sub-menu: visible only while the girder tool is active AND its
+    // Construction sub-menu is open (so it doesn't linger after you close it).
+    const showStyles = this.getSelected() === "girder" && this.openCategory === categoryOf("girder");
     this.girderStylesEl.classList.toggle("hidden", !showStyles);
     if (showStyles) {
       const cur = this.getGirderStyle();
@@ -533,10 +534,10 @@ export class Hud {
 const TOOL_CATEGORIES: { id: string; label: string; icon: string; tools: string[] }[] = [
   { id: "construction", label: "Construction", icon: "🏗", tools: ["girder", "lobby", "elevator", "elevatorCar"] },
   { id: "offices", label: "Offices", icon: "🏢", tools: ["office", "medical", "janitor"] },
-  { id: "apartments", label: "Apartments", icon: "🏠", tools: ["apartment"] },
+  { id: "apartments", label: "Apartments", icon: "🏠", tools: ["apartment", "laundromat"] },
   { id: "hotels", label: "Hotels", icon: "🛎", tools: ["frontdesk", "hotel", "housekeeping"] },
   { id: "retail", label: "Retail", icon: "🛍", tools: ["store", "storeroom"] },
-  { id: "food", label: "Food", icon: "🍽", tools: ["restaurant", "vending"] },
+  { id: "food", label: "Food", icon: "🍽", tools: ["restaurant", "bussing", "vending"] },
 ];
 
 /** The category id that contains a tool, or null. */
