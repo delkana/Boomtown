@@ -15,8 +15,12 @@ import type { ElevatorCar, Plot } from "./types";
 /** Up to this many cars can share one shaft (elevator bank). */
 export const MAX_CARS_PER_SHAFT = 8;
 
-/** Floors a patrolling car moves per tick (a tick is TICK_MINUTES of game time). */
-export const CAR_SPEED = 0.34;
+/**
+ * Floors a car travels per SECOND of real time at 1× game speed. Car motion is
+ * continuous (animated every frame, scaled by game speed) rather than stepped
+ * per economy tick — see `stepCar`.
+ */
+export const CAR_SPEED = 1.1;
 
 export interface ElevatorRun {
   col: number;
@@ -124,36 +128,39 @@ export function servicedRows(plot: Plot): Set<number> {
 }
 
 /**
- * Advance every car one tick along its shaft. Cars patrol between the shaft's
- * top and bottom for now (bouncing at each end); a car whose shaft was removed
- * from under it drops out. Mutates the plot in place.
+ * Advance one car along a shaft [from,to] by `dt` seconds (already scaled by
+ * game speed). Cars patrol end-to-end for now, bouncing at each end; passenger
+ * routing will later drive the target instead. Pure — returns the new position
+ * and direction.
  */
-export function advanceCars(plot: Plot): void {
+export function stepCar(
+  pos: number,
+  dir: number,
+  from: number,
+  to: number,
+  dt: number,
+): { pos: number; dir: number } {
+  if (from === to) return { pos: from, dir }; // single-floor shaft: nowhere to go
+  let d = dir === 0 ? 1 : dir;
+  let p = pos + CAR_SPEED * dt * d;
+  if (p >= to) {
+    p = to;
+    d = -1;
+  } else if (p <= from) {
+    p = from;
+    d = 1;
+  }
+  return { pos: p, dir: d };
+}
+
+/**
+ * Drop any car whose shaft was removed from under it (e.g. its elevator segments
+ * were sold). Call after a change that can shrink a shaft. Mutates in place.
+ */
+export function pruneOrphanCars(plot: Plot): void {
   if (!plot.cars || plot.cars.length === 0) return;
   const runs = elevatorRuns(plot);
-  const kept: ElevatorCar[] = [];
-  for (const car of plot.cars) {
-    const run = runs.find(
-      (r) => r.col === car.col && Math.round(car.position) >= r.from && Math.round(car.position) <= r.to,
-    );
-    if (!run) continue; // shaft gone → the car is removed
-    if (run.from === run.to) {
-      car.position = run.from; // single-floor shaft: nothing to patrol
-      kept.push(car);
-      continue;
-    }
-    let dir = car.dir === 0 ? 1 : car.dir;
-    let pos = car.position + CAR_SPEED * dir;
-    if (pos >= run.to) {
-      pos = run.to;
-      dir = -1;
-    } else if (pos <= run.from) {
-      pos = run.from;
-      dir = 1;
-    }
-    car.position = pos;
-    car.dir = dir;
-    kept.push(car);
-  }
-  plot.cars = kept;
+  plot.cars = plot.cars.filter((c) =>
+    runs.some((r) => r.col === c.col && Math.round(c.position) >= r.from && Math.round(c.position) <= r.to),
+  );
 }

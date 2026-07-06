@@ -4,7 +4,7 @@ import { ELEVATOR_CAR_COST, MAX_DEPTH, MAX_ROWS, SPEED_OPTIONS, UNIT_DEFS } from
 import { claimCost, girderCost, undergroundMultiplier } from "./economy";
 import { featureLabel } from "./features";
 import { isFacade } from "./facades";
-import { MAX_CARS_PER_SHAFT, autoCarNeeded, carsInRun, nearestCar, runContaining } from "./elevator";
+import { MAX_CARS_PER_SHAFT, autoCarNeeded, carsInRun, nearestCar, pruneOrphanCars, runContaining } from "./elevator";
 
 /**
  * The reducer applies a single command to the authoritative state.
@@ -234,6 +234,8 @@ function sellUnit(
 
   const def = UNIT_DEFS[unit.kind];
   plot.units.splice(idx, 1);
+  // Removing an elevator segment can shrink a shaft out from under a car.
+  if (unit.kind === "elevator") pruneOrphanCars(plot);
   // Refund half of what was paid (underground rooms cost more).
   player.money += Math.floor(def.cost * undergroundMultiplier(unit.row) * 0.5);
   return ok();

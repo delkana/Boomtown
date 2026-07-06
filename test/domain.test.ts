@@ -8,7 +8,7 @@ import { elevatorAccess, viewRating, noiseRating, footTraffic, roomSatisfaction 
 import { ELEVATOR_CAR_COST, GIRDER_BASE_COST, MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
 import { claimCost, girderCost, plotBaseCost, undergroundMultiplier } from "../src/game/economy";
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
-import { servicedRows, elevatorRuns, MAX_CARS_PER_SHAFT } from "../src/game/elevator";
+import { servicedRows, elevatorRuns, stepCar, MAX_CARS_PER_SHAFT } from "../src/game/elevator";
 import { facadeById, DEFAULT_FACADE } from "../src/game/facades";
 import type { GameState } from "../src/game/types";
 
@@ -558,16 +558,29 @@ describe("elevator cars", () => {
     expect(overflow.ok).toBe(false);
   });
 
-  it("cars travel up and down the shaft over ticks", () => {
-    const s = shaftTower(4);
-    const car = s.plots[0].cars[0]; // the auto car, starting at the ground
-    expect(car.position).toBe(0);
-    advanceTick(s);
-    expect(car.position).toBeGreaterThan(0); // moved up off the ground
-    const run = elevatorRuns(s.plots[0])[0];
-    for (let i = 0; i < 200; i++) advanceTick(s); // patrols within bounds forever
-    expect(car.position).toBeGreaterThanOrEqual(run.from);
-    expect(car.position).toBeLessThanOrEqual(run.to);
+  it("cars travel continuously and bounce at the shaft ends (stepCar)", () => {
+    // Motion is time-based (not tick-based): step up from the bottom of a 0..4 shaft.
+    let st = stepCar(0, 1, 0, 4, 0.5);
+    expect(st.pos).toBeGreaterThan(0); // moved up off the ground
+    // Run for a long time; must always stay within [from,to].
+    for (let i = 0; i < 400; i++) {
+      st = stepCar(st.pos, st.dir, 0, 4, 0.25);
+      expect(st.pos).toBeGreaterThanOrEqual(0);
+      expect(st.pos).toBeLessThanOrEqual(4);
+    }
+    // It reverses at the ends rather than overshooting.
+    expect(stepCar(4, 1, 0, 4, 1).dir).toBe(-1);
+    expect(stepCar(0, -1, 0, 4, 1).dir).toBe(1);
+    // A single-floor shaft has nowhere to go.
+    expect(stepCar(2, 1, 2, 2, 0.5).pos).toBe(2);
+  });
+
+  it("removing the shaft prunes its now-orphaned car", () => {
+    const s = shaftTower(0); // single-floor shaft with its auto car
+    expect(s.plots[0].cars).toHaveLength(1);
+    const elev = s.plots[0].units.find((u) => u.kind === "elevator")!;
+    applyCommand(s, { type: "SELL_UNIT", playerId: "p1", plotIndex: 0, unitId: elev.id });
+    expect(s.plots[0].cars).toHaveLength(0);
   });
 
   it("selling the car unservices the floors and refunds", () => {

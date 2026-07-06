@@ -1,7 +1,7 @@
 import type { GameState, Plot } from "./types";
 import { UNIT_DEFS } from "./constants";
 import { roomSatisfaction } from "./heatmaps";
-import { advanceCars, servicedRows } from "./elevator";
+import { servicedRows } from "./elevator";
 
 /**
  * advanceTick: the economy step. Pure and deterministic — server-ownable.
@@ -49,9 +49,6 @@ export function advanceTick(state: GameState): void {
     }
 
     owner.money += net;
-
-    // Move the plot's elevator cars along their shafts for the next tick.
-    advanceCars(plot);
   }
 }
 

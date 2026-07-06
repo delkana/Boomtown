@@ -13,6 +13,7 @@ import {
   runContaining,
   carsInRun,
   autoCarNeeded,
+  stepCar,
   MAX_CARS_PER_SHAFT,
 } from "../game/elevator";
 import { claimCost, girderCost, undergroundMultiplier } from "../game/economy";
@@ -79,6 +80,11 @@ export class Renderer {
   /** Current sky colours (top + horizon) — used to fill transparent windows. */
   private skyTop: number[] = [120, 150, 190];
   private skyBottom: number[] = [90, 120, 160];
+  /** Current backdrop layer ids — drawn (small) through room windows too. */
+  private bgNear = "none";
+  private bgFar = "clear";
+  /** Smoothly-animated car positions (per car id), advanced every frame. */
+  private carAnim = new Map<string, { pos: number; dir: number }>();
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -132,11 +138,17 @@ export class Renderer {
     tool: Tool,
     heatmap: HeatmapKind,
     girderStyle = "steel",
+    dtMs = 0,
   ): void {
     const { ctx, camera } = this;
     const w = camera.viewW;
     const h = camera.viewH;
     const groundY = camera.groundScreenY; // follows vertical pan (offsetY)
+
+    // Cars move continuously (independent of the economy tick), scaled by speed.
+    this.bgNear = state.config.backgroundNear ?? "none";
+    this.bgFar = state.config.backgroundFar ?? "clear";
+    this.advanceCarAnim(state, (dtMs / 1000) * (state.speed || 1));
 
     // Latitude + season drive the sky (day/night lengths shift through the year).
     const { day, twilight } = skyState(state.tick, state.config.latitude ?? 0);
@@ -202,6 +214,40 @@ export class Renderer {
     if (hover) this.drawHoverGhost(state, localPlayerId, hover, tool, girderStyle);
 
     this.drawPopups();
+  }
+
+  /**
+   * Advance each elevator car's animated position by `dtSec` (already scaled by
+   * game speed). Purely visual smoothing — the authoritative car entity keeps
+   * its own position for future passenger logic. Prunes cars that vanished.
+   */
+  private advanceCarAnim(state: GameState, dtSec: number): void {
+    const live = new Set<string>();
+    for (const key of Object.keys(state.plots)) {
+      const plot = state.plots[Number(key)];
+      if (!plot.cars || plot.cars.length === 0) continue;
+      const runs = elevatorRuns(plot);
+      for (const car of plot.cars) {
+        live.add(car.id);
+        let a = this.carAnim.get(car.id);
+        if (!a) {
+          a = { pos: car.position, dir: car.dir || 1 };
+          this.carAnim.set(car.id, a);
+        }
+        const run =
+          runs.find((r) => r.col === car.col && Math.round(a!.pos) >= r.from && Math.round(a!.pos) <= r.to) ??
+          runs.find((r) => r.col === car.col);
+        if (!run) continue;
+        if (dtSec > 0) {
+          const next = stepCar(a.pos, a.dir, run.from, run.to, Math.min(dtSec, 0.1)); // clamp long frame gaps
+          a.pos = next.pos;
+          a.dir = next.dir;
+        } else {
+          a.pos = Math.max(run.from, Math.min(run.to, a.pos));
+        }
+      }
+    }
+    for (const id of [...this.carAnim.keys()]) if (!live.has(id)) this.carAnim.delete(id);
   }
 
   /**
@@ -523,10 +569,12 @@ export class Renderer {
       const yBottom = camera.rowTopScreenY(run.from) + cell;
       this.drawElevatorShaft(x, yTop, cell, yBottom - yTop, ownerColor, bandH);
     }
-    // Elevator cars ride the shafts at their live (fractional) positions.
+    // Elevator cars ride the shafts at their smoothly-animated positions.
     for (const car of plot.cars ?? []) {
+      const anim = this.carAnim.get(car.id);
+      const pos = anim ? anim.pos : car.position;
       const x = camera.worldToScreenX(leftWorld + car.col * CELL_SIZE);
-      const y = camera.groundScreenY - (car.position + 1) * cell;
+      const y = camera.groundScreenY - (pos + 1) * cell;
       this.drawElevatorCar(x, y, cell);
     }
 
@@ -691,17 +739,36 @@ export class Renderer {
   ): void {
     const { ctx } = this;
     const pts = [s.wall(f0, g0), s.wall(f1, g0), s.wall(f1, g1), s.wall(f0, g1)];
+    const path = (): void => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (const p of pts) ctx.lineTo(p.x, p.y);
+      ctx.closePath();
+    };
+    // Sky (live day/night gradient).
     const topMid = s.lp(pts[0], pts[1], 0.5);
     const botMid = s.lp(pts[3], pts[2], 0.5);
     const grad = ctx.createLinearGradient(topMid.x, topMid.y, botMid.x, botMid.y);
-    grad.addColorStop(0, rgb(mix(this.skyTop, [8, 10, 14], tint)));
-    grad.addColorStop(1, rgb(mix(this.skyBottom, [8, 10, 14], tint)));
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (const p of pts) ctx.lineTo(p.x, p.y);
-    ctx.closePath();
+    grad.addColorStop(0, rgb(this.skyTop));
+    grad.addColorStop(1, rgb(this.skyBottom));
+    path();
     ctx.fillStyle = grad;
     ctx.fill();
+    // The world outside — both backdrop layers, clipped to the glass. Skipped
+    // when the window is too small to be worth the polygons.
+    if (s.w >= 46) {
+      ctx.save();
+      path();
+      ctx.clip();
+      this.windowBackdrop(s, f0, f1, g0, g1);
+      ctx.restore();
+    }
+    // Tinted glass darkens the whole view behind it.
+    if (tint > 0) {
+      path();
+      ctx.fillStyle = `rgba(8,10,14,${tint})`;
+      ctx.fill();
+    }
     // Frame + mullions.
     ctx.strokeStyle = frame;
     ctx.lineWidth = Math.max(0.6, s.w * 0.012);
@@ -722,6 +789,54 @@ export class Renderer {
       ctx.lineTo(b.x, b.y);
     }
     ctx.stroke();
+  }
+
+  /**
+   * Draw a small view of the city's two backdrop layers inside a window (far
+   * horizon silhouette, then a nearer one), so looking out shows the same world
+   * as the main backdrop. Colours blend with the live sky, so it darkens at
+   * night too. Coordinates are given in window-local fractions (0..1).
+   */
+  private windowBackdrop(s: RoomShell, f0: number, f1: number, g0: number, g1: number): void {
+    const { ctx } = this;
+    const pt = (ff: number, gg: number): Pt => s.wall(f0 + (f1 - f0) * ff, g0 + (g1 - g0) * gg);
+    const poly = (coords: Pt[]): void => {
+      ctx.beginPath();
+      ctx.moveTo(coords[0].x, coords[0].y);
+      for (let i = 1; i < coords.length; i++) ctx.lineTo(coords[i].x, coords[i].y);
+      ctx.closePath();
+      ctx.fill();
+    };
+    const gh = 0.62; // horizon within the window
+
+    // Far layer.
+    if (this.bgFar === "mountains") {
+      ctx.fillStyle = rgb(mix(this.skyBottom, [90, 98, 118], 0.55));
+      poly([pt(0, gh), pt(0.28, gh - 0.26), pt(0.5, gh - 0.05), pt(0.76, gh - 0.32), pt(1, gh - 0.02), pt(1, 1), pt(0, 1)]);
+    } else if (this.bgFar === "hills") {
+      ctx.fillStyle = rgb(mix(this.skyBottom, [72, 94, 80], 0.5));
+      poly([pt(0, gh), pt(0.3, gh - 0.1), pt(0.6, gh - 0.03), pt(1, gh - 0.12), pt(1, 1), pt(0, 1)]);
+    } else if (this.bgFar === "ocean") {
+      ctx.fillStyle = rgb(mix(this.skyBottom, [40, 84, 122], 0.6));
+      poly([pt(0, gh), pt(1, gh), pt(1, 1), pt(0, 1)]);
+    }
+
+    // Near layer (darker, closer).
+    ctx.fillStyle = rgb(mix(this.skyBottom, [18, 24, 34], 0.78));
+    const nh = gh + 0.06;
+    if (this.bgNear === "skyline") {
+      for (const [a, hh] of [[0.04, 0.3], [0.2, 0.52], [0.38, 0.22], [0.54, 0.46], [0.72, 0.32], [0.88, 0.5]] as const)
+        poly([pt(a, nh - hh), pt(a + 0.11, nh - hh), pt(a + 0.11, 1), pt(a, 1)]);
+    } else if (this.bgNear === "firs") {
+      for (const a of [0.14, 0.38, 0.62, 0.86])
+        poly([pt(a - 0.09, nh), pt(a, nh - 0.42), pt(a + 0.09, nh), pt(a + 0.03, 1), pt(a - 0.03, 1)]);
+    } else if (this.bgNear === "palms") {
+      for (const a of [0.28, 0.72])
+        poly([pt(a - 0.09, nh - 0.26), pt(a, nh - 0.42), pt(a + 0.09, nh - 0.26), pt(a + 0.03, 1), pt(a - 0.03, 1)]);
+    } else if (this.bgNear === "oldtown") {
+      for (const a of [0.06, 0.32, 0.58, 0.84])
+        poly([pt(a, nh - 0.16), pt(a + 0.08, nh - 0.3), pt(a + 0.16, nh - 0.16), pt(a + 0.16, 1), pt(a, 1)]);
+    }
   }
 
   /** A steel X-brace drawn across a window region (glass X-brace facade). */
