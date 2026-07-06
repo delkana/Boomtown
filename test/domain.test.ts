@@ -673,6 +673,40 @@ describe("tenants", () => {
     }
   });
 
+  it("clinics are small full-day teams of 4–6", () => {
+    for (let i = 0; i < 40; i++) {
+      const t = generateTenant("medical", `med:${i}`, 0.7, 2)!;
+      expect(t.employees).toBeGreaterThanOrEqual(4);
+      expect(t.employees).toBeLessThanOrEqual(6);
+      expect(t.workers).toHaveLength(t.employees);
+      for (const w of t.workers) {
+        expect(w.startHour).toBe(t.openHour); // everyone works the full day
+        expect(w.endHour).toBe(t.closeHour);
+      }
+    }
+  });
+
+  it("shops and restaurants run shifts, capping how many work at once", () => {
+    const concurrentAt = (t: NonNullable<ReturnType<typeof generateTenant>>, hour: number): number =>
+      t.workers.filter((w) => hour >= w.startHour && hour < w.endHour).length;
+    for (let i = 0; i < 40; i++) {
+      const store = generateTenant("store", `shop:${i}`, 0.7, 2)!;
+      const rest = generateTenant("restaurant", `eat:${i}`, 0.7, 2)!;
+      // The roster is split across two shifts, so not everyone works at once.
+      const storeStarts = new Set(store.workers.map((w) => w.startHour));
+      const restStarts = new Set(rest.workers.map((w) => w.startHour));
+      expect(storeStarts.size).toBeGreaterThan(1); // more than one shift start
+      expect(restStarts.size).toBeGreaterThan(1);
+      for (let h = 0; h < 24; h++) {
+        expect(concurrentAt(store, h)).toBeLessThanOrEqual(store.employees); // never more than the roster
+        expect(concurrentAt(rest, h)).toBeLessThanOrEqual(8); // restaurants: ≤8 at any time
+      }
+      // Fewer work at once than the full roster (shifts actually split it).
+      const maxStore = Math.max(...Array.from({ length: 24 }, (_, h) => concurrentAt(store, h)));
+      expect(maxStore).toBeLessThan(store.employees);
+    }
+  });
+
   it("names follow the city archetype (region-appropriate)", () => {
     const jp = generateTenant("office", "seed:jp", 0.7, 2, "japan")!;
     const su = generateTenant("office", "seed:jp", 0.7, 2, "ussr")!;

@@ -260,21 +260,34 @@ function buildWorkers(
 ): Worker[] {
   const lead = LEAD[subId] ?? { title: "Manager", salary: 300 };
   const staff = staffRoles(kind, subId);
+  // Shops and restaurants run two shifts split at the midpoint; the lead works
+  // the full day and the staff alternate early/late, so only part of the roster
+  // is ever on the clock at once. Offices and clinics all work the full day.
+  const shifted = kind === "store" || kind === "restaurant";
+  const mid = Math.round((open + close) / 2);
   const workers: Worker[] = [];
   for (let i = 0; i < count; i++) {
     const wh = hashString(`${seed}:w${i}`);
     const role = i === 0 ? lead : staff[wh % staff.length];
     const salary = role.salary === 0 ? 0 : Math.round(role.salary * (0.9 + ((wh >>> 5) % 20) / 100));
-    // Staggered midday lunch: an hour somewhere near the middle of the shift.
-    const mid = Math.floor((open + close) / 2);
-    const lunchHour = salary === 0 ? -1 : Math.max(open + 1, Math.min(close - 2, mid - 1 + ((wh >>> 9) % 3)));
+    let start = open;
+    let end = close;
+    if (shifted && i > 0) {
+      const late = i % 2 === 0; // alternate, so both shifts get staffed
+      start = late ? mid : open;
+      end = late ? close : mid;
+    }
+    // A lunch break only for full-ish days (7h+); shorter shifts skip it.
+    const shiftMid = Math.floor((start + end) / 2);
+    const lunchHour =
+      salary === 0 || end - start < 7 ? -1 : Math.max(start + 1, Math.min(end - 2, shiftMid - 1 + ((wh >>> 9) % 3)));
     workers.push({
       name: personName(archetypeId, wh),
       title: role.title,
       dailySalary: salary,
       days,
-      startHour: open,
-      endHour: close,
+      startHour: start,
+      endHour: end,
       lunchHour,
     });
   }
@@ -308,11 +321,17 @@ export function generateTenant(
   if (!subs) return null;
   const h = hashString(seed);
   const sub = subs[h % subs.length];
-  // Offices are small teams (4–6); other kinds scale headcount with width.
+  // Offices & clinics are small full-day teams (4–6). Shops and restaurants
+  // carry a larger roster split across shifts, so only a handful work at once
+  // (see buildWorkers). Dwellings scale their occupancy with width.
   const employees =
-    kind === "office"
-      ? 4 + ((h >>> 5) % 3)
-      : Math.max(1, Math.round((HEADCOUNT[kind] ?? 2) * width * (0.7 + ((h >>> 5) % 50) / 100)));
+    kind === "office" || kind === "medical"
+      ? 4 + ((h >>> 5) % 3) // 4–6
+      : kind === "store"
+        ? 4 + ((h >>> 5) % 4) // 4–7 total across two shifts (~2–4 at once)
+        : kind === "restaurant"
+          ? 7 + ((h >>> 5) % 6) // 7–12 total across two shifts (~4–7 at once)
+          : Math.max(1, Math.round((HEADCOUNT[kind] ?? 2) * width * (0.7 + ((h >>> 5) % 50) / 100)));
   const days = sub.days ?? ALL_WEEK;
   const base = RENT_BASE[kind] ?? 1000;
   const dailyRent = Math.round(base * (0.5 + Math.max(0, Math.min(1, appeal))) * (0.9 + ((h >>> 9) % 25) / 100));

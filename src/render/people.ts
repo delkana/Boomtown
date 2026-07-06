@@ -85,6 +85,9 @@ export interface PersonView {
 
 const WORKER_COLORS = ["#39424f", "#4a3f2f", "#2f3a44", "#463a4a", "#3a4a3a", "#4a3a34", "#37414a", "#54473a"];
 
+/** Room kinds whose staff commute in and work on-site (residents/guests don't). */
+const WORKING_KINDS = new Set(["office", "medical", "store", "restaurant"]);
+
 export class PeopleSim {
   private people = new Map<string, Person>();
   private cars = new Map<string, Car>();
@@ -149,9 +152,9 @@ export class PeopleSim {
           });
         }
       }
-      // Office workers.
+      // Workers (offices, clinics, shops, restaurants) commuting to their room.
       for (const unit of plot.units) {
-        if (unit.kind !== "office" || !unit.tenant) continue;
+        if (!unit.tenant || !WORKING_KINDS.has(unit.kind)) continue;
         const shaftCol = unit.row === 0 ? -1 : this.shaftFor(plot, unit.col, unit.row);
         if (unit.row !== 0 && shaftCol === null) continue; // office unreachable by lift → no workers
         const count = Math.max(1, unit.tenant.employees);
@@ -163,8 +166,8 @@ export class PeopleSim {
           p.worker = unit.tenant.workers[i] ?? null;
           p.roomLeft = unit.col;
           p.roomW = unit.width;
-          // Desks sit inset from the side walls (not right up against the edges).
-          const margin = Math.min(0.5, unit.width * 0.28);
+          // Desks sit slightly inset from the side walls (not right at the edges).
+          const margin = Math.min(0.25, unit.width * 0.14);
           p.deskX = unit.col + margin + ((i + 0.5) / count) * (unit.width - 2 * margin);
           p.officeRow = unit.row;
           p.shaftCol = shaftCol ?? -1;
@@ -195,7 +198,7 @@ export class PeopleSim {
       spread: ((h % 100) / 100 - 0.5) * 0.4,
       millPhase: (h % 1000) / 1000 * MILL_PERIOD,
       react: ((h >>> 11) % 100) / 100 * REACT_MAX,
-      depth: 0.16 + ((h >>> 17) % 100) / 100 * 0.12, // 0.16–0.28 cells back from the front edge
+      depth: 0.08 + ((h >>> 17) % 100) / 100 * 0.06, // 0.08–0.14 cells back from the front edge
       color: WORKER_COLORS[(h >>> 3) % WORKER_COLORS.length],
       x: ENTRANCE_X,
       floor: 0,
@@ -455,8 +458,8 @@ export class PeopleSim {
     const idx = Math.floor((this.t + p.millPhase) / MILL_PERIOD);
     const rh = hashString(`${p.id}:${idx}`);
     if (rh % 100 < 55) return p.deskX + p.spread; // most of the time, at the desk
-    // Amble only within the central part of the room, well off the side walls.
-    const inset = 0.55;
+    // Amble within the room, keeping a little off the side walls.
+    const inset = 0.28;
     const span = Math.max(0.2, p.roomW - inset * 2);
     return p.roomLeft + inset + ((rh >>> 7) % 1000) / 1000 * span;
   }
