@@ -45,6 +45,27 @@ interface Popup {
 }
 const POPUP_LIFE_MS = 950;
 
+/** A 2D point in screen space (used by the perspective room interiors). */
+interface Pt {
+  x: number;
+  y: number;
+}
+
+/**
+ * A perspective "room shell": the drawn empty box plus parametric helpers to
+ * place fixtures on its surfaces. `wall(f,g)` maps the back wall (f=left→right,
+ * g=top→bottom); `ceil`/`floor(f,g)` map those planes (g=front→back).
+ */
+interface RoomShell {
+  quad(pts: Pt[], fill: string): void;
+  lp(a: Pt, b: Pt, f: number): Pt;
+  wall(f: number, g: number): Pt;
+  ceil(f: number, g: number): Pt;
+  floor(f: number, g: number): Pt;
+  base: number[];
+  w: number;
+}
+
 /** Steel-frame color for structural girders. */
 const GIRDER_COLOR = "#5c6470";
 /** Lighter edge highlight so the steel beams read against the dark plot. */
@@ -452,15 +473,22 @@ export class Renderer {
       const y = camera.rowTopScreenY(unit.row);
       const wpx = unit.width * cell;
 
-      ctx.fillStyle = def.color;
-      ctx.fillRect(x + 1, y + 1, wpx - 2, cell - 2);
+      // Every room type except infrastructure (lobby / elevator) is drawn as an
+      // empty perspective interior; the rest keep a flat colored cell.
+      const hasInterior = unit.kind !== "lobby";
+      if (hasInterior) {
+        this.drawRoomInterior(unit.kind, x + 1, y + 1, wpx - 2, cell - 2);
+      } else {
+        ctx.fillStyle = def.color;
+        ctx.fillRect(x + 1, y + 1, wpx - 2, cell - 2);
+      }
 
       // Owner-color band along the top edge so ownership reads at a glance.
       ctx.fillStyle = ownerColor;
       ctx.fillRect(x + 1, y + 1, wpx - 2, bandH);
 
-      // Occupancy shading for revenue units.
-      if (def.incomeAtFull > 0) {
+      // Occupancy shading for revenue units (flat-drawn rooms only).
+      if (def.incomeAtFull > 0 && !hasInterior) {
         ctx.fillStyle = "rgba(255,220,120,0.4)";
         const barH = Math.max(3, cell * 0.16);
         const litW = (wpx - 6) * unit.occupancy;
@@ -468,7 +496,7 @@ export class Renderer {
       }
 
       if (showLabels) {
-        ctx.fillStyle = "rgba(0,0,0,0.35)";
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
         ctx.font = `${Math.min(11, cell * 0.24)}px system-ui, sans-serif`;
         ctx.textBaseline = "top";
         ctx.textAlign = "left";
@@ -557,6 +585,261 @@ export class Renderer {
     ctx.strokeStyle = "#6b7280";
     ctx.lineWidth = 1;
     ctx.strokeRect(cx + 0.5, cy + 0.5, cw - 1, chH - 1);
+  }
+
+  /**
+   * Draw a room as an empty interior in a light 3-point perspective — the "empty
+   * shell" of that room type before any tenants/customers move in. Falls back to
+   * a flat fill for kinds that don't have bespoke art yet.
+   */
+  private drawRoomInterior(kind: keyof typeof UNIT_DEFS, x: number, y: number, w: number, h: number): void {
+    switch (kind) {
+      case "office":
+        return this.drawOfficeInterior(x, y, w, h);
+      case "medical":
+        return this.drawMedicalInterior(x, y, w, h);
+      case "apartment":
+        return this.drawApartmentInterior(x, y, w, h);
+      case "store":
+        return this.drawStoreInterior(x, y, w, h);
+      case "restaurant":
+        return this.drawRestaurantInterior(x, y, w, h);
+      case "hotel":
+        return this.drawHotelInterior(x, y, w, h);
+      default:
+        this.ctx.fillStyle = UNIT_DEFS[kind].color;
+        this.ctx.fillRect(x, y, w, h);
+    }
+  }
+
+  /**
+   * Build + draw the empty perspective shell (floor, ceiling, two side walls,
+   * back wall) shaded from `base`, and return helpers to place fixtures on it.
+   */
+  private roomShell(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    base: number[],
+    opt: { floor?: string; ceiling?: string; back?: string } = {},
+  ): RoomShell {
+    const { ctx } = this;
+    const vp: Pt = { x: x + w * 0.54, y: y + h * 0.46 }; // slightly off-centre → subtle 3-point feel
+    const depth = 0.52;
+    const to = (p: Pt): Pt => ({ x: p.x + (vp.x - p.x) * depth, y: p.y + (vp.y - p.y) * depth });
+    const TL: Pt = { x, y }, TR: Pt = { x: x + w, y }, BR: Pt = { x: x + w, y: y + h }, BL: Pt = { x, y: y + h };
+    const bTL = to(TL), bTR = to(TR), bBR = to(BR), bBL = to(BL);
+    const lp = (a: Pt, b: Pt, f: number): Pt => ({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
+    const quad = (pts: Pt[], fill: string): void => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+    };
+    // The five interior surfaces.
+    quad([BL, BR, bBR, bBL], opt.floor ?? rgb(mix(base, [16, 18, 24], 0.55))); // floor
+    quad([TL, TR, bTR, bTL], opt.ceiling ?? rgb(mix(base, [245, 248, 252], 0.52))); // ceiling
+    quad([TL, bTL, bBL, BL], rgb(mix(base, [8, 12, 20], 0.44))); // left wall (shadow side)
+    quad([TR, bTR, bBR, BR], rgb(mix(base, [8, 12, 20], 0.22))); // right wall
+    quad([bTL, bTR, bBR, bBL], opt.back ?? rgb(mix(base, [236, 241, 247], 0.3))); // back wall
+    // Baseboard seam where the back wall meets the floor.
+    ctx.strokeStyle = rgb(mix(base, [0, 0, 0], 0.5));
+    ctx.lineWidth = Math.max(0.5, w * 0.01);
+    ctx.beginPath();
+    ctx.moveTo(bBL.x, bBL.y);
+    ctx.lineTo(bBR.x, bBR.y);
+    ctx.stroke();
+
+    return {
+      quad,
+      lp,
+      wall: (f, g) => lp(lp(bTL, bTR, f), lp(bBL, bBR, f), g),
+      ceil: (f, g) => lp(lp(TL, TR, f), lp(bTL, bTR, f), g),
+      floor: (f, g) => lp(lp(BL, BR, f), lp(bBL, bBR, f), g),
+      base,
+      w,
+    };
+  }
+
+  // --- room fixtures (all drawn on the shell's perspective surfaces) ---------
+
+  /** A framed window on the back wall (glass gradient + mullions). */
+  private roomWindow(
+    s: RoomShell,
+    f0: number,
+    f1: number,
+    g0: number,
+    g1: number,
+    sky1: number[],
+    sky2: number[],
+    vMull: number[] = [0.5],
+  ): void {
+    const { ctx } = this;
+    const pts = [s.wall(f0, g0), s.wall(f1, g0), s.wall(f1, g1), s.wall(f0, g1)];
+    s.quad(pts, rgb(mix(sky1, sky2, 0.5)));
+    ctx.strokeStyle = rgb(mix(s.base, [0, 0, 0], 0.5));
+    ctx.lineWidth = Math.max(0.6, s.w * 0.012);
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (const p of pts) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(pts[0].x, pts[0].y);
+    for (const f of vMull) {
+      const ff = f0 + (f1 - f0) * f;
+      const a = s.wall(ff, g0), b = s.wall(ff, g1);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+    }
+    const gm = (g0 + g1) / 2;
+    const ha = s.wall(f0, gm), hb = s.wall(f1, gm);
+    ctx.moveTo(ha.x, ha.y);
+    ctx.lineTo(hb.x, hb.y);
+    ctx.stroke();
+  }
+
+  /** A filled rectangle on the back wall (counters, cabinets, signs, curtains). */
+  private wallBand(s: RoomShell, f0: number, f1: number, g0: number, g1: number, color: string): void {
+    s.quad([s.wall(f0, g0), s.wall(f1, g0), s.wall(f1, g1), s.wall(f0, g1)], color);
+  }
+
+  /** Horizontal lines across the back wall (shelving). */
+  private wallLines(s: RoomShell, f0: number, f1: number, gs: number[], color: string): void {
+    const { ctx } = this;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(0.6, s.w * 0.012);
+    ctx.beginPath();
+    for (const g of gs) {
+      const a = s.wall(f0, g), b = s.wall(f1, g);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+    }
+    ctx.stroke();
+  }
+
+  /** Vertical dividers on the back wall (shelf uprights). */
+  private wallVLines(s: RoomShell, fs: number[], g0: number, g1: number, color: string): void {
+    const { ctx } = this;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(0.5, s.w * 0.01);
+    ctx.beginPath();
+    for (const f of fs) {
+      const a = s.wall(f, g0), b = s.wall(f, g1);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+    }
+    ctx.stroke();
+  }
+
+  /** Recessed rectangular ceiling light panels at the given centre fractions. */
+  private ceilingPanels(s: RoomShell, cfs: number[]): void {
+    for (const cf of cfs) {
+      s.quad(
+        [s.ceil(cf - 0.11, 0.5), s.ceil(cf + 0.11, 0.5), s.ceil(cf + 0.11, 0.92), s.ceil(cf - 0.11, 0.92)],
+        "rgba(255,251,224,0.85)",
+      );
+    }
+  }
+
+  /** Small bright ceiling spots (retail track lighting). */
+  private trackLights(s: RoomShell, fs: number[]): void {
+    for (const f of fs) {
+      s.quad(
+        [s.ceil(f - 0.04, 0.55), s.ceil(f + 0.04, 0.55), s.ceil(f + 0.04, 0.72), s.ceil(f - 0.04, 0.72)],
+        "rgba(255,250,220,0.9)",
+      );
+    }
+  }
+
+  /** Pendant lamps hanging from the ceiling (restaurant). */
+  private pendantLights(s: RoomShell, fs: number[], color = "rgba(255,214,140,0.95)"): void {
+    const { ctx } = this;
+    for (const f of fs) {
+      const top = s.ceil(f, 0.62);
+      const at = s.lp(top, s.floor(f, 0.62), 0.3);
+      ctx.strokeStyle = "rgba(20,20,25,0.6)";
+      ctx.lineWidth = Math.max(0.5, s.w * 0.006);
+      ctx.beginPath();
+      ctx.moveTo(top.x, top.y);
+      ctx.lineTo(at.x, at.y);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(at.x, at.y, Math.max(1.2, s.w * 0.028), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  /** Empty open-plan office: bare carpet, a window wall, drop-ceiling lights. */
+  private drawOfficeInterior(x: number, y: number, w: number, h: number): void {
+    const s = this.roomShell(x, y, w, h, [91, 143, 176]);
+    this.roomWindow(s, 0.1, 0.9, 0.24, 0.6, [150, 200, 235], [92, 148, 194], [0.37, 0.63]);
+    this.ceilingPanels(s, [0.32, 0.68]);
+  }
+
+  /** Empty clinic: bright clinical walls, a small window, a green cross, panels. */
+  private drawMedicalInterior(x: number, y: number, w: number, h: number): void {
+    const base = [75, 181, 166];
+    const s = this.roomShell(x, y, w, h, base, {
+      floor: rgb(mix(base, [222, 230, 228], 0.6)), // pale linoleum
+      back: rgb(mix(base, [240, 246, 244], 0.5)),
+    });
+    this.roomWindow(s, 0.1, 0.46, 0.24, 0.58, [170, 210, 235], [110, 160, 200], [0.5]);
+    // Green medical cross on the back-right wall.
+    this.wallBand(s, 0.66, 0.74, 0.28, 0.6, "rgba(40,160,96,0.92)");
+    this.wallBand(s, 0.6, 0.8, 0.38, 0.5, "rgba(40,160,96,0.92)");
+    this.ceilingPanels(s, [0.3, 0.7]);
+  }
+
+  /** Empty flat: wood floor, a window, and a built-in kitchenette. */
+  private drawApartmentInterior(x: number, y: number, w: number, h: number): void {
+    const base = [123, 171, 110];
+    const s = this.roomShell(x, y, w, h, base, {
+      floor: rgb(mix([120, 82, 48], [58, 36, 18], 0.4)), // wood
+    });
+    this.roomWindow(s, 0.08, 0.46, 0.22, 0.58, [205, 185, 150], [150, 170, 195], [0.5]);
+    // Kitchenette on the right: lower counter + two upper cabinets.
+    this.wallBand(s, 0.54, 0.92, 0.6, 0.7, "rgba(58,42,30,0.92)");
+    this.wallBand(s, 0.56, 0.68, 0.3, 0.48, "rgba(96,70,50,0.95)");
+    this.wallBand(s, 0.74, 0.86, 0.3, 0.48, "rgba(96,70,50,0.95)");
+    this.trackLights(s, [0.5]);
+  }
+
+  /** Empty retail unit: polished floor, empty wall shelving, track lights. */
+  private drawStoreInterior(x: number, y: number, w: number, h: number): void {
+    const base = [208, 138, 79];
+    const s = this.roomShell(x, y, w, h, base, {
+      floor: rgb(mix(base, [236, 226, 212], 0.62)), // polished
+      back: rgb(mix(base, [235, 228, 214], 0.42)),
+    });
+    this.wallLines(s, 0.1, 0.9, [0.3, 0.45, 0.6, 0.75], "rgba(70,50,32,0.5)");
+    this.wallVLines(s, [0.3, 0.5, 0.7], 0.28, 0.78, "rgba(70,50,32,0.4)");
+    this.trackLights(s, [0.25, 0.5, 0.75]);
+  }
+
+  /** Empty dining room: wood floor, a back bar with bottle shelves, pendants. */
+  private drawRestaurantInterior(x: number, y: number, w: number, h: number): void {
+    const base = [200, 90, 106];
+    const s = this.roomShell(x, y, w, h, base, {
+      floor: rgb(mix([110, 66, 40], [54, 32, 18], 0.4)), // wood
+      back: rgb(mix(base, [60, 40, 44], 0.35)),
+    });
+    this.wallBand(s, 0.08, 0.92, 0.56, 0.72, "rgba(48,30,26,0.95)"); // bar counter
+    this.wallLines(s, 0.12, 0.88, [0.3, 0.42], "rgba(200,170,120,0.5)"); // bottle shelves
+    this.pendantLights(s, [0.28, 0.5, 0.72]);
+  }
+
+  /** Empty hotel room: carpet, a curtained window, an empty headboard wall. */
+  private drawHotelInterior(x: number, y: number, w: number, h: number): void {
+    const base = [106, 127, 192];
+    const s = this.roomShell(x, y, w, h, base, {
+      floor: rgb(mix(base, [42, 36, 54], 0.55)), // carpet
+    });
+    this.roomWindow(s, 0.32, 0.68, 0.18, 0.54, [150, 180, 215], [95, 130, 180], []);
+    this.wallBand(s, 0.14, 0.3, 0.14, 0.6, "rgba(70,80,120,0.9)"); // left curtain
+    this.wallBand(s, 0.7, 0.86, 0.14, 0.6, "rgba(70,80,120,0.9)"); // right curtain
+    this.wallBand(s, 0.2, 0.8, 0.66, 0.82, "rgba(120,96,70,0.9)"); // headboard wall
   }
 
   /** Small price tag centered at (cx, baselineY) — used for the live girder cost. */
