@@ -1,5 +1,5 @@
 import type { GameState, Plot, Worker } from "../game/types";
-import { elevatorRuns, stepCar } from "../game/elevator";
+import { elevatorRuns, carsInRun, stepCar } from "../game/elevator";
 import { hashString } from "../game/hash";
 import { personName } from "../game/names";
 
@@ -110,6 +110,7 @@ const PEOPLE_KINDS = new Set(["office", "medical", "store", "restaurant", "apart
 export class PeopleSim {
   private people = new Map<string, Person>();
   private cars = new Map<string, Car>();
+  private litRooms = new Set<string>(); // roomIds with an awake person in them (rebuilt each frame)
   private t = 0; // accumulated sim seconds (drives milling)
   private archetype = "pacifica"; // city archetype (for hotel guest names)
 
@@ -130,6 +131,13 @@ export class PeopleSim {
       this.dispatch(plot, dt);
     }
     for (const p of this.people.values()) this.stepPerson(p, hourF, dayIndex, absHour, dt);
+
+    // Rebuild the set of rooms with an awake occupant once (after stepping), so
+    // roomLight() is O(1) per room instead of O(people) per lit room per frame.
+    this.litRooms.clear();
+    for (const p of this.people.values()) {
+      if (p.st === "atRoom" && !p.sleeping) this.litRooms.add(p.roomId);
+    }
   }
 
   /**
@@ -139,11 +147,12 @@ export class PeopleSim {
    */
   roomLight(roomId: string, kind: string): boolean | null {
     if (kind !== "apartment" && kind !== "hotel") return null;
-    for (const p of this.people.values()) {
-      if (p.roomId !== roomId) continue;
-      if (p.st === "atRoom" && !p.sleeping) return true;
-    }
-    return false;
+    return this.litRooms.has(roomId);
+  }
+
+  /** Whether a person id still exists in the sim (for clearing stale track pins). */
+  has(id: string): boolean {
+    return this.people.has(id);
   }
 
   /** Smoothed car position (falls back to the authoritative one). */
@@ -182,7 +191,7 @@ export class PeopleSim {
         if (!this.cars.has(car.id)) {
           this.cars.set(car.id, {
             col: car.col,
-            pos: car.home ?? car.position,
+            pos: car.home ?? car.position ?? 0,
             vel: 0,
             passengers: [],
             mode: "move",
@@ -359,12 +368,24 @@ export class PeopleSim {
     return { arrival, bedtime, wake, checkout, name: personName(this.archetype, h) };
   }
 
-  /** Nearest elevator column reaching both the ground and the office floor. */
+  /**
+   * Nearest elevator column reaching both the ground and the office floor AND
+   * having a car (an empty shaft can't carry anyone — without this check people
+   * would queue forever at a shaft that never answers, e.g. after its car is
+   * sold).
+   */
   private shaftFor(plot: Plot, officeCol: number, officeRow: number): number | null {
-    const runs = elevatorRuns(plot).filter((r) => r.from <= 0 && r.to >= officeRow);
+    const runs = elevatorRuns(plot).filter(
+      (r) => r.from <= 0 && r.to >= officeRow && carsInRun(plot, r).length > 0,
+    );
     if (runs.length === 0) return null;
     runs.sort((a, b) => Math.abs(a.col - officeCol) - Math.abs(b.col - officeCol));
     return runs[0].col;
+  }
+
+  /** Vertical distance from a floor position to a run's [from,to] range (0 if inside). */
+  private runDist(run: { from: number; to: number }, pos: number): number {
+    return Math.max(0, run.from - pos, pos - run.to);
   }
 
   // --- elevator dispatch -----------------------------------------------------
@@ -374,9 +395,13 @@ export class PeopleSim {
     for (const car of plot.cars ?? []) {
       const cs = this.cars.get(car.id);
       if (!cs) continue;
+      // The run the car is in; if it's momentarily between disjoint runs in its
+      // column, fall back to the NEAREST run (not just the first) so it isn't
+      // clamped into the wrong shaft segment.
+      const colRuns = runs.filter((r) => r.col === car.col);
       const run =
-        runs.find((r) => r.col === car.col && Math.round(cs.pos) >= r.from && Math.round(cs.pos) <= r.to) ??
-        runs.find((r) => r.col === car.col);
+        colRuns.find((r) => Math.round(cs.pos) >= r.from && Math.round(cs.pos) <= r.to) ??
+        colRuns.sort((a, b) => this.runDist(a, cs.pos) - this.runDist(b, cs.pos))[0];
       if (!run) continue;
 
       if (cs.mode === "load") {
@@ -442,7 +467,10 @@ export class PeopleSim {
     const f = Math.round(cs.pos);
     for (const id of [...cs.passengers]) {
       const p = this.people.get(id);
-      if (!p) {
+      // Drop anyone who's gone, or no longer actually riding (state desynced) —
+      // otherwise a "ghost" passenger would silently eat the car's capacity.
+      if (!p || this.destOf(id) === null) {
+        if (p) p.car = null;
         this.alight(cs, id);
         continue;
       }

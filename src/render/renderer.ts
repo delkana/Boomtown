@@ -796,6 +796,11 @@ export class Renderer {
     return this.trackedScreen;
   }
 
+  /** Whether a person id still exists in the sim (for dropping stale track pins). */
+  hasPerson(id: string): boolean {
+    return this.people.has(id);
+  }
+
   /** A downward triangle hovering over the tracked person's head. */
   private drawTrackMarker(px: number, py: number, cell: number): void {
     const { ctx } = this;

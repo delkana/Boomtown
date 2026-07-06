@@ -18,11 +18,20 @@ html,
 body {
   margin: 0;
   height: 100%;
+  height: 100dvh; /* track the visible viewport as mobile browser chrome shows/hides */
   overflow: hidden;
+  overscroll-behavior: none; /* no pull-to-refresh / rubber-banding over the game */
   background: #0d131c;
   color: var(--text);
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   user-select: none;
+}
+
+/* Text fields must stay selectable/editable despite the global user-select:none. */
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .hidden {
@@ -442,6 +451,7 @@ button.primary.big {
   width: 100%;
   height: 100%;
   cursor: crosshair;
+  touch-action: none; /* we handle pan/zoom ourselves; don't let the browser scroll/zoom */
 }
 
 .panel {
@@ -838,6 +848,7 @@ button.primary.big {
   width: 100%;
   height: 100%;
   cursor: pointer;
+  touch-action: none;
 }
 
 /* Nav controls — bottom-right. */
@@ -1050,4 +1061,147 @@ button.primary.big {
   border: 1.5px solid;
   display: inline-block;
   flex: none;
+}
+
+/* ===================== Mobile / small screens ===================== */
+/* Phones & small tablets: the desktop HUD assumes lots of horizontal room, so
+   here we stack the top bar above the corner panels, turn the toolbar into a
+   single swipeable row, hide the two non-essential panels (minimap + heatmap),
+   grow touch targets, and honor the notch / home-indicator safe areas. */
+@media (max-width: 760px) {
+  /* Hover effects are inert / can "stick" on touch — neutralize the lift. */
+  .tool:hover,
+  #topbar button:hover,
+  #nav-controls button:hover,
+  .color-swatch:hover {
+    transform: none;
+  }
+
+  /* Blurred panels over an animated canvas are costly on mobile GPUs. */
+  .panel {
+    backdrop-filter: none;
+    background: rgba(16, 22, 32, 0.94);
+  }
+
+  /* Row 1: the top bar spans the full width and wraps. */
+  #topbar {
+    top: calc(6px + env(safe-area-inset-top));
+    left: 6px;
+    right: 6px;
+    transform: none;
+    max-width: none;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px 6px;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  #topbar .flag {
+    display: none;
+  }
+
+  /* Row 2: the two stat panels sit BELOW the top bar so they never overlap it. */
+  #stats {
+    top: 92px;
+    left: 6px;
+    min-width: 0;
+    width: 42vw;
+    max-width: 200px;
+    font-size: 11.5px;
+    padding: 8px 10px;
+  }
+  #players {
+    top: 92px;
+    right: 6px;
+    min-width: 0;
+    width: 42vw;
+    max-width: 200px;
+  }
+
+  /* Declutter: the minimap and heatmap toggle are non-essential on a phone. */
+  #minimap,
+  #overlay {
+    display: none;
+  }
+
+  /* Inspector / shaft panel: dock right, above the bottom controls. */
+  #inspector,
+  #shaft-panel {
+    right: 6px;
+    bottom: 128px;
+    width: min(200px, 66vw);
+  }
+  #person-tip {
+    max-width: 66vw;
+  }
+
+  /* Bottom: one horizontally-scrollable toolbar row (no ragged wrap). */
+  #toolbar {
+    left: 6px;
+    right: 6px;
+    transform: none;
+    max-width: none;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tool {
+    flex: 0 0 auto;
+  }
+
+  /* Nav controls sit just above the toolbar, right-aligned. */
+  #nav-controls {
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    right: calc(8px + env(safe-area-inset-right));
+  }
+  #nav-controls #zoom-in,
+  #nav-controls #zoom-out {
+    width: 44px;
+    height: 44px;
+  }
+  #nav-controls button {
+    min-height: 40px;
+  }
+
+  /* The hint pill must wrap on a narrow screen, and gets out of the way when a
+     category sub-menu is open (it would otherwise overlap the sub-menu items). */
+  #hint {
+    white-space: normal;
+    max-width: 92vw;
+    text-align: center;
+  }
+  #hint.raised,
+  #hint.raised2 {
+    display: none;
+  }
+
+  /* Bigger, easier-to-hit controls. */
+  #topbar .speed button,
+  .floor-btn,
+  .door-btn {
+    min-height: 36px;
+  }
+
+  /* Lobby / create-city modal: stack paired fields and use the modal as the
+     single scroll container (no nested-scroll trap), sized to the live viewport. */
+  .create-card {
+    max-height: calc(100dvh - 24px);
+  }
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+  .archetype-grid {
+    max-height: none;
+  }
+  .swatch-grid {
+    grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+  }
+  .color-swatch {
+    height: 40px;
+  }
 }

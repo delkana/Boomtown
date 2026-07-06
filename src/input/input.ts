@@ -32,6 +32,10 @@ export class InputController {
   private dragStartOffset = 0;
   private dragStartOffsetY = 0;
   private movedWhileDragging = false;
+  /** Active touch/pen pointers (by id) — two down means a pinch-zoom gesture. */
+  private pointers = new Map<number, { x: number; y: number }>();
+  /** Distance between the two pinch pointers on the previous move (0 = not pinching). */
+  private pinchDist = 0;
   /** Girder drag-paint: while the girder tool is held down, drag lays girders. */
   private painting = false;
   private lastPaintKey: string | null = null;
@@ -66,6 +70,11 @@ export class InputController {
   /** The person clicked to lock/track their info panel, or null. */
   trackedPerson(): string | null {
     return this.pinnedPerson;
+  }
+
+  /** Stop tracking (e.g. when the tracked person no longer exists). */
+  clearTrack(): void {
+    this.pinnedPerson = null;
   }
 
   /**
@@ -124,6 +133,7 @@ export class InputController {
     c.addEventListener("pointerdown", this.onPointerDown);
     c.addEventListener("pointermove", this.onPointerMove);
     c.addEventListener("pointerup", this.onPointerUp);
+    c.addEventListener("pointercancel", this.onPointerCancel);
     c.addEventListener("pointerleave", this.onPointerLeave);
     c.addEventListener("contextmenu", this.onContextMenu);
     c.addEventListener("wheel", this.onWheel, { passive: false });
@@ -137,6 +147,7 @@ export class InputController {
     c.removeEventListener("pointerdown", this.onPointerDown);
     c.removeEventListener("pointermove", this.onPointerMove);
     c.removeEventListener("pointerup", this.onPointerUp);
+    c.removeEventListener("pointercancel", this.onPointerCancel);
     c.removeEventListener("pointerleave", this.onPointerLeave);
     c.removeEventListener("contextmenu", this.onContextMenu);
     c.removeEventListener("wheel", this.onWheel);
@@ -175,6 +186,25 @@ export class InputController {
     this.onPersonHover(null, 0, 0);
   };
 
+  private onPointerCancel = (e: PointerEvent): void => {
+    this.pointers.delete(e.pointerId);
+    if (this.pointers.size < 2) this.pinchDist = 0;
+    this.dragging = false;
+    this.painting = false;
+  };
+
+  /** Screen distance between the two active pinch pointers (0 if not two). */
+  private pinchSpan(): number {
+    const pts = [...this.pointers.values()];
+    return pts.length < 2 ? 0 : Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  }
+
+  /** Midpoint x between the two pinch pointers (view center if not two). */
+  private pinchMidX(): number {
+    const pts = [...this.pointers.values()];
+    return pts.length < 2 ? this.camera.viewW / 2 : (pts[0].x + pts[1].x) / 2;
+  }
+
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
     const { x } = this.localPointer(e);
@@ -184,10 +214,19 @@ export class InputController {
 
   private onPointerDown = (e: PointerEvent): void => {
     const { x, y } = this.localPointer(e);
+    this.pointers.set(e.pointerId, { x, y });
     try {
       this.canvas.setPointerCapture(e.pointerId);
     } catch {
       /* synthetic or inactive pointer */
+    }
+
+    // A second finger starts a pinch-zoom: cancel any in-progress drag/paint.
+    if (this.pointers.size >= 2) {
+      this.dragging = false;
+      this.painting = false;
+      this.pinchDist = this.pinchSpan();
+      return;
     }
 
     // Girder tool: click-and-drag paints girders instead of panning the view.
@@ -210,6 +249,17 @@ export class InputController {
 
   private onPointerMove = (e: PointerEvent): void => {
     const { x, y } = this.localPointer(e);
+    if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x, y });
+
+    // Two fingers down → pinch to zoom about their midpoint.
+    if (this.pointers.size >= 2) {
+      const d = this.pinchSpan();
+      if (this.pinchDist > 0 && d > 0) this.zoomBy(d / this.pinchDist, this.pinchMidX());
+      this.pinchDist = d;
+      this.onPersonHover(null, 0, 0);
+      return;
+    }
+
     this.hover = this.camera.screenToCell(x, y);
     if (this.painting) {
       this.paintGirderLine(x, y);
@@ -232,10 +282,19 @@ export class InputController {
 
   private onPointerUp = (e: PointerEvent): void => {
     const { x, y } = this.localPointer(e);
+    const wasPinch = this.pointers.size >= 2;
+    this.pointers.delete(e.pointerId);
+    if (this.pointers.size < 2) this.pinchDist = 0;
     try {
       this.canvas.releasePointerCapture(e.pointerId);
     } catch {
       /* pointer may already be released */
+    }
+    // Lifting a finger out of a pinch must not register as a tap/build.
+    if (wasPinch) {
+      this.dragging = false;
+      this.painting = false;
+      return;
     }
 
     // Finish a girder paint stroke: flash the total spent once, at the cursor.

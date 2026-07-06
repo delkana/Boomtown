@@ -12,6 +12,7 @@ import { servicedRows, elevatorRuns, stepCar, CAR_SPEED, MAX_CARS_PER_SHAFT } fr
 import { facadeById, DEFAULT_FACADE } from "../src/game/facades";
 import { generateTenant, tenantLit, hasTrades } from "../src/game/tenants";
 import { PeopleSim } from "../src/render/people";
+import { GameDirectory } from "../src/net/gameDirectory";
 import type { GameState, Plot } from "../src/game/types";
 
 /** Indices of the first `n` buildable (non-feature) plots. */
@@ -1078,5 +1079,61 @@ describe("apartment sleep (people sim)", () => {
     // Awake and clear of work ≥2h: at 7am (2h before the 9am start) they're up.
     settle(sim, state, 24 + 7);
     expect(sim.peopleIn(0).some((v) => v.sleeping)).toBe(false);
+  });
+});
+
+describe("elevator servicing (people sim)", () => {
+  // An office on floor 2 reached by a col-1 shaft; the car is optional.
+  function officeTower(withCar: boolean): GameState {
+    const w = { name: "Ada Byron", title: "Software Engineer", dailySalary: 400, days: [0, 1, 2, 3, 4, 5, 6], startHour: 0, endHour: 24, lunchHour: -1 };
+    const tenant = {
+      name: "Cortex Labs", subset: "software", trade: "Software Studio", openHour: 0, closeHour: 24,
+      openDays: [0, 1, 2, 3, 4, 5, 6], employees: 2, workers: [w, { ...w, name: "Alan Turing" }], appeal: 1, dailyRent: 100,
+    };
+    const plot: Plot = {
+      id: "p", index: 0, cols: 6, name: "P", feature: null, ownerId: "x", girders: [],
+      units: [
+        { id: "e0", kind: "elevator", col: 1, row: 0, width: 1, occupancy: 0 },
+        { id: "e1", kind: "elevator", col: 1, row: 1, width: 1, occupancy: 0 },
+        { id: "e2", kind: "elevator", col: 1, row: 2, width: 1, occupancy: 0 },
+        { id: "u1", kind: "office", col: 3, row: 2, width: 2, occupancy: 1, tenant },
+      ],
+      cars: withCar ? [{ id: "c1", col: 1, position: 0, home: 0 }] : [],
+    };
+    return {
+      id: "g", tick: 0, speed: 1,
+      config: { cityName: "c", archetype: "pacifica", backgroundNear: "none", backgroundFar: "clear", latitude: 0, plotCount: 1, maxPlayers: 4, hasPassword: false },
+      players: {}, plots: { 0: plot }, nextUnitSeq: 5, nextPlayerSeq: 1,
+    };
+  }
+
+  it("upper-floor workers appear only when their shaft actually has a car", () => {
+    // No car in the shaft → nobody can reach the office → no workers spawn.
+    const empty = new PeopleSim();
+    for (let i = 0; i < 60; i++) empty.update(officeTower(false), 12, 0, 12, 0.1);
+    expect(empty.peopleIn(0).length).toBe(0);
+    // Add a car → workers commute up and appear (no one is left stuck).
+    const served = new PeopleSim();
+    const state = officeTower(true);
+    for (let i = 0; i < 400; i++) served.update(state, 12, 0, 12, 0.1);
+    expect(served.peopleIn(0).length).toBeGreaterThan(0);
+  });
+});
+
+describe("game directory validation", () => {
+  const baseCfg = {
+    cityName: "Testville", archetype: "pacifica", backgroundNear: "none", backgroundFar: "clear",
+    latitude: 20, plotCount: 6, maxPlayers: 4, password: null, playerName: "Tester", playerColor: "crimson",
+  };
+
+  it("rejects non-finite plotCount / maxPlayers (untrusted-input guard)", () => {
+    const dir = new GameDirectory({ seed: false });
+    expect(dir.create({ ...baseCfg, plotCount: NaN }).ok).toBe(false);
+    expect(dir.create({ ...baseCfg, maxPlayers: NaN }).ok).toBe(false);
+    expect(dir.create({ ...baseCfg, plotCount: Infinity }).ok).toBe(false);
+    // A well-formed config still creates a game with the right plot count.
+    const good = dir.create(baseCfg);
+    expect(good.ok).toBe(true);
+    if (good.ok) expect(Object.keys(good.game.state.plots).length).toBeGreaterThanOrEqual(6);
   });
 });

@@ -277,12 +277,15 @@ function setCarHome(
 
   const cars = (plot.cars ?? []).filter((c) => c.col === cmd.col);
   if (cars.length === 0) return fail("No elevator cars in this shaft");
-  const run = runContaining(plot, cmd.col, Math.round(cars[0].position));
-  if (!run) return fail("No shaft here");
-  const home = Math.max(run.from, Math.min(run.to, Math.round(cmd.home)));
+  // A column can hold two disjoint shafts; clamp each car's home to ITS run.
+  let set = false;
   for (const c of cars) {
-    if (Math.round(c.position) >= run.from && Math.round(c.position) <= run.to) c.home = home;
+    const run = runContaining(plot, cmd.col, Math.round(c.position));
+    if (!run) continue;
+    c.home = Math.max(run.from, Math.min(run.to, Math.round(cmd.home)));
+    set = true;
   }
+  if (!set) return fail("No shaft here");
   return ok();
 }
 

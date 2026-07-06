@@ -117,6 +117,10 @@ function enterGame(conn: GameConnection): void {
     personTipEl.style.left = `${sx}px`;
     personTipEl.style.top = `${sy}px`;
     personTipEl.classList.remove("hidden");
+    // Keep it on-screen (matters on phones, where a tap can be near an edge).
+    const r = personTipEl.getBoundingClientRect();
+    if (r.right > window.innerWidth - 6) personTipEl.style.left = `${Math.max(6, sx - r.width - 24)}px`;
+    if (r.bottom > window.innerHeight - 6) personTipEl.style.top = `${Math.max(6, sy - r.height - 8)}px`;
   };
   // A tracked (clicked) person's panel takes priority over a transient hover.
   let hoverInfo: { worker: Worker | null; x: number; y: number } = { worker: null, x: 0, y: 0 };
@@ -192,6 +196,9 @@ function enterGame(conn: GameConnection): void {
   const loop = new RenderLoop((dt) => {
     input.update(dt);
     renderer.render(conn.getState(), conn.session.playerId, input.hover, input.selectedTool, hud.heatmap, input.girderStyle, dt, input.trackedPerson());
+    // Drop a track pin whose person has left the sim entirely (e.g. room sold).
+    const tid = input.trackedPerson();
+    if (tid && !renderer.hasPerson(tid)) input.clearTrack();
     updatePersonTip();
     hud.tickClock();
     minimap.render();

@@ -72,11 +72,11 @@ export class GameDirectory {
     if (cityName.length > 28) return err("City name is too long");
 
     const plotCount = Math.floor(cfg.plotCount);
-    if (plotCount < MIN_PLOTS || plotCount > MAX_PLOTS)
+    if (!Number.isFinite(plotCount) || plotCount < MIN_PLOTS || plotCount > MAX_PLOTS)
       return err(`Properties must be between ${MIN_PLOTS} and ${MAX_PLOTS}`);
 
     const maxPlayers = Math.floor(cfg.maxPlayers);
-    if (maxPlayers < 1 || maxPlayers > MAX_PLAYERS_LIMIT)
+    if (!Number.isFinite(maxPlayers) || maxPlayers < 1 || maxPlayers > MAX_PLAYERS_LIMIT)
       return err(`Max players must be between 1 and ${MAX_PLAYERS_LIMIT}`);
 
     const name = cfg.playerName.trim();
