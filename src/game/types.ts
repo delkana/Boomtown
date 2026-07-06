@@ -101,6 +101,8 @@ export interface GameState {
   id: string;
   /** Monotonic tick counter (increments once per economy step). */
   tick: number;
+  /** Game-speed multiplier (1..MAX_SPEED). Scales how fast real time -> ticks. */
+  speed: number;
   config: GameConfig;
   players: Record<string, Player>;
   /** All plots in the city strip, keyed by index for O(1) lookup. */

@@ -38,8 +38,15 @@ export const GIRDER_COST_PER_FLOOR = 5;
 /** Player's starting cash. */
 export const STARTING_MONEY = 25000;
 
-/** Real seconds between economy ticks (server-driven). */
+/** Real seconds between economy ticks at 1× speed (server-driven). */
 export const TICK_SECONDS = 2;
+/** In-game minutes that pass per tick. */
+export const TICK_MINUTES = 5;
+/** Highest game-speed multiplier the player can select. */
+export const MAX_SPEED = 5;
+/** Calendar: a "month" is one week, and a year is this many months. */
+export const DAYS_PER_WEEK = 7;
+export const MONTHS_PER_YEAR = 12;
 
 /** Lobby limits. */
 export const MAX_PLAYERS_LIMIT = 20;

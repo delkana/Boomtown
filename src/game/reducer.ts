@@ -1,6 +1,6 @@
 import type { Command } from "./commands";
 import type { GameState, Plot, Unit, UnitKind } from "./types";
-import { MAX_ROWS, UNIT_DEFS } from "./constants";
+import { MAX_ROWS, MAX_SPEED, UNIT_DEFS } from "./constants";
 import { claimCost, girderCost } from "./economy";
 import { featureLabel } from "./features";
 
@@ -27,6 +27,8 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
   switch (cmd.type) {
     case "CLAIM_PLOT":
       return claimPlot(state, cmd);
+    case "SET_SPEED":
+      return setSpeed(state, cmd);
     case "PLACE_GIRDER":
       return placeGirder(state, cmd);
     case "SELL_GIRDER":
@@ -55,6 +57,17 @@ function ownedBuildablePlot(
   if (plot.ownerId === null) return { ok: false, error: "Claim this plot before building" };
   if (plot.ownerId !== playerId) return { ok: false, error: "You don't own this plot" };
   return { ok: true, plot };
+}
+
+function setSpeed(
+  state: GameState,
+  cmd: Extract<Command, { type: "SET_SPEED" }>,
+): CommandResult {
+  if (!state.players[cmd.playerId]) return fail("No such player");
+  const speed = Math.round(cmd.speed);
+  if (speed < 1 || speed > MAX_SPEED) return fail("Invalid speed");
+  state.speed = speed;
+  return ok();
 }
 
 function placeGirder(

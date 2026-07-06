@@ -221,19 +221,22 @@ export class Renderer {
     const kind = plot.feature!;
 
     if (kind === "park") {
-      // Grass mound + trees.
+      // Grass fills the ground band, its top flush with the surrounding ground.
+      const gm = camera.groundMargin;
       ctx.fillStyle = "#2f6b3a";
-      ctx.fillRect(leftScreen, groundY - cell * 0.7, plotPxW, cell * 0.7 + 4);
-      ctx.fillStyle = "#8a6a3a"; // path
-      ctx.fillRect(leftScreen + plotPxW * 0.45, groundY - cell * 0.7, plotPxW * 0.1, cell * 0.7);
+      ctx.fillRect(leftScreen, groundY, plotPxW, gm);
+      ctx.fillStyle = "#3a7d46"; // lighter grass at the surface
+      ctx.fillRect(leftScreen, groundY, plotPxW, 3);
+      ctx.fillStyle = "#8a6a3a"; // a footpath through the middle
+      ctx.fillRect(leftScreen + plotPxW * 0.45, groundY, plotPxW * 0.1, gm);
+      // Trees rise ABOVE the ground line.
       for (const f of [0.18, 0.36, 0.62, 0.82]) {
         const tx = leftScreen + plotPxW * f;
-        const ty = groundY - cell * 0.9;
-        ctx.fillStyle = "#5a3f28";
-        ctx.fillRect(tx - cell * 0.03, ty, cell * 0.06, cell * 0.5);
-        ctx.fillStyle = "#3f9a52";
+        ctx.fillStyle = "#5a3f28"; // trunk
+        ctx.fillRect(tx - cell * 0.03, groundY - cell * 0.4, cell * 0.06, cell * 0.4);
+        ctx.fillStyle = "#3f9a52"; // canopy
         ctx.beginPath();
-        ctx.arc(tx, ty, cell * 0.28, 0, Math.PI * 2);
+        ctx.arc(tx, groundY - cell * 0.5, cell * 0.28, 0, Math.PI * 2);
         ctx.fill();
       }
     } else if (kind === "river") {

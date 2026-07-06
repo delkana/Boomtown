@@ -80,6 +80,7 @@ export function createGameState(id: string, config: GameConfig): GameState {
   return {
     id,
     tick: 0,
+    speed: 1,
     config,
     players: {},
     plots,

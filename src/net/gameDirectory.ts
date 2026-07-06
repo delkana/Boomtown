@@ -146,7 +146,8 @@ export class GameDirectory {
     this.games.clear();
     this.tokens.clear();
     for (const g of parsed.games) {
-      // Tolerate saves from before a field existed (e.g. girders).
+      // Tolerate saves from before a field existed (girders, speed).
+      if (!g.state.speed) g.state.speed = 1;
       for (const key of Object.keys(g.state.plots)) {
         const plot = g.state.plots[Number(key)];
         if (!plot.girders) plot.girders = [];
@@ -201,8 +202,8 @@ export class GameDirectory {
 
     const kyoto = AuthoritativeGame.create(
       "neo-kyoto",
-      { cityName: "Neo-Kyoto", archetype: "japan", plotCount: 8, maxPlayers: 4, hasPassword: true },
-      "1234",
+      { cityName: "Neo-Kyoto", archetype: "japan", plotCount: 8, maxPlayers: 4, hasPassword: false },
+      null,
     );
     this.games.set("neo-kyoto", kyoto);
     this.tokens.set("neo-kyoto", new Map());

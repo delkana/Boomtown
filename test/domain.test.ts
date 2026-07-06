@@ -3,6 +3,7 @@ import { createGameState, serialize, deserialize } from "../src/game/state";
 import { applyCommand } from "../src/game/reducer";
 import { advanceTick, projectedNet } from "../src/game/tick";
 import { propertyNameFor, archetype } from "../src/game/archetypes";
+import { gameTime } from "../src/game/clock";
 import { MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
 import { claimCost, girderCost, plotBaseCost } from "../src/game/economy";
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
@@ -382,6 +383,37 @@ describe("feature plots", () => {
     const idsA = Object.values(a.plots).filter((p) => p.feature).map((p) => p.index);
     const idsB = Object.values(b.plots).filter((p) => p.feature).map((p) => p.index);
     expect(idsA).toEqual(idsB);
+  });
+});
+
+describe("SET_SPEED", () => {
+  it("sets a valid speed and rejects out-of-range values", () => {
+    const s = freshGame();
+    expect(s.speed).toBe(1);
+    expect(applyCommand(s, { type: "SET_SPEED", playerId: "p1", speed: 3 }).ok).toBe(true);
+    expect(s.speed).toBe(3);
+    expect(applyCommand(s, { type: "SET_SPEED", playerId: "p1", speed: 9 }).ok).toBe(false);
+    expect(s.speed).toBe(3); // unchanged after an invalid request
+  });
+});
+
+describe("game clock", () => {
+  const TICKS_PER_DAY = (24 * 60) / 5; // 288
+  const TICKS_PER_WEEK = TICKS_PER_DAY * 7; // 2016 (one week == one month)
+
+  it("starts at Year 1, Month 1, Monday 00:00", () => {
+    expect(gameTime(0)).toMatchObject({ year: 1, month: 1, dayName: "Mon", time: "00:00" });
+  });
+
+  it("advances 5 in-game minutes per tick", () => {
+    expect(gameTime(1).time).toBe("00:05");
+    expect(gameTime(12).time).toBe("01:00");
+  });
+
+  it("treats a week as a month and 12 months as a year", () => {
+    expect(gameTime(TICKS_PER_DAY).dayName).toBe("Tue");
+    expect(gameTime(TICKS_PER_WEEK)).toMatchObject({ month: 2, year: 1, dayName: "Mon" });
+    expect(gameTime(TICKS_PER_WEEK * 12).year).toBe(2);
   });
 });
 

@@ -88,10 +88,15 @@ function enterGame(conn: GameConnection): void {
   let hud: Hud;
 
   const input = new InputController(canvas, camera, conn, () => hud.update());
-  hud = new Hud(conn, () => input.selectedTool, (tool) => {
-    input.setSelected(tool);
-    hud.update();
-  });
+  hud = new Hud(
+    conn,
+    () => input.selectedTool,
+    (tool) => {
+      input.setSelected(tool);
+      hud.update();
+    },
+    (speed) => conn.dispatch({ type: "SET_SPEED", playerId: conn.session.playerId, speed }),
+  );
 
   const totalPlots = Object.keys(conn.getState().plots).length;
   const minimap = new Minimap(minimapEl, conn, camera);

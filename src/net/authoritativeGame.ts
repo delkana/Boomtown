@@ -21,6 +21,8 @@ export class AuthoritativeGame {
 
   private subscribers = new Set<(snapshot: string) => void>();
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Speed the current tick interval was set for (to detect speed changes). */
+  private tickSpeed = 1;
 
   /** Build from an existing state (fresh via `create`, or restored from disk). */
   constructor(state: GameState, password: string | null) {
@@ -45,7 +47,10 @@ export class AuthoritativeGame {
   /** Apply a player command; broadcast a fresh snapshot on success. */
   command(cmd: Command): CommandResult {
     const result = applyCommand(this.state, cmd);
-    if (result.ok) this.broadcast();
+    if (result.ok) {
+      this.broadcast();
+      this.syncTickRate(); // e.g. a SET_SPEED command changed the tick cadence
+    }
     return result;
   }
 
@@ -118,16 +123,27 @@ export class AuthoritativeGame {
 
   private ensureTicking(): void {
     if (this.timer !== null) return;
+    this.tickSpeed = this.state.speed || 1;
+    const intervalMs = (TICK_SECONDS / this.tickSpeed) * 1000;
     this.timer = setInterval(() => {
       advanceTick(this.state);
       this.broadcast();
-    }, TICK_SECONDS * 1000);
+    }, intervalMs);
   }
 
   private stopTicking(): void {
     if (this.timer !== null) {
       clearInterval(this.timer);
       this.timer = null;
+    }
+  }
+
+  /** Restart the tick loop if the game speed changed. */
+  private syncTickRate(): void {
+    if (this.timer === null) return;
+    if ((this.state.speed || 1) !== this.tickSpeed) {
+      this.stopTicking();
+      this.ensureTicking();
     }
   }
 

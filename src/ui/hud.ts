@@ -1,11 +1,13 @@
 import {
   BUILD_ORDER,
   GIRDER_BASE_COST,
+  MAX_SPEED,
   PLOT_COST_MIN,
-  TICK_SECONDS,
+  TICK_MINUTES,
   UNIT_DEFS,
 } from "../game/constants";
 import { archetype } from "../game/archetypes";
+import { gameTime } from "../game/clock";
 import { claimCost } from "../game/economy";
 import { projectedNet } from "../game/tick";
 import type { GameConnection } from "../net/connection";
@@ -23,6 +25,8 @@ const GIRDER_SWATCH = "#5c6470";
 export class Hud {
   private cityFlagEl = must("city-flag");
   private cityEl = must("city-name");
+  private clockEl = must("game-clock");
+  private speedEl = must("speed-controls");
   private chipEl = must("player-chip");
   private statsEl = must("stats");
   private playersEl = must("players");
@@ -33,6 +37,7 @@ export class Hud {
     private conn: GameConnection,
     private getSelected: () => Tool,
     private onSelect: (tool: Tool) => void,
+    private onSpeed: (speed: number) => void,
   ) {
     this.buildToolbar();
     this.buildHeader();
@@ -47,6 +52,18 @@ export class Hud {
     this.chipEl.innerHTML = `<span class="dot" style="background:${s.colorHex}"></span>${escapeHtml(
       s.playerName,
     )}`;
+
+    // Speed multiplier buttons (1×..MAX_SPEED).
+    this.speedEl.innerHTML = "";
+    for (let n = 1; n <= MAX_SPEED; n++) {
+      const btn = document.createElement("button");
+      btn.className = "speed-btn";
+      btn.dataset.speed = String(n);
+      btn.textContent = `${n}×`;
+      btn.title = `${n}× speed`;
+      btn.addEventListener("click", () => this.onSpeed(n));
+      this.speedEl.appendChild(btn);
+    }
   }
 
   private buildToolbar(): void {
@@ -102,6 +119,13 @@ export class Hud {
     const player = state.players[me];
     if (!player) return;
 
+    // In-game clock + active speed button.
+    this.clockEl.textContent = gameTime(state.tick).label;
+    const speed = state.speed || 1;
+    for (const el of Array.from(this.speedEl.children) as HTMLElement[]) {
+      el.classList.toggle("active", Number(el.dataset.speed) === speed);
+    }
+
     const myPlots = Object.values(state.plots).filter((p) => p.ownerId === me);
     const myUnits = myPlots.flatMap((p) => p.units);
     const myGirders = myPlots.reduce((n, p) => n + (p.girders?.length ?? 0), 0);
@@ -115,7 +139,7 @@ export class Hud {
     const netClass = net >= 0 ? "pos" : "neg";
     this.statsEl.innerHTML = `
       <div class="row big">$${player.money.toLocaleString()}</div>
-      <div class="row"><span>Net / ${TICK_SECONDS}s</span>
+      <div class="row"><span>Net / ${TICK_MINUTES}min</span>
         <span class="${netClass}">${net >= 0 ? "+" : ""}$${net.toLocaleString()}</span></div>
       <div class="row"><span>Plots owned</span><span>${myPlots.length}</span></div>
       <div class="row"><span>Girders</span><span>${myGirders}</span></div>

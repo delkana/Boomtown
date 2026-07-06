@@ -29,6 +29,11 @@ export type Command =
       plotIndex: number;
     }
   | {
+      type: "SET_SPEED";
+      playerId: string;
+      speed: number;
+    }
+  | {
       type: "PLACE_GIRDER";
       playerId: string;
       plotIndex: number;
