@@ -337,3 +337,73 @@ export function randomCityName(archetypeId: string, rnd: () => number = Math.ran
   const pool = [...a.realCities, ...a.fictionalCities];
   return pool[Math.floor(rnd() * pool.length)] ?? a.name;
 }
+
+/** Representative latitude (°) for each archetype's region — the fallback. */
+const ARCHETYPE_LATITUDE: Record<string, number> = {
+  pacifica: 37,
+  commonwealth: 52,
+  europa: 48,
+  nordic: 60,
+  japan: 35,
+  "united-korea": 37,
+  oceania: -34,
+  atlantea: 41,
+  ussr: 56,
+  latam: -20,
+  gulf: 25,
+  india: 20,
+  taiwan: 24,
+  china: 31,
+  "straits-union": 5,
+  "african-union": -5,
+};
+
+/**
+ * Approximate real-world latitudes (°, north +) for the real cities in the
+ * archetype pools, so a rolled city name can suggest a matching latitude.
+ */
+const CITY_LATITUDE: Record<string, number> = {
+  // pacifica
+  "los angeles": 34, "san francisco": 38, seattle: 48, vancouver: 49, "san diego": 33, portland: 46, oakland: 38,
+  // commonwealth
+  london: 52, manchester: 54, birmingham: 52, liverpool: 53, leeds: 54, glasgow: 56,
+  // europa
+  frankfurt: 50, paris: 49, rotterdam: 52, milan: 45, madrid: 40, warsaw: 52, vienna: 48,
+  // nordic
+  stockholm: 59, copenhagen: 56, oslo: 60, helsinki: 60, reykjavik: 64, malmö: 56, tallinn: 59,
+  // japan
+  tokyo: 36, osaka: 35, yokohama: 35, nagoya: 35, sapporo: 43, fukuoka: 34,
+  // united-korea
+  seoul: 38, busan: 35, incheon: 37, pyongyang: 39, daegu: 36,
+  // oceania
+  sydney: -34, melbourne: -38, brisbane: -27, auckland: -37, "gold coast": -28, perth: -32,
+  // atlantea
+  "new york": 41, toronto: 44, boston: 42, philadelphia: 40, montreal: 45, miami: 26, atlanta: 34,
+  // ussr
+  moscow: 56, kyiv: 50, leningrad: 60, minsk: 54, tashkent: 41, novosibirsk: 55,
+  // latam
+  "são paulo": -24, "sao paulo": -24, "mexico city": 19, "buenos aires": -35, "bogotá": 5, bogota: 5,
+  santiago: -33, "panama city": 9, "rio de janeiro": -23,
+  // gulf
+  dubai: 25, "abu dhabi": 24, doha: 25, riyadh: 25, "kuwait city": 29, manama: 26, jeddah: 22,
+  // india
+  mumbai: 19, delhi: 29, bangalore: 13, hyderabad: 17, kolkata: 23, chennai: 13, pune: 19,
+  // taiwan
+  taipei: 25, kaohsiung: 23, taichung: 24, tainan: 23, hsinchu: 25,
+  // china
+  shanghai: 31, shenzhen: 23, guangzhou: 23, beijing: 40, chongqing: 30, "hong kong": 22, wuhan: 31,
+  // straits-union
+  singapore: 1, "kuala lumpur": 3, bangkok: 14, jakarta: -6, manila: 15, "ho chi minh city": 11, hanoi: 21,
+  // african-union
+  lagos: 6, johannesburg: -26, nairobi: -1, accra: 6, kinshasa: -4, luanda: -9, "cape town": -34,
+};
+
+/**
+ * Suggested latitude for a city name: the real city's latitude if we know it,
+ * otherwise the archetype's representative latitude. Used by the lobby's 🎲.
+ */
+export function suggestedLatitude(cityName: string, archetypeId: string): number {
+  const key = cityName.trim().toLowerCase();
+  if (key in CITY_LATITUDE) return CITY_LATITUDE[key];
+  return ARCHETYPE_LATITUDE[archetypeId] ?? 40;
+}

@@ -5,11 +5,19 @@ import {
   SPEED_OPTIONS,
   TICK_MINUTES,
   UNIT_DEFS,
+  type RoomPrefs,
 } from "../game/constants";
 import { archetype } from "../game/archetypes";
 import { gameTime } from "../game/clock";
 import { claimCost } from "../game/economy";
-import { elevatorAccess, viewRating, noiseRating, type HeatmapKind } from "../game/heatmaps";
+import {
+  elevatorAccess,
+  viewRating,
+  noiseRating,
+  footTraffic,
+  roomSatisfaction,
+  type HeatmapKind,
+} from "../game/heatmaps";
 import { projectedNet } from "../game/tick";
 import type { GameConnection } from "../net/connection";
 import type { InspectRef } from "../input/input";
@@ -33,6 +41,7 @@ export class Hud {
   private statsEl = must("stats");
   private playersEl = must("players");
   private toolbarEl = must("toolbar");
+  private claimBtnEl = must("claim-btn");
   private overlayEl = must("overlay");
   private inspectorEl = must("inspector");
   private hintEl = must("hint");
@@ -69,11 +78,12 @@ export class Hud {
     const def = UNIT_DEFS[unit.kind];
 
     // Ratings averaged across the room's footprint.
-    let elev = 0, view = 0, noise = 0;
+    let elev = 0, view = 0, noise = 0, foot = 0;
     for (let c = unit.col; c < unit.col + unit.width; c++) {
       elev += elevatorAccess(plot, c, unit.row);
       view += viewRating(plot, c, unit.row);
       noise += noiseRating(plot, c, unit.row);
+      foot += footTraffic(plot, c, unit.row);
     }
     const n = unit.width;
     const elevStr = unit.row === 0 ? "—" : String(Math.round(elev / n));
@@ -81,12 +91,17 @@ export class Hud {
     const revenue = def.incomeAtFull > 0;
     const gross = revenue ? Math.round(def.incomeAtFull * unit.occupancy) : 0;
     const net = gross - def.upkeep;
+    const appeal = Math.round(roomSatisfaction(plot, unit) * 100);
+    const prefs = prefsLabel(def.prefs);
 
     this.inspectorEl.innerHTML = `
       <div class="insp-title">${def.label} · Floor ${unit.row}${info.pinned ? ' <span class="pin">📌</span>' : ""}</div>
       <div class="insp-row"><span>Elevator</span><span>${elevStr}</span></div>
       <div class="insp-row"><span>View</span><span>${Math.round(view / n)}</span></div>
       <div class="insp-row"><span>Noise</span><span>${Math.round(noise / n)}</span></div>
+      <div class="insp-row"><span>Foot traffic</span><span>${Math.round(foot / n)}</span></div>
+      ${revenue ? `<div class="insp-row"><span>Appeal</span><span>${appeal}%</span></div>` : ""}
+      ${prefs ? `<div class="insp-prefs">Prefers ${prefs}</div>` : ""}
       <div class="insp-row"><span>Occupancy</span><span>${revenue ? Math.round(unit.occupancy * 100) + "%" : "—"}</span></div>
       <div class="insp-row"><span>Income / ${TICK_MINUTES}min</span><span class="pos">${revenue ? "+$" + gross.toLocaleString() : "$0"}</span></div>
       <div class="insp-row"><span>Upkeep</span><span class="neg">-$${def.upkeep.toLocaleString()}</span></div>
@@ -143,17 +158,9 @@ export class Hud {
   private buildToolbar(): void {
     this.toolbarEl.innerHTML = "";
 
-    // Claim tool first.
-    const claim = document.createElement("button");
-    claim.className = "tool";
-    claim.dataset.tool = "claim";
-    claim.innerHTML = `
-      <span class="swatch claim-swatch">＋</span>
-      <span class="tool-label">Claim Plot</span>
-      <span class="tool-cost">from $${PLOT_COST_MIN.toLocaleString()}</span>
-      <span class="tool-key">C</span>`;
-    claim.addEventListener("click", () => this.toggle("claim"));
-    this.toolbarEl.appendChild(claim);
+    // Claim lives next to "My Plots" in the nav cluster, not in the build bar.
+    this.claimBtnEl.addEventListener("click", () => this.toggle("claim"));
+    this.claimBtnEl.title = `Claim an available plot (C) — from $${PLOT_COST_MIN.toLocaleString()}`;
 
     // Girder (structural support) — built before any room.
     const girder = document.createElement("button");
@@ -246,16 +253,20 @@ export class Hud {
         cheapestClaim = Math.min(cheapestClaim, claimCost(state, me, p.index));
     }
 
+    // Claim button (in the nav cluster) selected/affordability state.
+    this.claimBtnEl.classList.toggle("selected", this.getSelected() === "claim");
+    this.claimBtnEl.classList.toggle("unaffordable", player.money < cheapestClaim);
+
     // Toolbar selected/affordability states.
     for (const el of Array.from(this.toolbarEl.children) as HTMLElement[]) {
       const tool = el.dataset.tool as Exclude<Tool, null>;
       const cost =
-        tool === "claim"
-          ? cheapestClaim
-          : tool === "girder"
-            ? GIRDER_BASE_COST
-            : tool === "destroy"
-              ? 0 // destroying never costs money
+        tool === "girder"
+          ? GIRDER_BASE_COST
+          : tool === "destroy"
+            ? 0 // destroying never costs money
+            : tool === "claim"
+              ? cheapestClaim // (claim now lives in the nav cluster, but stay total)
               : UNIT_DEFS[tool].cost;
       el.classList.toggle("selected", this.getSelected() === tool);
       el.classList.toggle("unaffordable", player.money < cost);
@@ -311,6 +322,17 @@ export class Hud {
         )
         .join("");
   }
+}
+
+/** A short human phrase for a room's location preferences, e.g. "elevator · views · quiet". */
+function prefsLabel(prefs: RoomPrefs | undefined): string {
+  if (!prefs) return "";
+  const parts: string[] = [];
+  if (prefs.elevator) parts.push("elevator");
+  if (prefs.view) parts.push("views");
+  if (prefs.noise) parts.push("quiet");
+  if (prefs.foot) parts.push(prefs.foot > 0 ? "foot traffic" : "calm");
+  return parts.join(" · ");
 }
 
 function must(id: string): HTMLElement {

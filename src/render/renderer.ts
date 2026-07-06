@@ -4,7 +4,7 @@ import { unitAt, hasGirder, girderSupported } from "../game/reducer";
 import { claimCost, girderCost, undergroundMultiplier } from "../game/economy";
 import { featureLabel } from "../game/features";
 import { heatT, type HeatmapKind } from "../game/heatmaps";
-import { gameTime } from "../game/clock";
+import { skyState } from "../game/clock";
 import { Camera } from "./camera";
 
 /**
@@ -98,12 +98,8 @@ export class Renderer {
     const h = camera.viewH;
     const groundY = camera.groundScreenY; // follows vertical pan (offsetY)
 
-    // Time of day drives the sky (day/night cycle).
-    const time = gameTime(state.tick);
-    const hourF = time.hour + time.minute / 60;
-    const sun = Math.sin(((hourF - 6) / 24) * 2 * Math.PI); // -1 midnight … +1 noon
-    const day = Math.max(0, sun);
-    const twilight = Math.max(0, 1 - Math.abs(sun) * 3.5); // peaks at sunrise/sunset
+    // Latitude + season drive the sky (day/night lengths shift through the year).
+    const { day, twilight } = skyState(state.tick, state.config.latitude ?? 0);
 
     const top = mix([9, 12, 24], [40, 92, 150], day);
     let bottom = mix([22, 30, 48], [120, 158, 196], day);
@@ -114,18 +110,24 @@ export class Renderer {
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, h);
 
-    // Backdrop behind the buildings.
-    this.drawBackground(state.config.background, groundY, day);
+    // Backdrop behind the buildings (far horizon layer, then the nearer layer).
+    this.drawBackdrop(state.config.backgroundFar ?? "clear", state.config.backgroundNear ?? "none", groundY, day);
 
-    // Ground + underground earth (down to the reserved subway level).
+    // Ground + underground earth: a brown that darkens with depth, all the way
+    // down to (and past) the reserved subway level so no sky shows below.
     const cell = camera.scale(CELL_SIZE);
     const subwayTop = camera.rowTopScreenY(SUBWAY_ROW);
-    ctx.fillStyle = "#241b13"; // earth
-    ctx.fillRect(0, groundY, w, subwayTop + cell - groundY);
+    const earthBottom = subwayTop + cell;
+    const earth = ctx.createLinearGradient(0, groundY, 0, earthBottom);
+    earth.addColorStop(0, "#3a2a1b"); // topsoil
+    earth.addColorStop(0.5, "#241811");
+    earth.addColorStop(1, "#0c0805"); // near-black deep down
+    ctx.fillStyle = earth;
+    ctx.fillRect(0, groundY, w, Math.max(0, h - groundY));
     // Reserved subway level (row SUBWAY_ROW).
-    ctx.fillStyle = "#111820";
+    ctx.fillStyle = "#0d1319";
     ctx.fillRect(0, subwayTop, w, cell);
-    ctx.fillStyle = "rgba(120,140,160,0.35)"; // rails hint
+    ctx.fillStyle = "rgba(120,140,160,0.30)"; // rails hint
     ctx.fillRect(0, subwayTop + cell * 0.42, w, Math.max(1, cell * 0.05));
     ctx.fillRect(0, subwayTop + cell * 0.62, w, Math.max(1, cell * 0.05));
     // Surface strip.
@@ -160,50 +162,73 @@ export class Renderer {
   }
 
   /**
-   * Draw the city's chosen backdrop silhouette along the horizon. It scales with
-   * zoom (so it reads as part of the world) and drifts with a slow parallax.
+   * Draw the two backdrop layers behind the buildings: the distant FAR layer
+   * first (hazier, slow parallax), then the nearer NEAR layer (darker, faster
+   * parallax). Both scale with zoom so they read as part of the world.
    */
-  private drawBackground(kind: string, groundY: number, day: number): void {
+  private drawBackdrop(far: string, near: string, groundY: number, day: number): void {
+    this.drawFar(far, groundY, day);
+    this.drawNear(near, groundY, day);
+  }
+
+  /** Distant horizon layer: ocean, mountains, hills, or open sky. */
+  private drawFar(kind: string, groundY: number, day: number): void {
     if (kind === "clear") return;
     const { ctx, camera } = this;
     const w = camera.viewW;
     const z = camera.zoom;
-    const shade = (base: number[]): string => rgb(mix(base, [255, 255, 255], day * 0.12));
-    // Parallax: the backdrop drifts slowly relative to the camera.
-    const spanBase = 200 * z;
-    const px = -((camera.offsetX * 0.12) % spanBase);
+    // Far things are hazier — blended toward the sky and lightened by daylight.
+    const haze = (base: number[]): string => rgb(mix(mix(base, [120, 140, 165], 0.4), [255, 255, 255], day * 0.14));
+    const px = -((camera.offsetX * 0.05) % (400 * z)); // slow parallax
 
     if (kind === "mountains") {
-      ctx.fillStyle = shade([44, 52, 70]);
-      const step = 260 * z;
-      // Heights reduced to ~1/3 of the old jaggedness — gentler ridgeline.
+      ctx.fillStyle = haze([54, 62, 82]);
+      const step = 300 * z;
+      // Gentle ridgeline — low, rounded peaks (not jagged).
       for (let i = -1; i * step + px < w + step; i++) {
         const bx = i * step + px;
-        this.peak(bx + 20 * z, groundY, 150 * z, 74 * z);
-        this.peak(bx + 150 * z, groundY, 130 * z, 100 * z);
+        this.peak(bx + 20 * z, groundY, 170 * z, 70 * z);
+        this.peak(bx + 170 * z, groundY, 150 * z, 96 * z);
       }
     } else if (kind === "hills") {
-      ctx.fillStyle = shade([38, 60, 46]);
+      ctx.fillStyle = haze([48, 68, 56]);
       ctx.beginPath();
       ctx.moveTo(0, groundY);
       for (let x = 0; x <= w; x += 12) {
         const y =
-          groundY - 40 * z - 28 * z * Math.sin((x + px) / (90 * z)) - 14 * z * Math.sin((x + px) / (37 * z));
+          groundY - 34 * z - 22 * z * Math.sin((x + px) / (110 * z)) - 10 * z * Math.sin((x + px) / (43 * z));
         ctx.lineTo(x, y);
       }
       ctx.lineTo(w, groundY);
       ctx.closePath();
       ctx.fill();
-    } else if (kind === "palms") {
-      // Sandy strip + a few palm silhouettes.
-      ctx.fillStyle = shade([70, 66, 44]);
-      ctx.fillRect(0, groundY - 18 * z, w, 18 * z);
-      ctx.fillStyle = shade([30, 46, 40]);
-      const step = 180 * z;
-      for (let i = -1; i * step + px < w + step; i++) this.palm(i * step + px + 60 * z, groundY - 18 * z, z);
-    } else {
-      // "skyline": a distant row of building silhouettes.
-      ctx.fillStyle = shade([28, 38, 58]);
+    } else if (kind === "ocean") {
+      // A calm sea meeting the sky at a low horizon, with a few glints.
+      const horizon = groundY - 30 * z;
+      const sea = ctx.createLinearGradient(0, horizon, 0, groundY);
+      sea.addColorStop(0, haze([46, 86, 120]));
+      sea.addColorStop(1, haze([26, 58, 88]));
+      ctx.fillStyle = sea;
+      ctx.fillRect(0, horizon, w, groundY - horizon);
+      ctx.fillStyle = `rgba(210,230,245,${(0.10 + day * 0.14).toFixed(3)})`;
+      for (let x = ((px * 0.5) % (60 * z)) - 60 * z; x < w; x += 60 * z) {
+        ctx.fillRect(x, horizon + 12 * z, 26 * z, Math.max(1, 1.5 * z));
+        ctx.fillRect(x + 30 * z, horizon + 20 * z, 16 * z, Math.max(1, 1.5 * z));
+      }
+    }
+  }
+
+  /** Nearer layer just behind the towers: skyline, historic rooftops, palms, firs. */
+  private drawNear(kind: string, groundY: number, day: number): void {
+    if (kind === "none") return;
+    const { ctx, camera } = this;
+    const w = camera.viewW;
+    const z = camera.zoom;
+    const shade = (base: number[]): string => rgb(mix(base, [255, 255, 255], day * 0.1));
+    const px = -((camera.offsetX * 0.16) % (200 * z)); // faster parallax than the far layer
+
+    if (kind === "skyline") {
+      ctx.fillStyle = shade([24, 33, 52]);
       let x = px - 200 * z;
       let seed = 1;
       while (x < w + 60 * z) {
@@ -213,7 +238,66 @@ export class Renderer {
         ctx.fillRect(x, groundY - bh, bw, bh);
         x += bw + (6 + ((seed >> 3) % 10)) * z;
       }
+    } else if (kind === "oldtown") {
+      // A row of low pitched-roof buildings (historic European quarter).
+      ctx.fillStyle = shade([46, 40, 44]);
+      let x = px - 160 * z;
+      let seed = 7;
+      while (x < w + 60 * z) {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        const bw = (40 + (seed % 30)) * z;
+        const bh = (46 + ((seed >> 5) % 60)) * z;
+        this.gableHouse(x, groundY, bw, bh, z);
+        x += bw + 2 * z;
+      }
+    } else if (kind === "palms") {
+      ctx.fillStyle = shade([56, 52, 36]);
+      ctx.fillRect(0, groundY - 16 * z, w, 16 * z);
+      ctx.fillStyle = shade([26, 42, 36]);
+      const step = 180 * z;
+      for (let i = -1; i * step + px < w + step; i++) this.palm(i * step + px + 60 * z, groundY - 16 * z, z);
+    } else if (kind === "firs") {
+      // An evergreen forest silhouette — stacked triangles.
+      ctx.fillStyle = shade([26, 42, 34]);
+      const step = 46 * z;
+      for (let i = -1; i * step + px < w + step; i++) {
+        const fx = i * step + px + (((i * 2654435761) >>> 6) % 18) * z;
+        const fh = (60 + (((i * 40503) >>> 3) % 46)) * z;
+        this.fir(fx, groundY, fh, z);
+      }
     }
+  }
+
+  /** One gable-roofed townhouse for the historic-quarter backdrop. */
+  private gableHouse(x: number, groundY: number, bw: number, bh: number, z: number): void {
+    const { ctx } = this;
+    const roofH = Math.min(bh * 0.5, 24 * z);
+    ctx.fillRect(x, groundY - bh, bw, bh); // wall
+    ctx.beginPath(); // pitched roof
+    ctx.moveTo(x - 2 * z, groundY - bh);
+    ctx.lineTo(x + bw / 2, groundY - bh - roofH);
+    ctx.lineTo(x + bw + 2 * z, groundY - bh);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillRect(x + bw * 0.7, groundY - bh - roofH * 0.6, 4 * z, roofH * 0.7); // chimney
+  }
+
+  /** One fir/pine tree silhouette (stacked triangles). */
+  private fir(x: number, groundY: number, height: number, z: number): void {
+    const { ctx } = this;
+    const halfW = height * 0.32;
+    ctx.beginPath();
+    for (let tier = 0; tier < 3; tier++) {
+      const topY = groundY - height + (tier * height) / 4;
+      const baseY = groundY - height * 0.28 + (tier * height) / 4;
+      const hw = halfW * (0.55 + tier * 0.22);
+      ctx.moveTo(x - hw, baseY);
+      ctx.lineTo(x, topY);
+      ctx.lineTo(x + hw, baseY);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillRect(x - 2 * z, groundY - height * 0.28, 4 * z, height * 0.28); // trunk
   }
 
   private peak(cx: number, groundY: number, halfW: number, height: number): void {
@@ -521,11 +605,13 @@ export class Renderer {
       // Carve the channel (under-bridge shadow) 5 tiles down.
       ctx.fillStyle = "#16232f";
       ctx.fillRect(leftScreen, groundY, plotPxW, depth);
-      // Lowered water filling the lower part of the channel.
+      // Lowered water filling the lower part of the channel — bright at the
+      // surface, fading to near-black in the deep.
       const waterY = groundY + depth * 0.42;
       const water = ctx.createLinearGradient(0, waterY, 0, channelBottom);
       water.addColorStop(0, "#3a7bb0");
-      water.addColorStop(1, "#1e4a70");
+      water.addColorStop(0.5, "#1b4062");
+      water.addColorStop(1, "#060f1a");
       ctx.fillStyle = water;
       ctx.fillRect(leftScreen, waterY, plotPxW, channelBottom - waterY);
       // Bridge deck — its surface is level with the ground line.

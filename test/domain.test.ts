@@ -3,8 +3,8 @@ import { createGameState, serialize, deserialize } from "../src/game/state";
 import { applyCommand } from "../src/game/reducer";
 import { advanceTick, projectedNet } from "../src/game/tick";
 import { propertyNameFor, archetype } from "../src/game/archetypes";
-import { gameTime } from "../src/game/clock";
-import { elevatorAccess, viewRating, noiseRating, footTraffic } from "../src/game/heatmaps";
+import { gameTime, daylightHours, skyState } from "../src/game/clock";
+import { elevatorAccess, viewRating, noiseRating, footTraffic, roomSatisfaction } from "../src/game/heatmaps";
 import { GIRDER_BASE_COST, MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
 import { claimCost, girderCost, plotBaseCost, undergroundMultiplier } from "../src/game/economy";
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
@@ -38,7 +38,9 @@ function freshGame(plotCount = 6, archetypeId = "pacifica"): GameState {
   const state = createGameState("test-city", {
     cityName: "Test City",
     archetype: archetypeId,
-    background: "skyline",
+    backgroundNear: "skyline",
+    backgroundFar: "mountains",
+    latitude: 40,
     plotCount,
     maxPlayers: 4,
     hasPassword: false,
@@ -335,8 +337,8 @@ describe("feature spacing", () => {
   it("never spawns two features adjacent to one another", () => {
     for (const id of ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel"]) {
       const s = createGameState(id, {
-        cityName: id, archetype: "pacifica", background: "skyline",
-        plotCount: 10, maxPlayers: 4, hasPassword: false,
+        cityName: id, archetype: "pacifica", backgroundNear: "skyline", backgroundFar: "mountains",
+        latitude: 40, plotCount: 10, maxPlayers: 4, hasPassword: false,
       });
       const feats = Object.values(s.plots).filter((p) => p.feature).map((p) => p.index).sort((a, b) => a - b);
       expect(feats).toHaveLength(2);
@@ -382,14 +384,18 @@ describe("advanceTick economy", () => {
     expect(s.tick).toBe(1);
   });
 
-  it("fills serviced offices toward full occupancy", () => {
+  it("fills serviced offices toward their location's appeal", () => {
     const s = servicedTower();
     const office = s.plots[0].units.find((u) => u.kind === "office")!;
+    const appeal = roomSatisfaction(s.plots[0], office);
+    expect(appeal).toBeGreaterThan(UNIT_DEFS.office.fillRate); // headroom for the first step
     expect(office.occupancy).toBe(0);
     advanceTick(s);
     expect(office.occupancy).toBeCloseTo(UNIT_DEFS.office.fillRate, 5);
-    for (let i = 0; i < 40; i++) advanceTick(s);
-    expect(office.occupancy).toBe(1);
+    for (let i = 0; i < 80; i++) advanceTick(s);
+    // Occupancy converges on the appeal ceiling and never exceeds it.
+    expect(office.occupancy).toBeCloseTo(appeal, 4);
+    expect(office.occupancy).toBeLessThanOrEqual(appeal + 1e-9);
   });
 
   it("drains occupancy when the floor is unserviced (no elevator)", () => {
@@ -415,6 +421,90 @@ describe("advanceTick economy", () => {
     const moneyBefore = s.players["p1"].money;
     advanceTick(s);
     expect(s.players["p1"].money).toBe(moneyBefore);
+  });
+});
+
+describe("room types & preferences", () => {
+  it("defines the new room widths (store 3, restaurant 4, hotel 1)", () => {
+    expect(UNIT_DEFS.store.width).toBe(3);
+    expect(UNIT_DEFS.restaurant.width).toBe(4);
+    expect(UNIT_DEFS.hotel.width).toBe(1);
+    for (const k of ["store", "restaurant", "hotel"] as const) {
+      expect(UNIT_DEFS[k].incomeAtFull).toBeGreaterThan(0); // they earn revenue
+    }
+  });
+
+  it("places a 3-wide store and a 4-wide restaurant over girders", () => {
+    const s = freshGame(6, "pacifica");
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    // Ground frame wide enough: lobby(0-1) + store(2-4) needs cols 0..4.
+    frame(s, "p1", 0, [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    const r = applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "store", col: 2, row: 0 });
+    expect(r.ok).toBe(true);
+    expect(s.plots[0].units.find((u) => u.kind === "store")!.width).toBe(3);
+  });
+
+  it("a store prefers foot traffic: busier spot => higher appeal", () => {
+    // Build a plot with a lobby + elevator, then compare a store on the busy
+    // ground floor (foot traffic 100) with the same store up an empty floor.
+    const s = freshGame(6, "pacifica");
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[6, 3]]); // elevator column up to row 3
+    frame(s, "p1", 0, [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]]);
+    frame(s, "p1", 0, [[2, 3], [3, 3], [4, 3]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    for (let r = 0; r <= 3; r++)
+      applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 6, row: r });
+
+    const plot = s.plots[0];
+    const ground = { id: "g", kind: "store" as const, col: 2, row: 0, width: 3, occupancy: 0 };
+    const upstairs = { id: "u", kind: "store" as const, col: 2, row: 3, width: 3, occupancy: 0 };
+    expect(roomSatisfaction(plot, ground)).toBeGreaterThan(roomSatisfaction(plot, upstairs));
+  });
+
+  it("an apartment prefers calm: it dislikes a noisy ground floor next to a lobby", () => {
+    const s = freshGame(6, "pacifica");
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0], [2, 0], [3, 0]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    const plot = s.plots[0];
+    const nextToLobby = { id: "a", kind: "apartment" as const, col: 2, row: 0, width: 2, occupancy: 0 };
+    // An apartment jammed onto the noisy ground floor should be well under ideal.
+    expect(roomSatisfaction(plot, nextToLobby)).toBeLessThan(0.7);
+  });
+});
+
+describe("day/night by latitude", () => {
+  const JUNE = 2016 * 5; // ~5 months in: high sun in the north
+  const DECEMBER = 2016 * 11; // ~11 months in: low sun in the north
+
+  it("keeps ~12h days near the equator year-round", () => {
+    expect(daylightHours(0, JUNE)).toBeCloseTo(12, 1);
+    expect(daylightHours(0, DECEMBER)).toBeCloseTo(12, 1);
+  });
+
+  it("gives high latitudes long summer days and short winter days", () => {
+    const summer = daylightHours(60, JUNE);
+    const winter = daylightHours(60, DECEMBER);
+    expect(summer).toBeGreaterThan(14);
+    expect(winter).toBeLessThan(10);
+    expect(summer).toBeGreaterThan(winter);
+  });
+
+  it("mirrors the seasons across the hemispheres", () => {
+    // Northern summer is southern winter at the same tick.
+    expect(daylightHours(50, JUNE)).toBeGreaterThan(daylightHours(-50, JUNE));
+  });
+
+  it("skyState is dark at local midnight and bright at local noon", () => {
+    const noon = skyState(144, 40); // 12:00
+    const midnight = skyState(0, 40); // 00:00
+    expect(noon.day).toBeGreaterThan(midnight.day);
+    expect(midnight.day).toBe(0);
   });
 });
 

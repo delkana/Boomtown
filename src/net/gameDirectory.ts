@@ -5,9 +5,15 @@ import {
   MIN_PLOTS,
 } from "../game/constants";
 import { isArchetype } from "../game/archetypes";
-import { isBackground, DEFAULT_BACKGROUND } from "../game/backgrounds";
+import {
+  isNearBackground,
+  isFarBackground,
+  migrateBackground,
+  DEFAULT_NEAR,
+  DEFAULT_FAR,
+} from "../game/backgrounds";
 import type { FeatureKind } from "../game/features";
-import type { GameState, UnitKind } from "../game/types";
+import type { GameConfig, GameState, UnitKind } from "../game/types";
 import { AuthoritativeGame } from "./authoritativeGame";
 import type { CreateGameConfig, GameSummary, JoinRequest } from "./protocol";
 
@@ -80,12 +86,23 @@ export class GameDirectory {
 
     if (!isArchetype(cfg.archetype)) return err("Pick a city archetype");
 
-    const background = isBackground(cfg.background) ? cfg.background : DEFAULT_BACKGROUND;
+    const backgroundNear = isNearBackground(cfg.backgroundNear) ? cfg.backgroundNear : DEFAULT_NEAR;
+    const backgroundFar = isFarBackground(cfg.backgroundFar) ? cfg.backgroundFar : DEFAULT_FAR;
+    const latitude = clampLatitude(cfg.latitude);
     const password = cfg.password && cfg.password.length > 0 ? cfg.password : null;
     const id = this.uniqueId(cityName);
     const game = AuthoritativeGame.create(
       id,
-      { cityName, archetype: cfg.archetype, background, plotCount, maxPlayers, hasPassword: password !== null },
+      {
+        cityName,
+        archetype: cfg.archetype,
+        backgroundNear,
+        backgroundFar,
+        latitude,
+        plotCount,
+        maxPlayers,
+        hasPassword: password !== null,
+      },
       password,
     );
     this.games.set(id, game);
@@ -155,9 +172,15 @@ export class GameDirectory {
     const parsed = JSON.parse(json) as { v: number; games: StoredGame[] };
     for (const g of parsed.games) {
       if (this.seededIds.has(g.state.id)) continue; // don't clobber fresh demo cities
-      // Tolerate saves from before a field existed (girders, speed, background).
+      // Tolerate saves from before a field existed (girders, speed, backdrops).
       if (!g.state.speed) g.state.speed = 1;
-      if (!g.state.config.background) g.state.config.background = DEFAULT_BACKGROUND;
+      const cfg = g.state.config as GameConfig & { background?: string };
+      if (!cfg.backgroundNear || !cfg.backgroundFar) {
+        const { near, far } = migrateBackground(cfg.background);
+        cfg.backgroundNear = cfg.backgroundNear || near;
+        cfg.backgroundFar = cfg.backgroundFar || far;
+      }
+      if (typeof cfg.latitude !== "number") cfg.latitude = 40;
       for (const key of Object.keys(g.state.plots)) {
         const plot = g.state.plots[Number(key)];
         if (!plot.girders) plot.girders = [];
@@ -200,7 +223,7 @@ export class GameDirectory {
 
   private seedDemoCities(): void {
     this.seedCity(
-      "new-angeles", "New Angeles", "pacifica", "palms", 22, 8, null,
+      "new-angeles", "New Angeles", "pacifica", { near: "palms", far: "ocean", latitude: 34 }, 22, 8, null,
       [
         { name: "Redwood Spire Group", color: "#3fb96b", floors: [7] },
         { name: "Neon Bay Holdings", color: "#4a86e0", floors: [6, 9] },
@@ -211,14 +234,14 @@ export class GameDirectory {
         { kind: "river", name: "San Gabriel River" },
       ],
     );
-    this.seedCity("neo-kyoto", "Neo-Kyoto", "japan", "skyline", 16, 6, null, [
+    this.seedCity("neo-kyoto", "Neo-Kyoto", "japan", { near: "skyline", far: "mountains", latitude: 35 }, 16, 6, null, [
       { name: "Zaibatsu Prime", color: "#c94ad1", floors: [6] },
       { name: "Mirai Systems", color: "#e0503f", floors: [8, 4] },
     ]);
-    this.seedCity("kosmograd", "Kosmograd", "ussr", "mountains", 20, 8, null, [
+    this.seedCity("kosmograd", "Kosmograd", "ussr", { near: "firs", far: "mountains", latitude: 56 }, 20, 8, null, [
       { name: "Red October Combine", color: "#e0503f", floors: [9, 5, 7] },
     ]);
-    this.seedCity("la-defense", "La Défense", "europa", "skyline", 20, 8, null, [
+    this.seedCity("la-defense", "La Défense", "europa", { near: "oldtown", far: "hills", latitude: 49 }, 20, 8, null, [
       { name: "Rheinturm Group", color: "#f4c94b", floors: [10, 6] },
       { name: "Concorde Holdings", color: "#4a86e0", floors: [7] },
       { name: "Pan-Europa Dynamics", color: "#3fb96b", floors: [8] },
@@ -230,7 +253,7 @@ export class GameDirectory {
     id: string,
     cityName: string,
     archetype: string,
-    background: string,
+    backdrop: { near: string; far: string; latitude: number },
     plotCount: number,
     maxPlayers: number,
     password: string | null,
@@ -239,7 +262,16 @@ export class GameDirectory {
   ): void {
     const game = AuthoritativeGame.create(
       id,
-      { cityName, archetype, background, plotCount, maxPlayers, hasPassword: password !== null },
+      {
+        cityName,
+        archetype,
+        backgroundNear: backdrop.near,
+        backgroundFar: backdrop.far,
+        latitude: backdrop.latitude,
+        plotCount,
+        maxPlayers,
+        hasPassword: password !== null,
+      },
       password,
     );
     this.seededIds.add(id);
@@ -279,6 +311,12 @@ export class GameDirectory {
 
 function err(error: string): DirResult {
   return { ok: false, error };
+}
+
+/** Clamp a latitude into the supported range (poles excluded a touch). */
+function clampLatitude(lat: number): number {
+  if (!Number.isFinite(lat)) return 40;
+  return Math.max(-66, Math.min(66, Math.round(lat)));
 }
 
 /** Random reconnect token (crypto if available, else a non-crypto fallback). */

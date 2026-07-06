@@ -1,5 +1,6 @@
 import type { GameState, Plot } from "./types";
 import { UNIT_DEFS } from "./constants";
+import { roomSatisfaction } from "./heatmaps";
 
 /**
  * advanceTick: the economy step. Pure and deterministic — server-ownable.
@@ -33,11 +34,13 @@ export function advanceTick(state: GameState): void {
 
       if (def.incomeAtFull > 0) {
         const serviced = hasLobby && elevatorRows.has(unit.row);
-        if (serviced) {
-          unit.occupancy = Math.min(1, unit.occupancy + def.fillRate);
+        // Occupancy converges on how appealing the spot is for this room type
+        // (its "satisfaction"); an unserviced room empties out entirely.
+        const target = serviced ? roomSatisfaction(plot, unit) : 0;
+        if (unit.occupancy < target) {
+          unit.occupancy = Math.min(target, unit.occupancy + def.fillRate);
         } else {
-          // Tenants leave if they can't get to their floor.
-          unit.occupancy = Math.max(0, unit.occupancy - def.fillRate * 0.5);
+          unit.occupancy = Math.max(target, unit.occupancy - def.fillRate * 0.5);
         }
         net += Math.round(def.incomeAtFull * unit.occupancy);
       }

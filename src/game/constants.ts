@@ -57,6 +57,24 @@ export const MAX_PLAYERS_LIMIT = 20;
 export const MIN_PLOTS = 3;
 export const MAX_PLOTS = 40;
 
+/**
+ * What a room "wants" from its location. Each factor is a signed weight: the
+ * MAGNITUDE is how much the room cares (0 = indifferent), and the SIGN is the
+ * desired direction, expressed against the same normalized 0..1 "goodness" the
+ * heatmaps use (1 = high access / great view / quiet / busy):
+ *   +  wants the good/high end (elevator, view, quiet, foot traffic)
+ *   -  wants the opposite (e.g. LOW foot traffic for a quiet apartment)
+ * See `roomSatisfaction` in heatmaps.ts.
+ */
+export interface RoomPrefs {
+  elevator?: number;
+  view?: number;
+  /** Positive = prefers quiet (low noise). */
+  noise?: number;
+  /** Positive = prefers busy (high foot traffic); negative = prefers calm. */
+  foot?: number;
+}
+
 export interface UnitDef {
   kind: UnitKind;
   label: string;
@@ -74,6 +92,12 @@ export interface UnitDef {
   fillRate: number;
   /** Fill color for placeholder art. */
   color: string;
+  /**
+   * Location preferences. Occupancy for a revenue room climbs toward how well
+   * its spot satisfies these (its "appeal"), so placement matters. Omitted for
+   * infrastructure (lobby / elevator), which have no tenants.
+   */
+  prefs?: RoomPrefs;
   /** Only one lobby allowed, and it must sit on the ground floor. */
   groundOnly?: boolean;
   unique?: boolean;
@@ -103,6 +127,8 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     incomeAtFull: 120,
     fillRate: 0.08,
     color: "#5b8fb0",
+    // Good elevator access + views + quiet; indifferent to foot traffic.
+    prefs: { elevator: 1.0, view: 0.7, noise: 0.6 },
   },
   apartment: {
     kind: "apartment",
@@ -114,11 +140,52 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     incomeAtFull: 90,
     fillRate: 0.05,
     color: "#7bab6e",
+    // Quiet, low foot traffic, nice views, decent elevator access.
+    prefs: { elevator: 0.7, view: 0.8, noise: 1.0, foot: -0.8 },
+  },
+  store: {
+    kind: "store",
+    label: "Store",
+    hotkey: "4",
+    width: 3,
+    cost: 4500,
+    upkeep: 12,
+    incomeAtFull: 190,
+    fillRate: 0.09,
+    color: "#d08a4f",
+    // Lives on footfall + easy access; doesn't care about views or noise.
+    prefs: { elevator: 1.0, foot: 1.0 },
+  },
+  restaurant: {
+    kind: "restaurant",
+    label: "Restaurant",
+    hotkey: "5",
+    width: 4,
+    cost: 6500,
+    upkeep: 18,
+    incomeAtFull: 280,
+    fillRate: 0.08,
+    color: "#c85a6a",
+    // Wants footfall, access, and a view; noise is fine.
+    prefs: { elevator: 1.0, view: 0.7, foot: 1.0 },
+  },
+  hotel: {
+    kind: "hotel",
+    label: "Hotel Room",
+    hotkey: "6",
+    width: 1,
+    cost: 1800,
+    upkeep: 6,
+    incomeAtFull: 72,
+    fillRate: 0.07,
+    color: "#6a7fc0",
+    // A quiet room with a view, good access, away from the bustle.
+    prefs: { elevator: 0.9, view: 0.8, noise: 0.9, foot: -0.6 },
   },
   elevator: {
     kind: "elevator",
     label: "Elevator",
-    hotkey: "4",
+    hotkey: "7",
     width: 1,
     cost: 1500,
     upkeep: 4,
@@ -129,7 +196,15 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
 };
 
 /** Ordered list for the toolbar. */
-export const BUILD_ORDER: UnitKind[] = ["lobby", "office", "apartment", "elevator"];
+export const BUILD_ORDER: UnitKind[] = [
+  "lobby",
+  "office",
+  "apartment",
+  "store",
+  "restaurant",
+  "hotel",
+  "elevator",
+];
 
 /** A selectable player color for the lobby. */
 export interface ColorOption {

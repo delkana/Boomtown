@@ -68,3 +68,94 @@ export function gameTime(tick: number): GameTime {
 function pad(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }
+
+/* --------------------------------------------------------------------- *
+ * Sun model — latitude + season drive how long the day is.               *
+ *                                                                        *
+ * The calendar's 12 "months" stand in for a year, so we derive a solar   *
+ * declination from the month (winter near Jan, summer near Jul for the   *
+ * northern hemisphere) and combine it with latitude to get sunrise /     *
+ * sunset. Pure and deterministic, so the sky matches on every client.    *
+ * --------------------------------------------------------------------- */
+
+const DEG = Math.PI / 180;
+/** Earth's axial tilt — the amplitude of the seasonal sun swing. */
+const AXIAL_TILT = 23.44 * DEG;
+
+function clamp(x: number, lo: number, hi: number): number {
+  return x < lo ? lo : x > hi ? hi : x;
+}
+
+/** Fractional month-of-year in [0, 12) for a tick (0 = Jan 1, 6 = mid-year). */
+function monthFloat(tick: number): number {
+  const totalMinutes = tick * TICK_MINUTES;
+  const dayMinutes = 60 * 24;
+  const totalDays = Math.floor(totalMinutes / dayMinutes);
+  const yearLen = DAYS_PER_WEEK * MONTHS_PER_YEAR;
+  const dayOfYear = ((totalDays % yearLen) + yearLen) % yearLen;
+  const frac = (totalMinutes % dayMinutes) / dayMinutes;
+  return (dayOfYear + frac) / DAYS_PER_WEEK;
+}
+
+/** Solar declination (radians) for a tick: −tilt near Jan, +tilt near Jul. */
+function declination(tick: number): number {
+  return -AXIAL_TILT * Math.cos((2 * Math.PI * monthFloat(tick)) / MONTHS_PER_YEAR);
+}
+
+/**
+ * Hours of daylight at a latitude on a given tick's date. Handles the poles:
+ * beyond the polar circles this saturates to 0 (polar night) or 24 (midnight
+ * sun) instead of returning NaN.
+ */
+export function daylightHours(latitudeDeg: number, tick: number): number {
+  const phi = clamp(latitudeDeg, -89.5, 89.5) * DEG;
+  const decl = declination(tick);
+  const cosH = clamp(-Math.tan(phi) * Math.tan(decl), -1, 1);
+  const H = Math.acos(cosH); // half-day arc, radians
+  return (24 * H) / Math.PI;
+}
+
+export interface SkyState {
+  /** Sun-above-horizon brightness, 0 (night) .. 1 (bright noon). */
+  day: number;
+  /** Dawn/dusk warmth, peaking at sunrise and sunset. */
+  twilight: number;
+}
+
+/**
+ * Sky lighting for a tick at a latitude: how bright it is and how much
+ * sunrise/sunset warmth to blend in. Day length and the sun's noon height both
+ * swing with the season, so high-latitude winters are short and dim while
+ * summers are long and bright.
+ */
+export function skyState(tick: number, latitudeDeg: number): SkyState {
+  const t = gameTime(tick);
+  const hourF = t.hour + t.minute / 60;
+  const dayHours = daylightHours(latitudeDeg, tick);
+
+  if (dayHours <= 0) return { day: 0, twilight: 0 }; // polar night
+  if (dayHours >= 24) {
+    // Midnight sun: never sets, but still dips toward the horizon around 'night'.
+    const swing = 0.5 + 0.4 * Math.sin(2 * Math.PI * ((hourF - 6) / 24));
+    return { day: clamp(swing, 0.2, 1), twilight: 0 };
+  }
+
+  const sunrise = 12 - dayHours / 2;
+  const sunset = 12 + dayHours / 2;
+
+  // Noon sun height (0..1) dims low-sun seasons even at midday.
+  const phi = clamp(latitudeDeg, -89.5, 89.5) * DEG;
+  const decl = declination(tick);
+  const noon = clamp(Math.sin(phi) * Math.sin(decl) + Math.cos(phi) * Math.cos(decl), 0, 1);
+
+  let day = 0;
+  if (hourF > sunrise && hourF < sunset) {
+    const frac = (hourF - sunrise) / (sunset - sunrise); // 0 at sunrise, 1 at sunset
+    day = Math.max(0, Math.sin(Math.PI * frac)) * (0.35 + 0.65 * noon);
+  }
+  const twilight = Math.min(
+    1,
+    Math.max(0, 1 - Math.abs(hourF - sunrise) / 1.5) + Math.max(0, 1 - Math.abs(hourF - sunset) / 1.5),
+  );
+  return { day, twilight };
+}

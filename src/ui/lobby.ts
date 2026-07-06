@@ -4,8 +4,19 @@ import {
   MIN_PLOTS,
   type ColorOption,
 } from "../game/constants";
-import { ARCHETYPES, DEFAULT_ARCHETYPE, archetype, randomCityName } from "../game/archetypes";
-import { BACKGROUNDS, DEFAULT_BACKGROUND } from "../game/backgrounds";
+import {
+  ARCHETYPES,
+  DEFAULT_ARCHETYPE,
+  archetype,
+  randomCityName,
+  suggestedLatitude,
+} from "../game/archetypes";
+import {
+  NEAR_BACKGROUNDS,
+  FAR_BACKGROUNDS,
+  DEFAULT_NEAR,
+  DEFAULT_FAR,
+} from "../game/backgrounds";
 import type { GameConnection } from "../net/connection";
 import type { ConnectResult, GameServer } from "../net/localServer";
 import type { GameSummary, PlayerSession } from "../net/protocol";
@@ -25,7 +36,9 @@ export class LobbyScreen {
   private palette: ColorOption[];
   private createColor: string;
   private createArchetype = DEFAULT_ARCHETYPE;
-  private createBackground = DEFAULT_BACKGROUND;
+  private createNear = DEFAULT_NEAR;
+  private createFar = DEFAULT_FAR;
+  private createLatitude = 40;
   private joinColor: string | null = null;
   private joinTaken = new Set<string>();
   private joiningGameId: string | null = null;
@@ -73,10 +86,23 @@ export class LobbyScreen {
 
     this.renderCreateColors();
     this.renderArchetypes();
-    this.renderBackgrounds();
+    this.renderBackdrops();
+
+    const lat = this.q<HTMLInputElement>("#cf-lat");
+    lat.value = String(this.createLatitude);
+    lat.addEventListener("input", () => {
+      this.createLatitude = Number(lat.value);
+      this.updateLatitudeLabel();
+    });
+    this.updateLatitudeLabel();
 
     this.q("#cf-random").addEventListener("click", () => {
-      this.q<HTMLInputElement>("#cf-city").value = randomCityName(this.createArchetype);
+      const name = randomCityName(this.createArchetype);
+      this.q<HTMLInputElement>("#cf-city").value = name;
+      // Match the rolled city's real-world latitude.
+      this.createLatitude = suggestedLatitude(name, this.createArchetype);
+      lat.value = String(this.createLatitude);
+      this.updateLatitudeLabel();
     });
 
     const pwToggle = this.q<HTMLInputElement>("#cf-pw-toggle");
@@ -114,20 +140,33 @@ export class LobbyScreen {
     this.q("#cf-blurb").textContent = archetype(this.createArchetype).blurb;
   }
 
-  private renderBackgrounds(): void {
-    const grid = this.q("#cf-backgrounds");
-    grid.innerHTML = "";
-    for (const bg of BACKGROUNDS) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "bg-btn" + (bg.id === this.createBackground ? " selected" : "");
-      btn.textContent = bg.name;
-      btn.addEventListener("click", () => {
-        this.createBackground = bg.id;
-        this.renderBackgrounds();
-      });
-      grid.appendChild(btn);
-    }
+  private renderBackdrops(): void {
+    const build = (
+      sel: string,
+      list: { id: string; name: string }[],
+      selected: () => string,
+      pick: (id: string) => void,
+    ): void => {
+      const grid = this.q(sel);
+      grid.innerHTML = "";
+      for (const bg of list) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "bg-btn" + (bg.id === selected() ? " selected" : "");
+        btn.textContent = bg.name;
+        btn.addEventListener("click", () => {
+          pick(bg.id);
+          this.renderBackdrops();
+        });
+        grid.appendChild(btn);
+      }
+    };
+    build("#cf-bg-near", NEAR_BACKGROUNDS, () => this.createNear, (id) => (this.createNear = id));
+    build("#cf-bg-far", FAR_BACKGROUNDS, () => this.createFar, (id) => (this.createFar = id));
+  }
+
+  private updateLatitudeLabel(): void {
+    this.q("#cf-lat-val").textContent = latitudeLabel(this.createLatitude);
   }
 
   private renderCreateColors(): void {
@@ -145,7 +184,9 @@ export class LobbyScreen {
       const result = await this.server.createGame({
         cityName: this.q<HTMLInputElement>("#cf-city").value,
         archetype: this.createArchetype,
-        background: this.createBackground,
+        backgroundNear: this.createNear,
+        backgroundFar: this.createFar,
+        latitude: this.createLatitude,
         plotCount: Number(this.q<HTMLInputElement>("#cf-plots").value),
         maxPlayers: Number(this.q<HTMLInputElement>("#cf-max").value),
         password: this.q<HTMLInputElement>("#cf-pw-toggle").checked
@@ -342,6 +383,15 @@ function escapeHtml(s: string): string {
   );
 }
 
+/** "34°N · subtropical" style readout for a latitude slider value. */
+function latitudeLabel(lat: number): string {
+  const a = Math.abs(lat);
+  const hemi = lat === 0 ? "" : lat > 0 ? "°N" : "°S";
+  const zone =
+    a < 10 ? "equatorial" : a < 24 ? "tropical" : a < 35 ? "subtropical" : a < 55 ? "temperate" : "subpolar";
+  return `${a}${hemi || "°"} · ${zone}`;
+}
+
 const SHELL = `
   <div class="lobby-wrap">
     <header class="lobby-header">
@@ -366,9 +416,21 @@ const SHELL = `
         <div id="cf-archetypes" class="archetype-grid"></div>
         <p id="cf-blurb" class="blurb"></p>
       </div>
-      <div class="field">Backdrop
-        <div id="cf-backgrounds" class="bg-grid"></div>
+      <div class="field-row">
+        <div class="field">Backdrop — near
+          <div id="cf-bg-near" class="bg-grid"></div>
+        </div>
+        <div class="field">Backdrop — far
+          <div id="cf-bg-far" class="bg-grid"></div>
+        </div>
       </div>
+      <label class="field">Latitude
+        <div class="lat-row">
+          <input id="cf-lat" type="range" min="-66" max="66" step="1" value="40" />
+          <span id="cf-lat-val" class="lat-val"></span>
+        </div>
+        <span class="field-note">Sets how day and night lengths swing through the seasons. 🎲 matches a real city.</span>
+      </label>
       <label class="field">City name
         <div class="city-input-row">
           <input id="cf-city" type="text" maxlength="28" placeholder="Name your city" />

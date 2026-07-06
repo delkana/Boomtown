@@ -1,5 +1,5 @@
-import { MAX_ROWS } from "./constants";
-import type { Plot } from "./types";
+import { MAX_ROWS, UNIT_DEFS, type RoomPrefs } from "./constants";
+import type { Plot, Unit } from "./types";
 
 /**
  * Per-tile quality heatmaps. Pure functions of a plot's layout, so they can be
@@ -88,6 +88,49 @@ export function footTraffic(plot: Plot, col: number, row: number): number {
   if (elevDist === Infinity) return 0; // no elevator reaches this room
   const proximity = Math.max(0, 1 - elevDist / 8);
   return Math.min(100, 15 + roomsOnFloor * 14 * proximity);
+}
+
+/**
+ * A single factor's normalized "goodness" at a cell (0..1, 1 = good): high
+ * elevator access, tall view, quiet, or busy foot traffic. This is the same
+ * scale the heatmap overlay uses; `roomSatisfaction` blends these per a room's
+ * preferences.
+ */
+function factorGoodness(factor: keyof RoomPrefs, plot: Plot, col: number, row: number): number {
+  switch (factor) {
+    case "elevator":
+      return elevatorAccess(plot, col, row) / 100;
+    case "view":
+      return Math.min(1, viewRating(plot, col, row) / 130);
+    case "noise":
+      return 1 - Math.min(1, noiseRating(plot, col, row) / 90); // quiet = 1
+    case "foot":
+      return footTraffic(plot, col, row) / 100;
+  }
+}
+
+/**
+ * How well a room's location suits it, 0..1 ("appeal"). Blends the factors the
+ * room cares about (UnitDef.prefs) by importance, honoring each factor's desired
+ * direction. Rooms with no prefs (infrastructure) return 1. This is the ceiling
+ * that a revenue room's occupancy climbs toward (see tick.ts).
+ */
+export function roomSatisfaction(plot: Plot, unit: Unit): number {
+  const prefs = UNIT_DEFS[unit.kind].prefs;
+  if (!prefs) return 1;
+  let num = 0;
+  let den = 0;
+  for (let c = unit.col; c < unit.col + unit.width; c++) {
+    for (const key of Object.keys(prefs) as (keyof RoomPrefs)[]) {
+      const w = prefs[key];
+      if (!w) continue;
+      const g = factorGoodness(key, plot, c, unit.row);
+      const value = w >= 0 ? g : 1 - g; // negative weight = wants the low end
+      num += Math.abs(w) * value;
+      den += Math.abs(w);
+    }
+  }
+  return den === 0 ? 1 : num / den;
 }
 
 /** Normalized 0..1 rating (1 = good/green, 0 = bad/red) for the overlay. */

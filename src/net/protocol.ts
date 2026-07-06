@@ -30,7 +30,12 @@ export interface GameSummary {
 export interface CreateGameConfig {
   cityName: string;
   archetype: string;
-  background: string;
+  /** Nearer backdrop layer id (see src/game/backgrounds.ts). */
+  backgroundNear: string;
+  /** Distant backdrop layer id (see src/game/backgrounds.ts). */
+  backgroundFar: string;
+  /** City latitude in degrees (−66..66); drives day/night length. */
+  latitude: number;
   plotCount: number;
   maxPlayers: number;
   /** Plaintext password or null. On a real server this would be sent over TLS and hashed. */

@@ -102,7 +102,9 @@ describe("networked multiplayer", () => {
       cfg: {
         cityName: "Wire City",
         archetype: "pacifica",
-        background: "skyline",
+        backgroundNear: "skyline",
+        backgroundFar: "mountains",
+        latitude: 40,
         plotCount: 6,
         maxPlayers: 4,
         password: null,
@@ -154,7 +156,8 @@ describe("networked multiplayer", () => {
       t: "create",
       reqId,
       cfg: {
-        cityName: "Trust City", archetype: "japan", background: "skyline", plotCount: 5, maxPlayers: 4,
+        cityName: "Trust City", archetype: "japan", backgroundNear: "skyline", backgroundFar: "mountains",
+        latitude: 40, plotCount: 5, maxPlayers: 4,
         password: null, playerName: "Owner", playerColor: "crimson",
       },
     }));

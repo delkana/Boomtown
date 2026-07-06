@@ -17,7 +17,14 @@
 import type { FeatureKind } from "./features";
 
 /** What kind of thing can occupy a grid cell on a tower floor. */
-export type UnitKind = "lobby" | "office" | "apartment" | "elevator";
+export type UnitKind =
+  | "lobby"
+  | "office"
+  | "apartment"
+  | "store"
+  | "restaurant"
+  | "hotel"
+  | "elevator";
 
 /** A single structural-support cell (girder) in a tower's frame. */
 export interface Girder {
@@ -84,8 +91,15 @@ export interface GameConfig {
   cityName: string;
   /** City archetype id (theme/region), see src/game/archetypes.ts. */
   archetype: string;
-  /** Backdrop drawn behind the buildings, see src/game/backgrounds.ts. */
-  background: string;
+  /** Nearer backdrop layer (skyline / oldtown / palms / firs / none). */
+  backgroundNear: string;
+  /** Distant backdrop layer (ocean / mountains / hills / open sky). */
+  backgroundFar: string;
+  /**
+   * City latitude in degrees (−66..66). Drives how day and night lengths swing
+   * through the seasons in the day/night cycle (see clock.ts `skyState`).
+   */
+  latitude: number;
   /** Number of plots in the city strip. */
   plotCount: number;
   /** Max concurrent players (hard-capped by MAX_PLAYERS_LIMIT). */
