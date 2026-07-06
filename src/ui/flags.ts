@@ -9,6 +9,31 @@
 const STAR = (x: number, y: number, size: number, fill: string): string =>
   `<text x="${x}" y="${y}" font-size="${size}" fill="${fill}" text-anchor="middle" font-family="serif">★</text>`;
 
+/** One trigram bar (solid = yang, or split in two = yin) centered at (cx, y). */
+function trigramBar(cx: number, y: number, solid: boolean): string {
+  const w = 11;
+  const t = 1.7;
+  const half = w / 2;
+  if (solid) return `<rect x="${cx - half}" y="${y - t / 2}" width="${w}" height="${t}"/>`;
+  const seg = (w - 2.4) / 2;
+  return (
+    `<rect x="${cx - half}" y="${y - t / 2}" width="${seg}" height="${t}"/>` +
+    `<rect x="${cx + 1.2}" y="${y - t / 2}" width="${seg}" height="${t}"/>`
+  );
+}
+
+/** A three-bar Korean trigram, rotated `deg` about its center; pattern top→bottom. */
+function trigram(
+  cx: number,
+  cy: number,
+  deg: number,
+  pattern: [boolean, boolean, boolean],
+): string {
+  const step = 3.0;
+  const bars = pattern.map((s, i) => trigramBar(cx, cy + (i - 1) * step, s)).join("");
+  return `<g fill="#141414" transform="rotate(${deg} ${cx} ${cy})">${bars}</g>`;
+}
+
 const FLAGS: Record<string, string> = {
   pacifica: `
     <rect width="60" height="40" fill="#0b2530"/>
@@ -48,15 +73,17 @@ const FLAGS: Record<string, string> = {
     <circle cx="30" cy="20" r="11" fill="#bc002d"/>`,
 
   "united-korea": `
-    <rect width="60" height="40" fill="#ed1c27"/>
-    <rect width="60" height="4" fill="#024fa2"/>
-    <rect y="4" width="60" height="2.5" fill="#ffffff"/>
-    <rect y="33.5" width="60" height="2.5" fill="#ffffff"/>
-    <rect y="36" width="60" height="4" fill="#024fa2"/>
-    ${STAR(13, 25, 12, "#ffffff")}
-    <circle cx="35" cy="20" r="9" fill="#ffffff"/>
-    <path d="M26 20 a9 9 0 0 1 18 0 z" fill="#ed1c27"/>
-    <path d="M26 20 a9 9 0 0 0 18 0 z" fill="#024fa2"/>`,
+    <rect width="60" height="40" fill="#ffffff"/>
+    <rect width="60" height="5" fill="#0047a0"/>
+    <rect y="35" width="60" height="5" fill="#0047a0"/>
+    <circle cx="30" cy="20" r="10" fill="#cd2e3a"/>
+    <path d="M20 20 A 10 10 0 0 1 40 20 Z" fill="#0047a0"/>
+    <circle cx="25" cy="20" r="5" fill="#cd2e3a"/>
+    <circle cx="35" cy="20" r="5" fill="#0047a0"/>
+    ${trigram(11, 11, -28, [true, true, true])}
+    ${trigram(49, 11, 28, [true, false, true])}
+    ${trigram(11, 29, 28, [false, true, false])}
+    ${trigram(49, 29, -28, [false, false, false])}`,
 
   oceania: `
     <rect width="60" height="40" fill="#0a1f3a"/>
