@@ -635,55 +635,49 @@ export class Renderer {
   // --- facade wall + transparent windows (shared by every room) --------------
 
   /**
-   * Draw the room's back wall as its girder's facade: the wall material, then
-   * (above ground only) transparent windows filled with the LIVE sky — so you
-   * can watch the sun rise and set through them. Underground rooms get a solid
-   * wall with no windows.
+   * Draw a room's facade windows on its (room-coloured) back wall. Only the
+   * glass reflects the facade style — the wall between windows stays the room's
+   * own colour (drawn by roomShell). Full-glass styles cover the whole wall.
+   * Windows are transparent (filled with the LIVE sky, so you see sunrise /
+   * sunset through them). Underground rooms get no windows at all.
    */
   private drawFacade(s: RoomShell, facade: Facade, underground: boolean): void {
-    const { ctx } = this;
-    // Wall material across the whole back wall.
-    this.wallBand(s, 0, 1, 0, 1, facade.wall);
-    if (facade.brick) this.brickCoursing(s, facade);
-    // Re-seat the baseboard seam that the wall just covered.
-    ctx.strokeStyle = rgb(mix(hexRgb(facade.wall), [0, 0, 0], 0.5));
-    ctx.lineWidth = Math.max(0.5, s.w * 0.01);
-    const bl = s.wall(0, 1), br = s.wall(1, 1);
-    ctx.beginPath();
-    ctx.moveTo(bl.x, bl.y);
-    ctx.lineTo(br.x, br.y);
-    ctx.stroke();
-
     if (underground) return; // no view underground, ever
-
     const tint = facade.tint ?? 0;
     switch (facade.pattern) {
-      case "full":
-        this.skyWindow(s, 0.06, 0.94, 0.12, 0.5, tint, facade.frame, [0.33, 0.66]);
+      case "full": // full glass / black-tinted — the entire back wall is glass
+        this.skyWindow(s, 0.03, 0.97, 0.04, 0.96, tint, facade.frame, [0.25, 0.5, 0.75], [0.5]);
         break;
-      case "xbrace":
-        this.skyWindow(s, 0.06, 0.94, 0.12, 0.5, tint, facade.frame, [0.5]);
-        this.wallX(s, 0.06, 0.94, 0.12, 0.5, facade.girder);
+      case "xbrace": // full-wall glass with a steel X across it
+        this.skyWindow(s, 0.03, 0.97, 0.04, 0.96, tint, facade.frame, [0.5], [0.5]);
+        this.wallX(s, 0.03, 0.97, 0.04, 0.96, facade.girder);
         break;
-      case "grid": // curtain wall — a lattice of panes
-        for (const [f0, f1] of pairs([0.06, 0.29, 0.52, 0.75, 0.94]))
-          for (const [g0, g1] of pairs([0.12, 0.31, 0.5]))
-            this.skyWindow(s, f0 + 0.01, f1 - 0.01, g0 + 0.01, g1 - 0.01, tint, facade.frame, []);
+      case "vgrid": // curtain wall — a row of tall, narrow vertical panes
+        for (const [f0, f1] of pairs([0.05, 0.185, 0.32, 0.455, 0.59, 0.725, 0.86, 0.95]))
+          this.skyWindow(s, f0 + 0.006, f1 - 0.006, 0.07, 0.62, tint, facade.frame, [], []);
         break;
-      case "arch": // art-deco — tall windows with a stepped cap
-        for (const cf of [0.2, 0.5, 0.8]) {
-          this.skyWindow(s, cf - 0.09, cf + 0.09, 0.16, 0.5, tint, facade.frame, []);
-          this.wallBand(s, cf - 0.11, cf + 0.11, 0.12, 0.16, facade.frame); // lintel cap
+      case "vrect": // brick — a row of tall, narrow (vertical) windows
+        for (const cf of [0.2, 0.4, 0.6, 0.8])
+          this.skyWindow(s, cf - 0.06, cf + 0.06, 0.1, 0.6, tint, facade.frame, [], [0.5]);
+        break;
+      case "arch": // art-deco — very tall windows with a lintel cap
+        for (const cf of [0.22, 0.5, 0.78]) {
+          this.skyWindow(s, cf - 0.08, cf + 0.08, 0.08, 0.66, tint, facade.frame, [], [0.55]);
+          this.wallBand(s, cf - 0.1, cf + 0.1, 0.04, 0.08, facade.frame); // lintel cap
         }
         break;
-      default: // "rect" — a row of punched rectangular windows
+      default: // "rect" — punched rectangular windows (concrete, steel)
         for (const cf of [0.22, 0.5, 0.78])
-          this.skyWindow(s, cf - 0.12, cf + 0.12, 0.18, 0.46, tint, facade.frame, [0.5]);
+          this.skyWindow(s, cf - 0.12, cf + 0.12, 0.16, 0.46, tint, facade.frame, [0.5], []);
         break;
     }
   }
 
-  /** A transparent window on the back wall, filled with the live sky (+tint). */
+  /**
+   * A transparent window on the back wall, filled with the live sky (+tint),
+   * with a frame plus optional vertical (`vMull`) and horizontal (`hMull`)
+   * mullions given as fractions across the window.
+   */
   private skyWindow(
     s: RoomShell,
     f0: number,
@@ -693,6 +687,7 @@ export class Renderer {
     tint: number,
     frame: string,
     vMull: number[],
+    hMull: number[],
   ): void {
     const { ctx } = this;
     const pts = [s.wall(f0, g0), s.wall(f1, g0), s.wall(f1, g1), s.wall(f0, g1)];
@@ -720,6 +715,12 @@ export class Renderer {
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
     }
+    for (const g of hMull) {
+      const gg = g0 + (g1 - g0) * g;
+      const a = s.wall(f0, gg), b = s.wall(f1, gg);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+    }
     ctx.stroke();
   }
 
@@ -737,13 +738,6 @@ export class Renderer {
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
-  }
-
-  /** Horizontal brick coursing across the back wall. */
-  private brickCoursing(s: RoomShell, facade: Facade): void {
-    const gs: number[] = [];
-    for (let g = 0.1; g < 1; g += 0.11) gs.push(g);
-    this.wallLines(s, 0, 1, gs, rgb(mix(hexRgb(facade.wall), [230, 220, 205], 0.35)));
   }
 
   /**

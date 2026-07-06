@@ -6,7 +6,7 @@
  *
  * Pure data (colour strings + a pattern tag); the renderer interprets it.
  */
-export type FacadePattern = "full" | "rect" | "grid" | "xbrace" | "arch";
+export type FacadePattern = "full" | "rect" | "vrect" | "vgrid" | "xbrace" | "arch";
 
 export interface Facade {
   id: string;
@@ -29,9 +29,9 @@ export const FACADES: Facade[] = [
   { id: "glass", name: "Full Glass", wall: "#2b333d", frame: "#cdd8e2", girder: "#7c8fa0", pattern: "full" },
   { id: "blacktint", name: "Black Tinted", wall: "#131519", frame: "#2c3138", girder: "#24272d", pattern: "full", tint: 0.5 },
   { id: "concrete", name: "Concrete", wall: "#8b8f94", frame: "#65696e", girder: "#9a9ea3", pattern: "rect" },
-  { id: "brick", name: "Brick", wall: "#8f4a39", frame: "#d8ccba", girder: "#8a4636", pattern: "rect", brick: true },
+  { id: "brick", name: "Brick", wall: "#8f4a39", frame: "#d8ccba", girder: "#8a4636", pattern: "vrect", brick: true },
   { id: "xbrace", name: "Glass X-Brace", wall: "#28303a", frame: "#b9c3cd", girder: "#6f7d8a", pattern: "xbrace" },
-  { id: "curtain", name: "Curtain Wall", wall: "#39424c", frame: "#aeb9c4", girder: "#8892a1", pattern: "grid" },
+  { id: "curtain", name: "Curtain Wall", wall: "#39424c", frame: "#aeb9c4", girder: "#8892a1", pattern: "vgrid" },
   { id: "artdeco", name: "Art-Deco Stone", wall: "#b9a884", frame: "#6b5f47", girder: "#c2b291", pattern: "arch" },
   { id: "steel", name: "Steel & Rivets", wall: "#4a4f57", frame: "#9aa2ab", girder: "#5c6470", pattern: "rect" },
 ];
