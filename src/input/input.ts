@@ -25,7 +25,9 @@ export class InputController {
 
   private dragging = false;
   private dragStartX = 0;
+  private dragStartY = 0;
   private dragStartOffset = 0;
+  private dragStartOffsetY = 0;
   private movedWhileDragging = false;
   private keys = new Set<string>();
   /** A room clicked to "pin" its inspector panel open. */
@@ -116,11 +118,14 @@ export class InputController {
     const speed = 0.8 * dtMs; // px per ms
     if (this.keys.has("ArrowLeft") || this.keys.has("a")) this.camera.offsetX -= speed;
     if (this.keys.has("ArrowRight") || this.keys.has("d")) this.camera.offsetX += speed;
+    if (this.keys.has("ArrowUp") || this.keys.has("w")) this.camera.offsetY += speed;
+    if (this.keys.has("ArrowDown") || this.keys.has("s")) this.camera.offsetY -= speed;
     this.clampCamera();
   }
 
   private clampCamera(): void {
     this.camera.clampToWorld();
+    this.camera.clampVertical();
   }
 
   private localPointer(e: PointerEvent | MouseEvent): { x: number; y: number } {
@@ -140,11 +145,13 @@ export class InputController {
   };
 
   private onPointerDown = (e: PointerEvent): void => {
-    const { x } = this.localPointer(e);
+    const { x, y } = this.localPointer(e);
     this.dragging = true;
     this.movedWhileDragging = false;
     this.dragStartX = x;
+    this.dragStartY = y;
     this.dragStartOffset = this.camera.offsetX;
+    this.dragStartOffsetY = this.camera.offsetY;
     try {
       this.canvas.setPointerCapture(e.pointerId);
     } catch {
@@ -157,8 +164,10 @@ export class InputController {
     this.hover = this.camera.screenToCell(x, y);
     if (this.dragging) {
       const dx = x - this.dragStartX;
-      if (Math.abs(dx) > 4) this.movedWhileDragging = true;
+      const dy = y - this.dragStartY;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) this.movedWhileDragging = true;
       this.camera.offsetX = this.dragStartOffset - dx;
+      this.camera.offsetY = this.dragStartOffsetY + dy; // drag down reveals higher content
       this.clampCamera();
     } else {
       this.notifyInspectIfChanged();

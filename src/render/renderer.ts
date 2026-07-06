@@ -1,7 +1,7 @@
-import { CELL_SIZE, MAX_ROWS, UNIT_DEFS } from "../game/constants";
+import { CELL_SIZE, MAX_DEPTH, MAX_ROWS, SUBWAY_ROW, UNIT_DEFS } from "../game/constants";
 import type { GameState, Plot } from "../game/types";
 import { unitAt, hasGirder, girderSupported } from "../game/reducer";
-import { claimCost, girderCost } from "../game/economy";
+import { claimCost, girderCost, undergroundMultiplier } from "../game/economy";
 import { featureLabel } from "../game/features";
 import { heatT, type HeatmapKind } from "../game/heatmaps";
 import { gameTime } from "../game/clock";
@@ -96,7 +96,7 @@ export class Renderer {
     const { ctx, camera } = this;
     const w = camera.viewW;
     const h = camera.viewH;
-    const groundY = h - camera.groundMargin;
+    const groundY = camera.groundScreenY; // follows vertical pan (offsetY)
 
     // Time of day drives the sky (day/night cycle).
     const time = gameTime(state.tick);
@@ -117,9 +117,20 @@ export class Renderer {
     // Backdrop behind the buildings.
     this.drawBackground(state.config.background, groundY, day);
 
-    // Ground.
+    // Ground + underground earth (down to the reserved subway level).
+    const cell = camera.scale(CELL_SIZE);
+    const subwayTop = camera.rowTopScreenY(SUBWAY_ROW);
+    ctx.fillStyle = "#241b13"; // earth
+    ctx.fillRect(0, groundY, w, subwayTop + cell - groundY);
+    // Reserved subway level (row SUBWAY_ROW).
+    ctx.fillStyle = "#111820";
+    ctx.fillRect(0, subwayTop, w, cell);
+    ctx.fillStyle = "rgba(120,140,160,0.35)"; // rails hint
+    ctx.fillRect(0, subwayTop + cell * 0.42, w, Math.max(1, cell * 0.05));
+    ctx.fillRect(0, subwayTop + cell * 0.62, w, Math.max(1, cell * 0.05));
+    // Surface strip.
     ctx.fillStyle = "#2a2018";
-    ctx.fillRect(0, groundY, w, camera.groundMargin);
+    ctx.fillRect(0, groundY, w, 4);
     ctx.fillStyle = "#3d2f22";
     ctx.fillRect(0, groundY, w, 4);
 
@@ -148,28 +159,36 @@ export class Renderer {
     this.drawPopups();
   }
 
-  /** Draw the city's chosen backdrop silhouette along the horizon (parallax). */
+  /**
+   * Draw the city's chosen backdrop silhouette along the horizon. It scales with
+   * zoom (so it reads as part of the world) and drifts with a slow parallax.
+   */
   private drawBackground(kind: string, groundY: number, day: number): void {
     if (kind === "clear") return;
     const { ctx, camera } = this;
     const w = camera.viewW;
+    const z = camera.zoom;
     const shade = (base: number[]): string => rgb(mix(base, [255, 255, 255], day * 0.12));
     // Parallax: the backdrop drifts slowly relative to the camera.
-    const px = -(camera.offsetX * 0.12) % 200;
+    const spanBase = 200 * z;
+    const px = -((camera.offsetX * 0.12) % spanBase);
 
     if (kind === "mountains") {
       ctx.fillStyle = shade([44, 52, 70]);
-      for (let i = -1; i * 260 + px < w + 260; i++) {
-        const bx = i * 260 + px;
-        this.peak(bx + 20, groundY, 150, 220);
-        this.peak(bx + 150, groundY, 110, 300);
+      const step = 260 * z;
+      // Heights reduced to ~1/3 of the old jaggedness — gentler ridgeline.
+      for (let i = -1; i * step + px < w + step; i++) {
+        const bx = i * step + px;
+        this.peak(bx + 20 * z, groundY, 150 * z, 74 * z);
+        this.peak(bx + 150 * z, groundY, 130 * z, 100 * z);
       }
     } else if (kind === "hills") {
       ctx.fillStyle = shade([38, 60, 46]);
       ctx.beginPath();
       ctx.moveTo(0, groundY);
-      for (let x = 0; x <= w; x += 20) {
-        const y = groundY - 40 - 28 * Math.sin((x + px) / 90) - 14 * Math.sin((x + px) / 37);
+      for (let x = 0; x <= w; x += 12) {
+        const y =
+          groundY - 40 * z - 28 * z * Math.sin((x + px) / (90 * z)) - 14 * z * Math.sin((x + px) / (37 * z));
         ctx.lineTo(x, y);
       }
       ctx.lineTo(w, groundY);
@@ -178,20 +197,21 @@ export class Renderer {
     } else if (kind === "palms") {
       // Sandy strip + a few palm silhouettes.
       ctx.fillStyle = shade([70, 66, 44]);
-      ctx.fillRect(0, groundY - 18, w, 18);
+      ctx.fillRect(0, groundY - 18 * z, w, 18 * z);
       ctx.fillStyle = shade([30, 46, 40]);
-      for (let i = -1; i * 180 + px < w + 180; i++) this.palm(i * 180 + px + 60, groundY - 18);
+      const step = 180 * z;
+      for (let i = -1; i * step + px < w + step; i++) this.palm(i * step + px + 60 * z, groundY - 18 * z, z);
     } else {
       // "skyline": a distant row of building silhouettes.
       ctx.fillStyle = shade([28, 38, 58]);
-      let x = px - 200;
+      let x = px - 200 * z;
       let seed = 1;
-      while (x < w + 60) {
+      while (x < w + 60 * z) {
         seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-        const bw = 26 + (seed % 34);
-        const bh = 60 + ((seed >> 5) % 170);
+        const bw = (26 + (seed % 34)) * z;
+        const bh = (60 + ((seed >> 5) % 170)) * z;
         ctx.fillRect(x, groundY - bh, bw, bh);
-        x += bw + 6 + ((seed >> 3) % 10);
+        x += bw + (6 + ((seed >> 3) % 10)) * z;
       }
     }
   }
@@ -206,20 +226,21 @@ export class Renderer {
     ctx.fill();
   }
 
-  private palm(x: number, baseY: number): void {
+  private palm(x: number, baseY: number, z: number): void {
     const { ctx } = this;
     ctx.save();
     ctx.strokeStyle = ctx.fillStyle as string;
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 4 * z;
     ctx.beginPath();
     ctx.moveTo(x, baseY);
-    ctx.quadraticCurveTo(x + 8, baseY - 40, x + 4, baseY - 78);
+    ctx.quadraticCurveTo(x + 8 * z, baseY - 40 * z, x + 4 * z, baseY - 78 * z);
     ctx.stroke();
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3 * z;
+    const topY = baseY - 78 * z;
     for (const [dx, dy] of [[-34, -12], [-20, -30], [20, -30], [34, -12], [0, -34]] as const) {
       ctx.beginPath();
-      ctx.moveTo(x + 4, baseY - 78);
-      ctx.quadraticCurveTo(x + 4 + dx * 0.5, baseY - 78 + dy, x + 4 + dx, baseY - 78 + dy + 14);
+      ctx.moveTo(x + 4 * z, topY);
+      ctx.quadraticCurveTo(x + 4 * z + dx * 0.5 * z, topY + dy * z, x + 4 * z + dx * z, topY + (dy + 14) * z);
       ctx.stroke();
     }
     ctx.restore();
@@ -316,6 +337,11 @@ export class Renderer {
     for (const g of plot.girders ?? []) {
       const gx = camera.worldToScreenX(leftWorld + g.col * CELL_SIZE);
       const gy = camera.rowTopScreenY(g.row);
+      // Underground girders sit in an excavated cavity, not solid earth.
+      if (g.row < 0) {
+        ctx.fillStyle = "#1a1e26";
+        ctx.fillRect(gx + 1, gy + 1, cell - 2, cell - 2);
+      }
       this.drawGirder(gx, gy, cell);
     }
 
@@ -488,19 +514,20 @@ export class Renderer {
         ctx.fill();
       }
     } else if (kind === "river") {
-      // The bridge sits flush with the surrounding ground; the water runs in a
-      // lowered channel beneath it.
-      const gm = camera.groundMargin;
-      // Carve the channel out of the ground band (under-bridge shadow).
+      // A channel exactly 5 tiles deep, bridged at the surface. (The earth below
+      // it — rows -6 and the subway — is drawn by the global underground fill.)
+      const depth = 5 * cell;
+      const channelBottom = groundY + depth;
+      // Carve the channel (under-bridge shadow) 5 tiles down.
       ctx.fillStyle = "#16232f";
-      ctx.fillRect(leftScreen, groundY, plotPxW, gm);
-      // Lowered water at the bottom of the channel.
-      const waterY = groundY + gm * 0.58;
-      const water = ctx.createLinearGradient(0, waterY, 0, groundY + gm);
+      ctx.fillRect(leftScreen, groundY, plotPxW, depth);
+      // Lowered water filling the lower part of the channel.
+      const waterY = groundY + depth * 0.42;
+      const water = ctx.createLinearGradient(0, waterY, 0, channelBottom);
       water.addColorStop(0, "#3a7bb0");
       water.addColorStop(1, "#1e4a70");
       ctx.fillStyle = water;
-      ctx.fillRect(leftScreen, waterY, plotPxW, groundY + gm - waterY);
+      ctx.fillRect(leftScreen, waterY, plotPxW, channelBottom - waterY);
       // Bridge deck — its surface is level with the ground line.
       const deckH = Math.max(6, cell * 0.28);
       ctx.fillStyle = "#565b63"; // pylons, drawn first so the deck caps them
@@ -590,6 +617,7 @@ export class Renderer {
       const blocked =
         hover.col >= plot.cols ||
         hover.row >= MAX_ROWS ||
+        hover.row < -MAX_DEPTH ||
         hasGirder(plot, hover.col, hover.row) ||
         !girderSupported(plot, hover.col, hover.row);
       ctx.fillStyle = blocked ? "rgba(200,70,70,0.30)" : "rgba(150,160,175,0.45)";
@@ -636,13 +664,17 @@ export class Renderer {
     const blocked =
       hover.col + def.width > plot.cols ||
       hover.row >= MAX_ROWS ||
+      hover.row < -MAX_DEPTH ||
       !!unitAt(plot, hover.col, hover.row);
     ctx.fillStyle = blocked ? "rgba(200,70,70,0.35)" : "rgba(120,220,120,0.35)";
     ctx.fillRect(x + 1, y + 1, wpx - 2, cell - 2);
     ctx.strokeStyle = blocked ? "#c84646" : "#78dc78";
     ctx.lineWidth = 2;
     ctx.strokeRect(x + 1, y + 1, wpx - 2, cell - 2);
-    if (!blocked) this.drawPriceTag(`$${def.cost.toLocaleString()}`, x + wpx / 2, y - 2);
+    if (!blocked) {
+      const price = Math.round(def.cost * undergroundMultiplier(hover.row));
+      this.drawPriceTag(`$${price.toLocaleString()}`, x + wpx / 2, y - 2);
+    }
   }
 }
 

@@ -19,8 +19,20 @@ import type { GameState } from "./types";
  *      costs N× its base price (1st plot ×1, 2nd ×2, 3rd ×3, …).
  */
 
-/** Cost of one girder tile on a given floor: base + per-floor surcharge. */
+/**
+ * Underground build multiplier: excavating costs an extra 100% per level down,
+ * so row -1 costs ×2, row -2 ×3, … Above/at ground it's ×1.
+ */
+export function undergroundMultiplier(row: number): number {
+  return row < 0 ? 1 - row : 1; // 1 + depth, where depth = -row
+}
+
+/**
+ * Cost of one girder tile on a given floor. Above ground: base + per-floor
+ * surcharge. Below ground: base × the underground multiplier.
+ */
 export function girderCost(row: number): number {
+  if (row < 0) return GIRDER_BASE_COST * undergroundMultiplier(row);
   return GIRDER_BASE_COST + GIRDER_COST_PER_FLOOR * row;
 }
 

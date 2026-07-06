@@ -1,7 +1,7 @@
 import type { Command } from "./commands";
 import type { GameState, Plot, Unit, UnitKind } from "./types";
-import { MAX_ROWS, SPEED_OPTIONS, UNIT_DEFS } from "./constants";
-import { claimCost, girderCost } from "./economy";
+import { MAX_DEPTH, MAX_ROWS, SPEED_OPTIONS, UNIT_DEFS } from "./constants";
+import { claimCost, girderCost, undergroundMultiplier } from "./economy";
 import { featureLabel } from "./features";
 
 /**
@@ -79,7 +79,8 @@ function placeGirder(
   const plot = owned.plot;
   const player = state.players[cmd.playerId];
 
-  if (cmd.row < 0 || cmd.row >= MAX_ROWS) return fail("Out of vertical bounds");
+  if (cmd.row >= MAX_ROWS) return fail("Out of vertical bounds");
+  if (cmd.row < -MAX_DEPTH) return fail("The lowest level is reserved for the subway");
   if (cmd.col < 0 || cmd.col >= plot.cols) return fail("Outside the plot");
   if (hasGirder(plot, cmd.col, cmd.row)) return fail("Support already here");
   // A girder needs the ground or a girder below — OR a single-tile overhang off
@@ -153,8 +154,9 @@ function placeUnit(
   const def = UNIT_DEFS[cmd.kind];
   if (!def) return fail("Unknown unit type");
 
-  // Bounds.
-  if (cmd.row < 0 || cmd.row >= MAX_ROWS) return fail("Out of vertical bounds");
+  // Bounds (rooms may go underground down to -MAX_DEPTH).
+  if (cmd.row >= MAX_ROWS) return fail("Out of vertical bounds");
+  if (cmd.row < -MAX_DEPTH) return fail("The lowest level is reserved for the subway");
   if (cmd.col < 0 || cmd.col + def.width > plot.cols)
     return fail("Doesn't fit horizontally");
 
@@ -175,8 +177,9 @@ function placeUnit(
     if (!hasGirder(plot, c, cmd.row)) return fail("Build structural supports (girders) here first");
   }
 
-  // Affordability.
-  if (player.money < def.cost) return fail("Not enough money");
+  // Affordability — underground rooms cost more per level down.
+  const roomCost = def.cost * undergroundMultiplier(cmd.row);
+  if (player.money < roomCost) return fail("Not enough money");
 
   // Commit.
   const unit: Unit = {
@@ -188,7 +191,7 @@ function placeUnit(
     occupancy: 0,
   };
   plot.units.push(unit);
-  player.money -= def.cost;
+  player.money -= roomCost;
   return ok();
 }
 
@@ -215,8 +218,8 @@ function sellUnit(
 
   const def = UNIT_DEFS[unit.kind];
   plot.units.splice(idx, 1);
-  // Refund half the build cost.
-  player.money += Math.floor(def.cost * 0.5);
+  // Refund half of what was paid (underground rooms cost more).
+  player.money += Math.floor(def.cost * undergroundMultiplier(unit.row) * 0.5);
   return ok();
 }
 
@@ -232,19 +235,27 @@ export function hasGirder(plot: Plot, col: number, row: number): boolean {
   return (plot.girders ?? []).some((g) => g.col === col && g.row === row);
 }
 
-/** A girder is "directly supported" if it sits on the ground or a girder below. */
+/**
+ * A girder is "directly supported" if it sits on the ground (row 0), rests on a
+ * girder below it (above ground), hangs from the ground surface (row -1), or
+ * hangs from a girder directly above it (deeper underground).
+ */
 function girderDirectlySupported(plot: Plot, col: number, row: number): boolean {
-  return row === 0 || hasGirder(plot, col, row - 1);
+  if (row === 0) return true;
+  if (row > 0) return hasGirder(plot, col, row - 1);
+  // Underground: excavation goes down from the surface.
+  return row === -1 || hasGirder(plot, col, row + 1);
 }
 
 /**
- * Whether a girder at (col,row) is validly supported: directly, or as a single
- * 1-tile overhang resting on a directly-supported same-row neighbor. Requiring
- * the neighbor to be *directly* supported caps overhangs at one tile — you
- * can't cantilever off another cantilever.
+ * Whether a girder at (col,row) is validly supported: directly, or (above
+ * ground only) as a single 1-tile overhang resting on a directly-supported
+ * same-row neighbor. Requiring the neighbor to be *directly* supported caps
+ * overhangs at one tile — you can't cantilever off another cantilever.
  */
 export function girderSupported(plot: Plot, col: number, row: number): boolean {
   if (girderDirectlySupported(plot, col, row)) return true;
+  if (row <= 0) return false; // no overhangs at the ground or underground
   return (
     (hasGirder(plot, col - 1, row) && girderDirectlySupported(plot, col - 1, row)) ||
     (hasGirder(plot, col + 1, row) && girderDirectlySupported(plot, col + 1, row))

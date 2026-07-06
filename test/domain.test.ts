@@ -5,8 +5,8 @@ import { advanceTick, projectedNet } from "../src/game/tick";
 import { propertyNameFor, archetype } from "../src/game/archetypes";
 import { gameTime } from "../src/game/clock";
 import { elevatorAccess, viewRating, noiseRating, footTraffic } from "../src/game/heatmaps";
-import { MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
-import { claimCost, girderCost, plotBaseCost } from "../src/game/economy";
+import { GIRDER_BASE_COST, MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
+import { claimCost, girderCost, plotBaseCost, undergroundMultiplier } from "../src/game/economy";
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
 import type { GameState } from "../src/game/types";
 
@@ -291,6 +291,57 @@ describe("SELL_UNIT", () => {
     expect(r.ok).toBe(true);
     expect(s.plots[0].units).toHaveLength(0);
     expect(s.players["p1"].money).toBe(before + Math.floor(UNIT_DEFS.lobby.cost * 0.5));
+  });
+});
+
+describe("underground", () => {
+  function owned(): GameState {
+    const s = freshGame();
+    s.players["p1"].money = 10_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    return s;
+  }
+  const G = (s: GameState, col: number, row: number) =>
+    applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col, row });
+
+  it("excavates down from the surface; row -1 hangs from the ground", () => {
+    const s = owned();
+    expect(G(s, 0, -1).ok).toBe(true); // hangs from the surface
+    expect(G(s, 1, -3).ok).toBe(false); // nothing above it
+    expect(G(s, 0, -2).ok).toBe(true); // supported by (0,-1) above
+  });
+
+  it("costs an extra 100% per level down", () => {
+    expect(girderCost(-1)).toBe(GIRDER_BASE_COST * 2);
+    expect(girderCost(-6)).toBe(GIRDER_BASE_COST * 7);
+    expect(undergroundMultiplier(-2)).toBe(3);
+    expect(undergroundMultiplier(3)).toBe(1);
+  });
+
+  it("reserves the 7th level below ground for the subway", () => {
+    const s = owned();
+    for (let r = -1; r >= -6; r--) expect(G(s, 0, r).ok).toBe(true);
+    expect(G(s, 0, -7).ok).toBe(false); // subway level is off-limits
+  });
+
+  it("has no view underground", () => {
+    const s = owned();
+    for (let r = -1; r >= -3; r--) G(s, 0, r);
+    expect(viewRating(s.plots[0], 0, -2)).toBe(0);
+  });
+});
+
+describe("feature spacing", () => {
+  it("never spawns two features adjacent to one another", () => {
+    for (const id of ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel"]) {
+      const s = createGameState(id, {
+        cityName: id, archetype: "pacifica", background: "skyline",
+        plotCount: 10, maxPlayers: 4, hasPassword: false,
+      });
+      const feats = Object.values(s.plots).filter((p) => p.feature).map((p) => p.index).sort((a, b) => a - b);
+      expect(feats).toHaveLength(2);
+      expect(feats[1] - feats[0]).toBeGreaterThanOrEqual(2);
+    }
   });
 });
 

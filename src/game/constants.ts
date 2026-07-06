@@ -9,6 +9,10 @@ import type { UnitKind } from "./types";
 export const CELL_SIZE = 48;
 /** Max floors above ground you can build. */
 export const MAX_ROWS = 50;
+/** How many basement levels you can excavate below ground (rows -1..-MAX_DEPTH). */
+export const MAX_DEPTH = 6;
+/** The reserved level (one below the deepest basement) held for a future subway. */
+export const SUBWAY_ROW = -(MAX_DEPTH + 1);
 /** Horizontal gap (in cells) between adjacent plots in the city strip. */
 export const PLOT_GAP_COLS = 2;
 

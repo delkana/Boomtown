@@ -33,14 +33,17 @@ export function plotColsFor(gameId: string, index: number): number {
  * rather than sitting on the edge.
  */
 function featurePositions(id: string, total: number): Set<number> {
-  const positions = new Set<number>();
+  const positions: number[] = [];
   const lo = 1;
   const hi = Math.max(lo, total - 2);
   const span = hi - lo + 1;
-  for (let n = 0; positions.size < FEATURE_COUNT && n < 100; n++) {
-    positions.add(lo + (hashString(`${id}:fpos:${n}`) % span));
+  for (let n = 0; positions.length < FEATURE_COUNT && n < 200; n++) {
+    const p = lo + (hashString(`${id}:fpos:${n}`) % span);
+    // Never place two features on the same tile OR adjacent to one another, so
+    // no two features (and never two of the same kind) touch.
+    if (positions.every((q) => Math.abs(q - p) >= 2)) positions.push(p);
   }
-  return positions;
+  return new Set(positions);
 }
 
 export function createGameState(id: string, config: GameConfig): GameState {

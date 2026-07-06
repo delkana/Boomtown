@@ -83,6 +83,12 @@ export class LobbyScreen {
     const pw = this.q<HTMLInputElement>("#cf-pw");
     pwToggle.addEventListener("change", () => pw.classList.toggle("hidden", !pwToggle.checked));
 
+    // Create-city is a modal opened from the lobby.
+    this.q("#open-create").addEventListener("click", () => {
+      this.q("#cf-error").textContent = "";
+      this.q("#create-modal").classList.remove("hidden");
+    });
+    this.q("#cf-cancel").addEventListener("click", () => this.q("#create-modal").classList.add("hidden"));
     this.q("#cf-create").addEventListener("click", () => this.submitCreate());
   }
 
@@ -271,6 +277,7 @@ export class LobbyScreen {
       return;
     }
     errorEl.textContent = "";
+    this.q("#create-modal").classList.add("hidden"); // close the create modal if open
     this.joined.set(result.connection.session.gameId, result.connection.session);
     saveJoined(this.joined);
     this.onEnter(result.connection);
@@ -343,38 +350,45 @@ const SHELL = `
         <span id="lobby-status" class="lobby-status"></span>
       </p>
     </header>
-    <div class="lobby-cols">
-      <section class="lobby-card">
-        <h2>Create a City</h2>
-        <div class="field">City archetype
-          <div id="cf-archetypes" class="archetype-grid"></div>
-          <p id="cf-blurb" class="blurb"></p>
+    <section class="lobby-card lobby-join">
+      <div class="join-head">
+        <h2>Cities</h2>
+        <button id="open-create" class="primary">+ Create a City</button>
+      </div>
+      <div id="game-list" class="game-list"></div>
+    </section>
+  </div>
+
+  <div id="create-modal" class="modal hidden">
+    <div class="modal-card create-card">
+      <h2>Create a City</h2>
+      <div class="field">City archetype
+        <div id="cf-archetypes" class="archetype-grid"></div>
+        <p id="cf-blurb" class="blurb"></p>
+      </div>
+      <div class="field">Backdrop
+        <div id="cf-backgrounds" class="bg-grid"></div>
+      </div>
+      <label class="field">City name
+        <div class="city-input-row">
+          <input id="cf-city" type="text" maxlength="28" placeholder="Name your city" />
+          <button id="cf-random" type="button" class="dice" title="Random name for this archetype">🎲</button>
         </div>
-        <div class="field">Backdrop
-          <div id="cf-backgrounds" class="bg-grid"></div>
-        </div>
-        <label class="field">City name
-          <div class="city-input-row">
-            <input id="cf-city" type="text" maxlength="28" placeholder="Name your city" />
-            <button id="cf-random" type="button" class="dice" title="Random name for this archetype">🎲</button>
-          </div>
-          <span class="field-note">Pick an archetype, then name it or roll a random one.</span>
-        </label>
-        <div class="field-row">
-          <label class="field">Properties<input id="cf-plots" type="number" value="12" /></label>
-          <label class="field">Max players<input id="cf-max" type="number" value="8" min="1" /></label>
-        </div>
-        <label class="field">Your name<input id="cf-name" type="text" maxlength="18" placeholder="Your name" /></label>
-        <div class="field">Your color<div id="cf-colors" class="swatch-grid"></div></div>
-        <label class="checkbox"><input id="cf-pw-toggle" type="checkbox" /> Password protected</label>
-        <input id="cf-pw" type="text" class="hidden" placeholder="Password" />
-        <button id="cf-create" class="primary big">Create &amp; Enter</button>
-        <div id="cf-error" class="form-error"></div>
-      </section>
-      <section class="lobby-card">
-        <h2>Join a City</h2>
-        <div id="game-list" class="game-list"></div>
-      </section>
+        <span class="field-note">Pick an archetype, then name it or roll a random one.</span>
+      </label>
+      <div class="field-row">
+        <label class="field">Properties<input id="cf-plots" type="number" value="12" /></label>
+        <label class="field">Max players<input id="cf-max" type="number" value="8" min="1" /></label>
+      </div>
+      <label class="field">Your name<input id="cf-name" type="text" maxlength="18" placeholder="Your name" /></label>
+      <div class="field">Your color<div id="cf-colors" class="swatch-grid"></div></div>
+      <label class="checkbox"><input id="cf-pw-toggle" type="checkbox" /> Password protected</label>
+      <input id="cf-pw" type="text" class="hidden" placeholder="Password" />
+      <div class="modal-actions">
+        <button id="cf-cancel">Cancel</button>
+        <button id="cf-create" class="primary">Create &amp; Enter</button>
+      </div>
+      <div id="cf-error" class="form-error"></div>
     </div>
   </div>
   <div id="join-modal" class="modal hidden">

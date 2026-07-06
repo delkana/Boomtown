@@ -65,15 +65,24 @@ body {
   opacity: 0.85;
 }
 
-.lobby-cols {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
+.lobby-join {
+  max-width: 640px;
+  margin: 0 auto;
 }
-@media (max-width: 780px) {
-  .lobby-cols {
-    grid-template-columns: 1fr;
-  }
+.join-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.join-head h2 {
+  margin: 0;
+}
+.create-card {
+  width: 480px;
+  max-width: 94vw;
+  max-height: 88vh;
+  overflow-y: auto;
 }
 
 .lobby-card {

@@ -1,4 +1,4 @@
-import { CELL_SIZE, PLOT_GAP_COLS } from "../game/constants";
+import { CELL_SIZE, MAX_DEPTH, MAX_ROWS, PLOT_GAP_COLS } from "../game/constants";
 import type { CityLayout } from "./cityLayout";
 
 /**
@@ -16,6 +16,8 @@ import type { CityLayout } from "./cityLayout";
 export class Camera {
   /** World-x shown at screen x=0 (in world units, i.e. pre-zoom pixels). */
   offsetX = 0;
+  /** Vertical pan in screen pixels: >0 reveals higher floors, <0 reveals underground. */
+  offsetY = 0;
   /** Uniform zoom factor: screen px per world px. */
   zoom = 1;
   viewW = 0;
@@ -33,9 +35,17 @@ export class Camera {
     this.viewH = h;
   }
 
-  /** Screen y of the ground line (base of row 0). */
+  /** Screen y of the ground line (base of row 0), including the vertical pan. */
   get groundScreenY(): number {
-    return this.viewH - this.groundMargin;
+    return this.viewH - this.groundMargin + this.offsetY;
+  }
+
+  /** Keep the vertical pan within the underground floor..tall building range. */
+  clampVertical(): void {
+    const cell = this.scale(CELL_SIZE);
+    const min = -(MAX_DEPTH + 2) * cell; // subway level comfortably in view
+    const max = (MAX_ROWS + 1) * cell; // up to the top of a full tower
+    this.offsetY = Math.max(min, Math.min(max, this.offsetY));
   }
 
   /** World-x of a plot's left edge. */
@@ -93,9 +103,10 @@ export class Camera {
     this.offsetX = worldX - this.viewW / this.zoom / 2;
   }
 
-  /** Center on a plot's midpoint. */
+  /** Center on a plot's midpoint (and reset to the surface view). */
   centerOnPlot(plotIndex: number): void {
     this.centerOnWorldX(this.layout?.plotMidWorldX(plotIndex) ?? 0);
+    this.offsetY = 0;
   }
 
   /** Keep the whole city strip within reach (with a little margin). */

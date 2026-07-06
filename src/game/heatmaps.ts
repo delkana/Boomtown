@@ -39,6 +39,7 @@ export function elevatorAccess(plot: Plot, col: number, row: number): number {
  * beneath a ground-floor tile gives no view.
  */
 export function viewRating(plot: Plot, col: number, row: number): number {
+  if (row < 0) return 0; // no view underground, ever
   const openAir = (c: number, r: number): boolean => {
     if (c < 0 || c >= plot.cols) return true; // beside the plot = open sky
     if (r >= MAX_ROWS) return true; // above the plot = open sky
@@ -58,7 +59,7 @@ export function viewRating(plot: Plot, col: number, row: number): number {
  * (each contributes within a few tiles, falling off with distance).
  */
 export function noiseRating(plot: Plot, col: number, row: number): number {
-  let n = Math.max(0, 30 - row * 6); // ground-floor proximity
+  let n = Math.max(0, 30 - Math.abs(row) * 6); // ground-floor proximity
   for (const u of plot.units) {
     const weight = u.kind === "elevator" ? 25 : u.kind === "lobby" ? 20 : u.kind === "office" ? 15 : 0;
     if (!weight) continue;
