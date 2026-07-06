@@ -51,6 +51,8 @@ export const SPEED_OPTIONS: readonly number[] = [1, 2, 3, 5, 10];
 /** Calendar: a "month" is one week, and a year is this many months. */
 export const DAYS_PER_WEEK = 7;
 export const MONTHS_PER_YEAR = 12;
+/** Economy ticks in one in-game day (rent is collected once per day). */
+export const TICKS_PER_DAY = (24 * 60) / TICK_MINUTES;
 
 /** Lobby limits. */
 export const MAX_PLAYERS_LIMIT = 20;
@@ -84,11 +86,11 @@ export interface UnitDef {
   width: number;
   /** One-time build cost. */
   cost: number;
-  /** Per-tick upkeep (always paid, even when empty). */
+  /** Daily upkeep, paid at midnight (always, even when vacant). */
   upkeep: number;
-  /** Per-tick income at full occupancy (0 for infrastructure). */
+  /** Marks a revenue room (can hold a tenant) when > 0. Rent comes from tenants. */
   incomeAtFull: number;
-  /** How fast occupancy climbs per tick when serviced (0..1 delta). */
+  /** Legacy fill-rate (unused now tenants drive income). */
   fillRate: number;
   /** Fill color for placeholder art. */
   color: string;
@@ -110,7 +112,7 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     hotkey: "1",
     width: 2,
     cost: 2000,
-    upkeep: 5,
+    upkeep: 250,
     incomeAtFull: 0,
     fillRate: 0,
     color: "#c9a94f",
@@ -123,7 +125,7 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     hotkey: "2",
     width: 2,
     cost: 3000,
-    upkeep: 10,
+    upkeep: 350,
     incomeAtFull: 120,
     fillRate: 0.08,
     color: "#5b8fb0",
@@ -136,7 +138,7 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     hotkey: "3",
     width: 3,
     cost: 5000,
-    upkeep: 14,
+    upkeep: 400,
     incomeAtFull: 200,
     fillRate: 0.07,
     color: "#4bb5a6",
@@ -150,7 +152,7 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     hotkey: "4",
     width: 2,
     cost: 2500,
-    upkeep: 8,
+    upkeep: 280,
     incomeAtFull: 90,
     fillRate: 0.05,
     color: "#7bab6e",
@@ -163,7 +165,7 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     hotkey: "5",
     width: 3,
     cost: 4500,
-    upkeep: 12,
+    upkeep: 320,
     incomeAtFull: 190,
     fillRate: 0.09,
     color: "#d08a4f",
@@ -176,7 +178,7 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     hotkey: "6",
     width: 4,
     cost: 6500,
-    upkeep: 18,
+    upkeep: 480,
     incomeAtFull: 280,
     fillRate: 0.08,
     color: "#c85a6a",
@@ -189,7 +191,7 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     hotkey: "7",
     width: 1,
     cost: 1800,
-    upkeep: 6,
+    upkeep: 160,
     incomeAtFull: 72,
     fillRate: 0.07,
     color: "#6a7fc0",
@@ -202,7 +204,7 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     hotkey: "8",
     width: 1,
     cost: 1500,
-    upkeep: 4,
+    upkeep: 220,
     incomeAtFull: 0,
     fillRate: 0,
     color: "#8a8f98",

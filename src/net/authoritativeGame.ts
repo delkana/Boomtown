@@ -3,6 +3,7 @@ import { advanceTick } from "../game/tick";
 import { createGameState, serialize } from "../game/state";
 import { STARTING_MONEY, TICK_SECONDS, UNIT_DEFS } from "../game/constants";
 import { elevatorRuns } from "../game/elevator";
+import { generateTenant, hasTrades } from "../game/tenants";
 import type { Command } from "../game/commands";
 import type { GameConfig, GameState, Player, UnitKind } from "../game/types";
 import type { GameSummary } from "./protocol";
@@ -105,13 +106,17 @@ export class AuthoritativeGame {
     plot.ownerId = playerId;
     for (const s of specs) {
       const def = UNIT_DEFS[s.kind];
+      const id = `u${this.state.nextUnitSeq++}`;
+      // Seeded rooms come pre-leased so demo towers look occupied.
+      const tenant = hasTrades(s.kind) ? generateTenant(s.kind, `${plot.id}:${id}`, 0.75, def.width) : null;
       plot.units.push({
-        id: `u${this.state.nextUnitSeq++}`,
+        id,
         kind: s.kind,
         col: s.col,
         row: s.row,
         width: def.width,
-        occupancy: s.occupancy ?? 0,
+        occupancy: tenant ? 1 : 0,
+        tenant,
       });
       // Seed the structural girders under each unit so the frame is consistent.
       for (let c = s.col; c < s.col + def.width; c++) {

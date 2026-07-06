@@ -21,7 +21,8 @@ import {
   roomSatisfaction,
   type HeatmapKind,
 } from "../game/heatmaps";
-import { projectedNet } from "../game/tick";
+import { headcountLabel, hasTrades } from "../game/tenants";
+import { projectedDailyNet } from "../game/tick";
 import type { GameConnection } from "../net/connection";
 import type { InspectRef } from "../input/input";
 import type { Tool } from "../render/renderer";
@@ -116,8 +117,6 @@ export class Hud {
     const elevStr = unit.row === 0 ? "—" : String(Math.round(elev / n));
 
     const revenue = def.incomeAtFull > 0;
-    const gross = revenue ? Math.round(def.incomeAtFull * unit.occupancy) : 0;
-    const net = gross - def.upkeep;
     const appeal = Math.round(roomSatisfaction(plot, unit) * 100);
     const prefs = prefsLabel(def.prefs);
     // Facade/windows come from the girder this room is built on.
@@ -125,8 +124,26 @@ export class Hud {
     const facade = facadeById(girder?.style);
     const facadeVal = unit.row < 0 ? `${facade.name} · no windows` : facade.name;
 
+    // Tenant + daily P&L.
+    const tenant = unit.tenant ?? null;
+    const hourF = ((state.tick * TICK_MINUTES) / 60) % 24;
+    const dailyNet = (tenant ? tenant.dailyRent : 0) - def.upkeep;
+    let tenantHtml = "";
+    if (tenant) {
+      const open = hourF >= tenant.openHour && hourF < tenant.closeHour;
+      tenantHtml = `
+        <div class="insp-tenant">${escapeHtml(tenant.name)}</div>
+        <div class="insp-sub">${escapeHtml(tenant.trade)} · <span class="${open ? "pos" : "neg"}">${open ? "Open" : "Closed"}</span></div>
+        <div class="insp-row"><span>Hours</span><span>${hr(tenant.openHour)}–${hr(tenant.closeHour)}</span></div>
+        <div class="insp-row"><span>${headcountLabel(unit.kind)}</span><span>${tenant.employees}</span></div>
+        <div class="insp-row"><span>Rent / day</span><span class="pos">+$${tenant.dailyRent.toLocaleString()}</span></div>`;
+    } else if (hasTrades(unit.kind)) {
+      tenantHtml = `<div class="insp-sub">Vacant · seeking a tenant (${appeal}% appeal)</div>`;
+    }
+
     this.inspectorEl.innerHTML = `
       <div class="insp-title">${def.label} · Floor ${unit.row}${info.pinned ? ' <span class="pin">📌</span>' : ""}</div>
+      ${tenantHtml}
       <div class="insp-row"><span>Facade</span><span>${facadeVal}</span></div>
       <div class="insp-row"><span>Elevator</span><span>${elevStr}</span></div>
       <div class="insp-row"><span>View</span><span>${Math.round(view / n)}</span></div>
@@ -134,10 +151,8 @@ export class Hud {
       <div class="insp-row"><span>Foot traffic</span><span>${Math.round(foot / n)}</span></div>
       ${revenue ? `<div class="insp-row"><span>Appeal</span><span>${appeal}%</span></div>` : ""}
       ${prefs ? `<div class="insp-prefs">Prefers ${prefs}</div>` : ""}
-      <div class="insp-row"><span>Occupancy</span><span>${revenue ? Math.round(unit.occupancy * 100) + "%" : "—"}</span></div>
-      <div class="insp-row"><span>Income / ${TICK_MINUTES}min</span><span class="pos">${revenue ? "+$" + gross.toLocaleString() : "$0"}</span></div>
-      <div class="insp-row"><span>Upkeep</span><span class="neg">-$${def.upkeep.toLocaleString()}</span></div>
-      <div class="insp-row net"><span>Net</span><span class="${net >= 0 ? "pos" : "neg"}">${net < 0 ? "-" : "+"}$${Math.abs(net).toLocaleString()}</span></div>
+      <div class="insp-row"><span>Upkeep / day</span><span class="neg">-$${def.upkeep.toLocaleString()}</span></div>
+      <div class="insp-row net"><span>Net / day</span><span class="${dailyNet >= 0 ? "pos" : "neg"}">${dailyNet < 0 ? "-" : "+"}$${Math.abs(dailyNet).toLocaleString()}</span></div>
       <div class="insp-hint">${info.pinned ? "Click again or Esc to close" : "Click to pin"}</div>`;
     this.inspectorEl.classList.remove("hidden");
   }
@@ -290,22 +305,20 @@ export class Hud {
     const myPlots = Object.values(state.plots).filter((p) => p.ownerId === me);
     const myUnits = myPlots.flatMap((p) => p.units);
     const myGirders = myPlots.reduce((n, p) => n + (p.girders?.length ?? 0), 0);
-    const net = myPlots.reduce((sum, p) => sum + projectedNet(p), 0);
-    const revenueUnits = myUnits.filter((u) => UNIT_DEFS[u.kind].incomeAtFull > 0);
-    const avgOcc =
-      revenueUnits.length === 0
-        ? 0
-        : revenueUnits.reduce((s, u) => s + u.occupancy, 0) / revenueUnits.length;
+    const net = myPlots.reduce((sum, p) => sum + projectedDailyNet(p), 0);
+    const leasable = myUnits.filter((u) => hasTrades(u.kind));
+    const leased = leasable.filter((u) => u.tenant).length;
+    const leasePct = leasable.length === 0 ? 0 : Math.round((leased / leasable.length) * 100);
 
     const netClass = net >= 0 ? "pos" : "neg";
     this.statsEl.innerHTML = `
       <div class="row big">$${player.money.toLocaleString()}</div>
-      <div class="row"><span>Net / ${TICK_MINUTES}min</span>
+      <div class="row"><span>Net / day</span>
         <span class="${netClass}">${net >= 0 ? "+" : ""}$${net.toLocaleString()}</span></div>
       <div class="row"><span>Plots owned</span><span>${myPlots.length}</span></div>
       <div class="row"><span>Girders</span><span>${myGirders}</span></div>
-      <div class="row"><span>Units</span><span>${myUnits.length}</span></div>
-      <div class="row"><span>Occupancy</span><span>${Math.round(avgOcc * 100)}%</span></div>`;
+      <div class="row"><span>Rooms</span><span>${myUnits.length}</span></div>
+      <div class="row"><span>Leased</span><span>${leased}/${leasable.length} · ${leasePct}%</span></div>`;
 
     this.renderPlayers(state, me);
 
@@ -404,6 +417,14 @@ export class Hud {
         )
         .join("");
   }
+}
+
+/** Format an hour (0..24) as "9am" / "5pm" / "12am". */
+function hr(h: number): string {
+  const x = ((h % 24) + 24) % 24;
+  const ap = x < 12 ? "am" : "pm";
+  const h12 = x % 12 === 0 ? 12 : x % 12;
+  return `${h12}${ap}`;
 }
 
 /** A short human phrase for a room's location preferences, e.g. "elevator · views · quiet". */

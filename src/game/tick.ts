@@ -1,23 +1,23 @@
 import type { GameState, Plot } from "./types";
-import { UNIT_DEFS } from "./constants";
+import { TICKS_PER_DAY, UNIT_DEFS } from "./constants";
 import { roomSatisfaction } from "./heatmaps";
 import { servicedRows } from "./elevator";
+import { generateTenant, hasTrades } from "./tenants";
+import { hashString } from "./hash";
 
 /**
  * advanceTick: the economy step. Pure and deterministic — server-ownable.
  *
- * Per tick, for every owned plot:
- *   1. Revenue units (offices/apartments) that are "serviced" fill up toward
- *      full occupancy; unserviced ones slowly drain.
- *   2. Each unit yields income = incomeAtFull * occupancy, minus upkeep.
- *   3. The plot owner's wallet is credited/debited.
- *
- * "Serviced" = the tower has a lobby AND an elevator reaches the unit's floor.
- * This is intentionally simple; it's the hook where richer sims (pathing,
- * demand curves) would slot in later.
+ * Each tick, for every owned plot:
+ *   1. Serviced revenue rooms (lobby + an elevator car reaches the floor) attract
+ *      a tenant over time, weighted by how appealing the spot is. A room with no
+ *      service loses its tenant.
+ *   2. Once a day, at midnight, rent is collected from every tenant and daily
+ *      upkeep is paid — so cashflow is lumpy (a payday each night), not per-tick.
  */
 export function advanceTick(state: GameState): void {
   state.tick += 1;
+  const isMidnight = state.tick % TICKS_PER_DAY === 0;
 
   for (const key of Object.keys(state.plots)) {
     const plot = state.plots[Number(key)];
@@ -26,43 +26,36 @@ export function advanceTick(state: GameState): void {
     if (!owner) continue;
 
     const hasLobby = plot.units.some((u) => u.kind === "lobby");
-    // A floor is only reachable if its shaft has a car running in it.
     const elevatorRows = servicedRows(plot);
 
-    let net = 0;
+    // Tenants move in and out.
     for (const unit of plot.units) {
-      const def = UNIT_DEFS[unit.kind];
-      net -= def.upkeep;
-
-      if (def.incomeAtFull > 0) {
-        const serviced = hasLobby && elevatorRows.has(unit.row);
-        // Occupancy converges on how appealing the spot is for this room type
-        // (its "satisfaction"); an unserviced room empties out entirely.
-        const target = serviced ? roomSatisfaction(plot, unit) : 0;
-        if (unit.occupancy < target) {
-          unit.occupancy = Math.min(target, unit.occupancy + def.fillRate);
-        } else {
-          unit.occupancy = Math.max(target, unit.occupancy - def.fillRate * 0.5);
+      if (!hasTrades(unit.kind)) continue; // infrastructure has no tenant
+      const serviced = hasLobby && elevatorRows.has(unit.row);
+      if (unit.tenant) {
+        if (!serviced) unit.tenant = null; // no elevator service → tenant leaves
+      } else if (serviced) {
+        const appeal = roomSatisfaction(plot, unit);
+        const roll = hashString(`${plot.id}:${unit.id}:${state.tick}`) % 1000;
+        if (appeal > 0 && roll < appeal * 140) {
+          // Identity is stable per room; appeal at move-in sets the rent.
+          unit.tenant = generateTenant(unit.kind, `${plot.id}:${unit.id}`, appeal, unit.width);
         }
-        net += Math.round(def.incomeAtFull * unit.occupancy);
       }
+      unit.occupancy = unit.tenant ? 1 : 0;
     }
 
-    owner.money += net;
+    // Rent + upkeep settle once a day, at midnight.
+    if (isMidnight) owner.money += projectedDailyNet(plot);
   }
 }
 
-/** Total per-tick net cashflow for a plot (for the stats readout). */
-export function projectedNet(plot: Plot): number {
-  const hasLobby = plot.units.some((u) => u.kind === "lobby");
-  const elevatorRows = servicedRows(plot);
+/** Projected daily net cashflow for a plot: tenants' rent minus daily upkeep. */
+export function projectedDailyNet(plot: Plot): number {
   let net = 0;
   for (const unit of plot.units) {
-    const def = UNIT_DEFS[unit.kind];
-    net -= def.upkeep;
-    if (def.incomeAtFull > 0 && hasLobby && elevatorRows.has(unit.row)) {
-      net += Math.round(def.incomeAtFull * unit.occupancy);
-    }
+    net -= UNIT_DEFS[unit.kind].upkeep;
+    if (unit.tenant) net += unit.tenant.dailyRent;
   }
   return net;
 }

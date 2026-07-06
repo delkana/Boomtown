@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createGameState, serialize, deserialize } from "../src/game/state";
 import { applyCommand } from "../src/game/reducer";
-import { advanceTick, projectedNet } from "../src/game/tick";
+import { advanceTick, projectedDailyNet } from "../src/game/tick";
 import { propertyNameFor, archetype } from "../src/game/archetypes";
 import { gameTime, daylightHours, skyState } from "../src/game/clock";
 import { elevatorAccess, viewRating, noiseRating, footTraffic, roomSatisfaction } from "../src/game/heatmaps";
@@ -10,6 +10,7 @@ import { claimCost, girderCost, plotBaseCost, undergroundMultiplier } from "../s
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
 import { servicedRows, elevatorRuns, stepCar, MAX_CARS_PER_SHAFT } from "../src/game/elevator";
 import { facadeById, DEFAULT_FACADE } from "../src/game/facades";
+import { generateTenant, tenantLit, hasTrades } from "../src/game/tenants";
 import type { GameState } from "../src/game/types";
 
 /** Indices of the first `n` buildable (non-feature) plots. */
@@ -387,36 +388,47 @@ describe("advanceTick economy", () => {
     expect(s.tick).toBe(1);
   });
 
-  it("fills serviced offices toward their location's appeal", () => {
+  it("a serviced, appealing office eventually leases to a tenant", () => {
     const s = servicedTower();
     const office = s.plots[0].units.find((u) => u.kind === "office")!;
-    const appeal = roomSatisfaction(s.plots[0], office);
-    expect(appeal).toBeGreaterThan(UNIT_DEFS.office.fillRate); // headroom for the first step
-    expect(office.occupancy).toBe(0);
-    advanceTick(s);
-    expect(office.occupancy).toBeCloseTo(UNIT_DEFS.office.fillRate, 5);
-    for (let i = 0; i < 80; i++) advanceTick(s);
-    // Occupancy converges on the appeal ceiling and never exceeds it.
-    expect(office.occupancy).toBeCloseTo(appeal, 4);
-    expect(office.occupancy).toBeLessThanOrEqual(appeal + 1e-9);
+    expect(roomSatisfaction(s.plots[0], office)).toBeGreaterThan(0);
+    expect(office.tenant).toBeFalsy(); // starts vacant
+    for (let i = 0; i < 400; i++) advanceTick(s);
+    expect(office.tenant).toBeTruthy();
+    expect(office.occupancy).toBe(1);
+    expect(office.tenant!.dailyRent).toBeGreaterThan(0);
   });
 
-  it("drains occupancy when the floor is unserviced (no elevator)", () => {
+  it("a tenant leaves when its floor loses elevator service", () => {
     const s = servicedTower();
-    // Remove the elevator so row 0 is no longer served.
+    const office = s.plots[0].units.find((u) => u.kind === "office")!;
+    for (let i = 0; i < 400; i++) advanceTick(s);
+    expect(office.tenant).toBeTruthy();
+    // Remove the elevator so row 0 is no longer served → the tenant leaves.
     const elevator = s.plots[0].units.find((u) => u.kind === "elevator")!;
     applyCommand(s, { type: "SELL_UNIT", playerId: "p1", plotIndex: 0, unitId: elevator.id });
-    const office = s.plots[0].units.find((u) => u.kind === "office")!;
-    office.occupancy = 0.5;
     advanceTick(s);
-    expect(office.occupancy).toBeLessThan(0.5);
+    expect(office.tenant).toBeFalsy();
   });
 
-  it("projectedNet is negative for infrastructure-only, positive once tenants arrive", () => {
+  it("projectedDailyNet is negative when vacant, positive once leased", () => {
     const s = servicedTower();
-    expect(projectedNet(s.plots[0])).toBeLessThan(0); // occupancy 0 → only upkeep
-    for (let i = 0; i < 40; i++) advanceTick(s);
-    expect(projectedNet(s.plots[0])).toBeGreaterThan(0);
+    expect(projectedDailyNet(s.plots[0])).toBeLessThan(0); // vacant → only upkeep
+    for (let i = 0; i < 400; i++) advanceTick(s);
+    expect(projectedDailyNet(s.plots[0])).toBeGreaterThan(0);
+  });
+
+  it("collects rent only at midnight (start of each day)", () => {
+    const s = servicedTower();
+    for (let i = 0; i < 400; i++) advanceTick(s); // lease up
+    const office = s.plots[0].units.find((u) => u.kind === "office")!;
+    expect(office.tenant).toBeTruthy();
+    // Advance to just before the next midnight, tracking money changes.
+    const TICKS_PER_DAY = (24 * 60) / 5;
+    while (s.tick % TICKS_PER_DAY !== TICKS_PER_DAY - 1) advanceTick(s);
+    const before = s.players["p1"].money;
+    advanceTick(s); // crosses midnight
+    expect(s.players["p1"].money).toBe(before + projectedDailyNet(s.plots[0]));
   });
 
   it("does not simulate unowned plots", () => {
@@ -523,13 +535,13 @@ describe("elevator cars", () => {
     expect(s.plots[0].cars).toHaveLength(1); // still just the one auto car
   });
 
-  it("the auto car services the shaft's floors", () => {
+  it("the auto car services the shaft's floors (so rooms can lease)", () => {
     const s = shaftTower(3);
     const rows = servicedRows(s.plots[0]);
     for (let f = 0; f <= 3; f++) expect(rows.has(f)).toBe(true);
     const office = s.plots[0].units.find((u) => u.kind === "office")!;
-    for (let i = 0; i < 30; i++) advanceTick(s);
-    expect(office.occupancy).toBeGreaterThan(0);
+    for (let i = 0; i < 400; i++) advanceTick(s);
+    expect(office.tenant).toBeTruthy();
   });
 
   it("a carless shaft (its car sold) services no floor", () => {
@@ -538,8 +550,8 @@ describe("elevator cars", () => {
     expect(s.plots[0].cars).toHaveLength(0);
     expect(servicedRows(s.plots[0]).size).toBe(0);
     const office = s.plots[0].units.find((u) => u.kind === "office")!;
-    for (let i = 0; i < 30; i++) advanceTick(s);
-    expect(office.occupancy).toBe(0);
+    for (let i = 0; i < 400; i++) advanceTick(s);
+    expect(office.tenant).toBeFalsy(); // never leases without service
   });
 
   it("rejects a car placed outside any shaft", () => {
@@ -591,6 +603,37 @@ describe("elevator cars", () => {
     expect(s.plots[0].cars).toHaveLength(0);
     expect(s.players["p1"].money).toBeGreaterThan(before);
     expect(servicedRows(s.plots[0]).size).toBe(0);
+  });
+});
+
+describe("tenants", () => {
+  it("generates a deterministic tenant for business kinds (none for infrastructure)", () => {
+    const a = generateTenant("office", "plot:1:u3", 0.7, 2)!;
+    const b = generateTenant("office", "plot:1:u3", 0.7, 2)!;
+    expect(a).toEqual(b); // stable identity for a given seed
+    expect(a.name).toBeTruthy();
+    expect(a.trade).toBeTruthy();
+    expect(a.employees).toBeGreaterThan(0);
+    expect(a.dailyRent).toBeGreaterThan(0);
+    expect(a.closeHour).toBeGreaterThan(a.openHour);
+    expect(hasTrades("office")).toBe(true);
+    expect(hasTrades("lobby")).toBe(false);
+    expect(generateTenant("lobby", "x", 1, 2)).toBeNull();
+  });
+
+  it("a more appealing spot commands higher rent", () => {
+    const lo = generateTenant("office", "seed", 0.1, 2)!;
+    const hi = generateTenant("office", "seed", 0.9, 2)!;
+    expect(hi.dailyRent).toBeGreaterThan(lo.dailyRent);
+  });
+
+  it("lights are on from an hour before opening to an hour after closing", () => {
+    const t = { name: "x", trade: "y", openHour: 9, closeHour: 17, employees: 5, dailyRent: 100 };
+    expect(tenantLit(t, 8)).toBe(true); // 1h before open
+    expect(tenantLit(t, 13)).toBe(true); // midday
+    expect(tenantLit(t, 17.5)).toBe(true); // within 1h after close
+    expect(tenantLit(t, 19)).toBe(false); // well after close
+    expect(tenantLit(t, 6)).toBe(false); // early morning
   });
 });
 

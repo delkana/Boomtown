@@ -35,9 +35,25 @@ export function featureLabel(kind: FeatureKind): string {
 }
 
 const FEATURE_NAMES: Record<FeatureKind, string[]> = {
-  river: ["Kessler River", "Vale River", "Ashford Crossing", "Marrow River", "Silverbrook Crossing", "Rushwater River"],
-  park: ["Central Park", "Greenwood Park", "Liberty Gardens", "Meridian Commons", "Elm Park", "Concord Green"],
-  highway: ["Route 9 Overpass", "The Interchange", "Skyway 7", "Transit Viaduct", "Grand Overpass", "Line 4 Flyover"],
+  // Rivers, canals and water crossings.
+  river: [
+    "Kessler River", "Vale River", "Marrow River", "Rushwater River", "Silverbrook River",
+    "Ashford Crossing", "Blackwater Canal", "Mill Canal", "Harbor Canal", "Ironbridge Crossing",
+    "Greenwater Canal", "Old Ferry Crossing", "Slate Creek", "Highwater Canal", "Kingsferry Crossing",
+    "Copperbrook Canal",
+  ],
+  park: [
+    "Central Park", "Greenwood Park", "Liberty Gardens", "Meridian Commons", "Elm Park",
+    "Concord Green", "Riverside Park", "Victory Gardens", "Cedar Commons", "Lantern Park",
+    "Union Green", "Willow Gardens", "Founders Park", "Maple Commons", "Sunset Green",
+    "Heritage Park",
+  ],
+  highway: [
+    "Route 9 Overpass", "The Interchange", "Skyway 7", "Transit Viaduct", "Grand Overpass",
+    "Line 4 Flyover", "Crosstown Expressway", "Harbor Freeway", "Ironclad Interchange", "Meridian Skyway",
+    "Old Post Viaduct", "Uptown Flyover", "Junction 12", "Riverside Expressway", "Central Overpass",
+    "Dockside Flyover",
+  ],
 };
 
 /** Deterministic proper name for a feature (e.g. "Central Park"). */

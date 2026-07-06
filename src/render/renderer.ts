@@ -4,8 +4,10 @@ import {
   MAX_DEPTH,
   MAX_ROWS,
   SUBWAY_ROW,
+  TICK_MINUTES,
   UNIT_DEFS,
 } from "../game/constants";
+import { tenantLit } from "../game/tenants";
 import type { GameState, Plot } from "../game/types";
 import { unitAt, hasGirder, girderSupported } from "../game/reducer";
 import {
@@ -83,6 +85,8 @@ export class Renderer {
   private popups: Popup[] = [];
   /** Smoothly-animated car positions (per car id), advanced every frame. */
   private carAnim = new Map<string, { pos: number; dir: number }>();
+  /** Current in-game hour (0..24), used to switch room lights on/off. */
+  private hourF = 12;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -150,6 +154,7 @@ export class Renderer {
 
     // Cars move continuously (independent of the economy tick), scaled by speed.
     this.advanceCarAnim(state, (dtMs / 1000) * (state.speed || 1));
+    this.hourF = ((state.tick * TICK_MINUTES) / 60) % 24; // for room lights
 
     // Latitude + season drive the sky (day/night lengths shift through the year).
     const { day, twilight } = skyState(state.tick, state.config.latitude ?? 0);
@@ -573,20 +578,23 @@ export class Renderer {
 
       // Every room (including the lobby) is drawn as an empty perspective
       // interior; only elevators are separate (continuous shafts). The facade
-      // and windows come from the girder the room is built on.
+      // and windows come from the girder the room is built on. The lights are on
+      // only when the lobby (always) or a tenant's business hours say so.
       const g = (plot.girders ?? []).find((gg) => gg.col === unit.col && gg.row === unit.row);
-      this.drawRoomInterior(unit.kind, x + 1, y + 1, wpx - 2, cell - 2, facadeById(g?.style), unit.row < 0);
+      const lit = unit.kind === "lobby" ? true : !!(unit.tenant && tenantLit(unit.tenant, this.hourF));
+      this.drawRoomInterior(unit.kind, x + 1, y + 1, wpx - 2, cell - 2, facadeById(g?.style), unit.row < 0, lit);
 
       // Owner-color band along the top edge so ownership reads at a glance.
       ctx.fillStyle = ownerColor;
       ctx.fillRect(x + 1, y + 1, wpx - 2, bandH);
 
       if (showLabels) {
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillStyle = lit ? "rgba(0,0,0,0.55)" : "rgba(210,220,235,0.6)";
         ctx.font = `${Math.min(11, cell * 0.24)}px system-ui, sans-serif`;
         ctx.textBaseline = "top";
         ctx.textAlign = "left";
-        ctx.fillText(def.label, x + 4, y + bandH + 3);
+        const label = unit.tenant ? unit.tenant.name : def.label;
+        ctx.fillText(label, x + 4, y + bandH + 3);
       }
     }
 
@@ -647,15 +655,19 @@ export class Renderer {
     const { ctx } = this;
     const w = cell;
     // A shaft drawn in perspective: a receding tunnel behind the front opening,
-    // so it reads 3D like the rooms. Cars ride in the near (front) plane.
+    // so it reads 3D like the rooms. The back wall is inset by a FIXED amount
+    // (not proportional to height) so a tall shaft doesn't stretch — the tunnel
+    // stays a shallow, even depth top to bottom.
     const TL: Pt = { x: x + 1, y: yTop + 1 };
     const TR: Pt = { x: x + w - 1, y: yTop + 1 };
     const BR: Pt = { x: x + w - 1, y: yTop + height - 1 };
     const BL: Pt = { x: x + 1, y: yTop + height - 1 };
-    const vp: Pt = { x: x + w / 2, y: yTop + height / 2 };
-    const depth = 0.34;
-    const to = (p: Pt): Pt => ({ x: p.x + (vp.x - p.x) * depth, y: p.y + (vp.y - p.y) * depth });
-    const bTL = to(TL), bTR = to(TR), bBR = to(BR), bBL = to(BL);
+    const dx = w * 0.26;
+    const dy = Math.min(w * 0.26, (height - 2) / 2 - 1); // clamp so it never crosses over
+    const bTL: Pt = { x: TL.x + dx, y: TL.y + dy };
+    const bTR: Pt = { x: TR.x - dx, y: TR.y + dy };
+    const bBR: Pt = { x: BR.x - dx, y: BR.y - dy };
+    const bBL: Pt = { x: BL.x + dx, y: BL.y - dy };
     const poly = (pts: Pt[], fill: string): void => {
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
@@ -717,22 +729,23 @@ export class Renderer {
     h: number,
     facade: Facade,
     underground: boolean,
+    lit: boolean,
   ): void {
     switch (kind) {
       case "lobby":
-        return this.drawLobbyInterior(x, y, w, h, facade, underground);
+        return this.drawLobbyInterior(x, y, w, h, facade, underground, lit);
       case "office":
-        return this.drawOfficeInterior(x, y, w, h, facade, underground);
+        return this.drawOfficeInterior(x, y, w, h, facade, underground, lit);
       case "medical":
-        return this.drawMedicalInterior(x, y, w, h, facade, underground);
+        return this.drawMedicalInterior(x, y, w, h, facade, underground, lit);
       case "apartment":
-        return this.drawApartmentInterior(x, y, w, h, facade, underground);
+        return this.drawApartmentInterior(x, y, w, h, facade, underground, lit);
       case "store":
-        return this.drawStoreInterior(x, y, w, h, facade, underground);
+        return this.drawStoreInterior(x, y, w, h, facade, underground, lit);
       case "restaurant":
-        return this.drawRestaurantInterior(x, y, w, h, facade, underground);
+        return this.drawRestaurantInterior(x, y, w, h, facade, underground, lit);
       case "hotel":
-        return this.drawHotelInterior(x, y, w, h, facade, underground);
+        return this.drawHotelInterior(x, y, w, h, facade, underground, lit);
       default:
         this.ctx.fillStyle = UNIT_DEFS[kind].color;
         this.ctx.fillRect(x, y, w, h);
@@ -868,8 +881,11 @@ export class Renderer {
     h: number,
     base: number[],
     opt: { floor?: string; ceiling?: string; back?: string } = {},
+    lit = true,
   ): RoomShell {
     const { ctx } = this;
+    // With the lights off, every surface fades toward night — a dark room.
+    const dim = (col: string): string => (lit ? col : rgb(mix(hexRgb(col), [9, 11, 17], 0.8)));
     const vp: Pt = { x: x + w * 0.54, y: y + h * 0.46 }; // slightly off-centre → subtle 3-point feel
     const depth = 0.52;
     const to = (p: Pt): Pt => ({ x: p.x + (vp.x - p.x) * depth, y: p.y + (vp.y - p.y) * depth });
@@ -884,12 +900,12 @@ export class Renderer {
       ctx.fillStyle = fill;
       ctx.fill();
     };
-    // The five interior surfaces.
-    quad([BL, BR, bBR, bBL], opt.floor ?? rgb(mix(base, [16, 18, 24], 0.55))); // floor
-    quad([TL, TR, bTR, bTL], opt.ceiling ?? rgb(mix(base, [245, 248, 252], 0.52))); // ceiling
-    quad([TL, bTL, bBL, BL], rgb(mix(base, [8, 12, 20], 0.44))); // left wall (shadow side)
-    quad([TR, bTR, bBR, BR], rgb(mix(base, [8, 12, 20], 0.22))); // right wall
-    quad([bTL, bTR, bBR, bBL], opt.back ?? rgb(mix(base, [236, 241, 247], 0.3))); // back wall
+    // The five interior surfaces (dimmed when the lights are off).
+    quad([BL, BR, bBR, bBL], dim(opt.floor ?? rgb(mix(base, [16, 18, 24], 0.55)))); // floor
+    quad([TL, TR, bTR, bTL], dim(opt.ceiling ?? rgb(mix(base, [245, 248, 252], 0.52)))); // ceiling
+    quad([TL, bTL, bBL, BL], dim(rgb(mix(base, [8, 12, 20], 0.44)))); // left wall (shadow side)
+    quad([TR, bTR, bBR, BR], dim(rgb(mix(base, [8, 12, 20], 0.22)))); // right wall
+    quad([bTL, bTR, bBR, bBL], dim(opt.back ?? rgb(mix(base, [236, 241, 247], 0.3)))); // back wall
     // Baseboard seam where the back wall meets the floor.
     ctx.strokeStyle = rgb(mix(base, [0, 0, 0], 0.5));
     ctx.lineWidth = Math.max(0.5, w * 0.01);
@@ -988,12 +1004,13 @@ export class Renderer {
    * facade — the glass/window front, a set of entrance doors set into it, and a
    * reception desk. Row 0, so the facade windows look out to the street.
    */
-  private drawLobbyInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean): void {
+  private drawLobbyInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean): void {
     const base = [201, 169, 79];
-    const s = this.roomShell(x, y, w, h, base, {
-      floor: rgb(mix(base, [236, 230, 212], 0.55)), // polished marble
-      ceiling: rgb(mix(base, [248, 244, 232], 0.55)),
-    });
+    const s = this.roomShell(
+      x, y, w, h, base,
+      { floor: rgb(mix(base, [236, 230, 212], 0.55)), ceiling: rgb(mix(base, [248, 244, 232], 0.55)) },
+      lit,
+    );
     this.drawFacade(s, facade, ug);
     // Entrance doors set into the facade (a taller, darker glazed bay, centre).
     this.wallBand(s, 0.42, 0.58, 0.34, 1, "rgba(26,32,40,0.5)");
@@ -1008,61 +1025,61 @@ export class Renderer {
     // Reception desk to one side + a marble planter on the other.
     this.wallBand(s, 0.08, 0.32, 0.68, 0.9, "rgba(74,54,32,0.92)");
     this.wallBand(s, 0.78, 0.92, 0.66, 0.9, "rgba(70,110,70,0.7)");
-    this.ceilingPanels(s, [0.28, 0.72]);
+    if (lit) this.ceilingPanels(s, [0.28, 0.72]);
   }
 
   /** Empty open-plan office: bare carpet, the facade window wall, ceiling lights. */
-  private drawOfficeInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean): void {
-    const s = this.roomShell(x, y, w, h, [91, 143, 176]);
+  private drawOfficeInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean): void {
+    const s = this.roomShell(x, y, w, h, [91, 143, 176], {}, lit);
     this.drawFacade(s, facade, ug);
-    this.ceilingPanels(s, [0.32, 0.68]);
+    if (lit) this.ceilingPanels(s, [0.32, 0.68]);
   }
 
   /** Empty clinic: pale floor, a green cross low on the wall, ceiling panels. */
-  private drawMedicalInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean): void {
+  private drawMedicalInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean): void {
     const base = [75, 181, 166];
-    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [222, 230, 228], 0.6)) });
+    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [222, 230, 228], 0.6)) }, lit);
     this.drawFacade(s, facade, ug);
     this.wallBand(s, 0.44, 0.56, 0.62, 0.92, "rgba(40,160,96,0.92)"); // cross (vertical)
     this.wallBand(s, 0.36, 0.64, 0.7, 0.8, "rgba(40,160,96,0.92)"); // cross (horizontal)
-    this.ceilingPanels(s, [0.3, 0.7]);
+    if (lit) this.ceilingPanels(s, [0.3, 0.7]);
   }
 
   /** Empty flat: wood floor, the facade window, a built-in kitchenette below. */
-  private drawApartmentInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean): void {
+  private drawApartmentInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean): void {
     const base = [123, 171, 110];
-    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix([120, 82, 48], [58, 36, 18], 0.4)) });
+    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix([120, 82, 48], [58, 36, 18], 0.4)) }, lit);
     this.drawFacade(s, facade, ug);
     this.wallBand(s, 0.08, 0.7, 0.72, 0.82, "rgba(58,42,30,0.92)"); // counter
     this.wallBand(s, 0.5, 0.66, 0.62, 0.72, "rgba(150,150,155,0.55)"); // stove/appliance
     this.wallBand(s, 0.74, 0.9, 0.58, 0.92, "rgba(210,214,218,0.5)"); // fridge
-    this.trackLights(s, [0.5]);
+    if (lit) this.trackLights(s, [0.5]);
   }
 
   /** Empty retail unit: polished floor, empty low shelving, track lights. */
-  private drawStoreInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean): void {
+  private drawStoreInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean): void {
     const base = [208, 138, 79];
-    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [236, 226, 212], 0.62)) });
+    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [236, 226, 212], 0.62)) }, lit);
     this.drawFacade(s, facade, ug);
     this.wallLines(s, 0.1, 0.9, [0.62, 0.74, 0.86], "rgba(70,50,32,0.5)"); // shelves
     this.wallVLines(s, [0.3, 0.5, 0.7], 0.6, 0.9, "rgba(70,50,32,0.4)");
-    this.trackLights(s, [0.25, 0.5, 0.75]);
+    if (lit) this.trackLights(s, [0.25, 0.5, 0.75]);
   }
 
   /** Empty dining room: wood floor, a low back bar, hanging pendant lamps. */
-  private drawRestaurantInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean): void {
+  private drawRestaurantInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean): void {
     const base = [200, 90, 106];
-    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix([110, 66, 40], [54, 32, 18], 0.4)) });
+    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix([110, 66, 40], [54, 32, 18], 0.4)) }, lit);
     this.drawFacade(s, facade, ug);
     this.wallBand(s, 0.08, 0.92, 0.72, 0.86, "rgba(48,30,26,0.95)"); // bar counter
     this.wallLines(s, 0.12, 0.88, [0.6, 0.68], "rgba(200,170,120,0.5)"); // bottle shelves
-    this.pendantLights(s, [0.28, 0.5, 0.72]);
+    if (lit) this.pendantLights(s, [0.28, 0.5, 0.72]);
   }
 
   /** Empty hotel room: carpet, the facade window, an empty headboard + bed base. */
-  private drawHotelInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean): void {
+  private drawHotelInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean): void {
     const base = [106, 127, 192];
-    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [42, 36, 54], 0.55)) });
+    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [42, 36, 54], 0.55)) }, lit);
     this.drawFacade(s, facade, ug);
     this.wallBand(s, 0.2, 0.8, 0.62, 0.72, "rgba(120,96,70,0.9)"); // headboard
     this.wallBand(s, 0.16, 0.84, 0.8, 0.92, "rgba(200,200,210,0.5)"); // bed linens hint

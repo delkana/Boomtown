@@ -56,6 +56,25 @@ export interface ElevatorCar {
   dir: number;
 }
 
+/**
+ * A business/household occupying a revenue room. A room either has a tenant or
+ * is vacant (dark). Generated deterministically when one moves in; see
+ * src/game/tenants.ts. Rent is paid to the owner once a day, at midnight.
+ */
+export interface Tenant {
+  /** Display name, e.g. "Halbrook & Vance" or "Sterling Bakery". */
+  name: string;
+  /** The trade/type, e.g. "Law Offices", "Dental Clinic", "Bistro". */
+  trade: string;
+  /** Business open hour (0..23) and close hour (1..24). Lights follow these. */
+  openHour: number;
+  closeHour: number;
+  /** How many people work / live here. */
+  employees: number;
+  /** Rent paid to the plot owner each day at midnight. */
+  dailyRent: number;
+}
+
 /** A single placed unit on a plot's tower grid. */
 export interface Unit {
   id: string;
@@ -66,11 +85,10 @@ export interface Unit {
   row: number;
   /** How many cells wide the unit is. */
   width: number;
-  /**
-   * Tenant occupancy 0..1. Offices/apartments fill up over time once they are
-   * connected to a lobby by an elevator. Purely simulation-side.
-   */
+  /** 1 when the room has a tenant, 0 when vacant (kept for quick readouts). */
   occupancy: number;
+  /** The current tenant, or null/undefined if the room is vacant. */
+  tenant?: Tenant | null;
 }
 
 /**
