@@ -27,6 +27,7 @@ import { projectedDailyNet } from "../game/tick";
 import type { GameConnection } from "../net/connection";
 import type { InspectRef } from "../input/input";
 import type { Tool } from "../render/renderer";
+import type { Tenant, UnitKind } from "../game/types";
 import { flagSvg } from "./flags";
 
 /** Toolbar swatch color for the girder tool (matches the in-canvas girders). */
@@ -167,6 +168,7 @@ export class Hud {
         <div class="insp-row"><span>Hours</span><span>${hr(tenant.openHour)}–${hr(tenant.closeHour)}</span></div>
         <div class="insp-row"><span>Days</span><span>${daysLabel(tenant.openDays)}</span></div>
         ${rosterHtml}
+        ${visitorChart(unit.kind, tenant)}
         <div class="insp-row"><span>Rent / day</span><span class="pos">+$${tenant.dailyRent.toLocaleString()}</span></div>`;
     } else if (hasTrades(unit.kind)) {
       tenantHtml = `<div class="insp-sub">Vacant · seeking a tenant (${appeal}% appeal)</div>`;
@@ -549,6 +551,37 @@ function hr(h: number): string {
   const ap = x < 12 ? "am" : "pm";
   const h12 = x % 12 === 0 ? 12 : x % 12;
   return `${h12}${ap}`;
+}
+
+/** Which businesses show a daily-visitor chart, and what their patrons are called. */
+const VISITOR_LABELS: Partial<Record<UnitKind, { title: string; noun: string }>> = {
+  store: { title: "Daily shoppers", noun: "shoppers" },
+  restaurant: { title: "Daily diners", noun: "diners" },
+  medical: { title: "Daily patients", noun: "patients" },
+};
+
+/**
+ * A collapsed bar chart of a business's recent daily visitor counts (shoppers /
+ * diners / patients). Empty until the first midnight snapshot lands. Exported
+ * for unit testing the markup.
+ */
+export function visitorChart(kind: UnitKind, tenant: Tenant): string {
+  const meta = VISITOR_LABELS[kind];
+  if (!meta) return "";
+  const vis = tenant.visitors ?? [];
+  if (vis.length === 0) {
+    return `<details class="insp-visitors"><summary>${meta.title}</summary><div class="vchart-empty">No data yet — counts appear after midnight.</div></details>`;
+  }
+  const recent = vis.slice(-10);
+  const max = Math.max(1, ...recent);
+  const latest = recent[recent.length - 1];
+  const avg = Math.round(recent.reduce((a, b) => a + b, 0) / recent.length);
+  const bars = recent
+    .map((n) => `<div class="vbar" style="height:${Math.round(6 + (n / max) * 38)}px" title="${n} ${meta.noun}"></div>`)
+    .join("");
+  return `<details class="insp-visitors"><summary>${meta.title} · ${latest} <span class="muted">(avg ${avg})</span></summary>
+    <div class="vchart">${bars}</div>
+    <div class="vchart-axis"><span>${recent.length}d ago</span><span>today</span></div></details>`;
 }
 
 /** A short human phrase for a room's location preferences, e.g. "elevator · views · quiet". */

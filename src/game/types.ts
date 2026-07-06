@@ -106,6 +106,12 @@ export interface Tenant {
   appeal: number;
   /** Rent paid to the plot owner each day at midnight. */
   dailyRent: number;
+  /**
+   * Rolling count of paying visitors per day (most recent last), for stores
+   * (shoppers), restaurants (diners) and clinics (patients). Snapshotted each
+   * midnight in advanceTick; capped to the last VISITOR_HISTORY_DAYS entries.
+   */
+  visitors?: number[];
 }
 
 /** A single placed unit on a plot's tower grid. */

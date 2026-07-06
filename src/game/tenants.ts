@@ -331,7 +331,58 @@ function buildWorkers(
       lunchHour,
     });
   }
-  return workers;
+  return withDayOffCoverage(workers, seed, archetypeId);
+}
+
+/**
+ * Nobody should work all seven days. For any full-timer scheduled every weekday,
+ * take one (deterministically chosen, spread across the roster) day off them and
+ * add a part-time worker who covers exactly that day — same job, same shift. If
+ * the person is the lead, the cover gets a subordinate title (Assistant Manager,
+ * Sous Chef, …) since you wouldn't staff two bosses.
+ */
+function withDayOffCoverage(workers: Worker[], seed: string, archetypeId: string): Worker[] {
+  const out: Worker[] = [];
+  for (let i = 0; i < workers.length; i++) {
+    const w = workers[i];
+    out.push(w);
+    if (w.dailySalary <= 0 || w.days.length < 7) continue; // already gets a day off
+    const offDay = hashString(`${seed}:off${i}`) % 7;
+    w.days = w.days.filter((d) => d !== offDay); // main worker drops to a 6-day week
+    const ph = hashString(`${seed}:cover${i}`);
+    out.push({
+      name: personName(archetypeId, ph),
+      title: i === 0 ? juniorTitle(w.title) : w.title,
+      dailySalary: w.dailySalary,
+      days: [offDay],
+      startHour: w.startHour,
+      endHour: w.endHour,
+      lunchHour: w.lunchHour,
+    });
+  }
+  return out;
+}
+
+/** A subordinate version of a leadership title, for a part-time day-off cover. */
+function juniorTitle(title: string): string {
+  const map: Record<string, string> = {
+    "Store Manager": "Assistant Manager",
+    "Café Manager": "Assistant Manager",
+    "Managing Broker": "Associate Broker",
+    "Managing Partner": "Junior Partner",
+    "Pharmacist": "Pharmacy Technician",
+    "Head Chef": "Sous Chef",
+    "Head Sushi Chef": "Sushi Chef",
+    "Head Baker": "Assistant Baker",
+    "Engineering Lead": "Junior Engineer",
+    "Creative Director": "Associate Creative",
+    "Principal Architect": "Associate Architect",
+    "Agency Principal": "Associate Agent",
+  };
+  if (map[title]) return map[title];
+  if (/\bhead\b/i.test(title)) return title.replace(/\bhead\b/i, "Assistant");
+  if (/\blead\b/i.test(title)) return "Junior " + title.replace(/\s*\blead\b/i, "").trim();
+  return "Assistant " + title;
 }
 
 /** Base daily rent per kind (scaled by appeal + a little variance). */
@@ -377,6 +428,7 @@ export function generateTenant(
   const days = sub.days ?? ALL_WEEK;
   const base = RENT_BASE[kind] ?? 1000;
   const dailyRent = Math.round(base * (0.5 + Math.max(0, Math.min(1, appeal))) * (0.9 + ((h >>> 9) % 25) / 100));
+  const workers = buildWorkers(kind, sub.id, seed, archetypeId, employees, days, sub.open, sub.close);
   return {
     name: sub.name(hashString(`${seed}:name`)),
     subset: sub.id,
@@ -384,10 +436,11 @@ export function generateTenant(
     openHour: sub.open,
     closeHour: sub.close,
     openDays: days,
-    employees,
-    workers: buildWorkers(kind, sub.id, seed, archetypeId, employees, days, sub.open, sub.close),
+    employees: workers.length, // includes any part-time day-off covers
+    workers,
     appeal: Math.max(0, Math.min(1, appeal)),
     dailyRent,
+    visitors: [],
   };
 }
 

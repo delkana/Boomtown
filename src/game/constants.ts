@@ -53,6 +53,8 @@ export const DAYS_PER_WEEK = 7;
 export const MONTHS_PER_YEAR = 12;
 /** Economy ticks in one in-game day (rent is collected once per day). */
 export const TICKS_PER_DAY = (24 * 60) / TICK_MINUTES;
+/** How many days of per-unit visitor counts to keep for the inspector chart. */
+export const VISITOR_HISTORY_DAYS = 14;
 
 /** Lobby limits. */
 export const MAX_PLAYERS_LIMIT = 20;

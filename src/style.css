@@ -937,6 +937,54 @@ button.primary.big {
   color: var(--muted);
 }
 
+/* Collapsed daily-visitor bar chart in the inspector. */
+.insp-visitors {
+  margin: 3px 0;
+  font-size: 12px;
+}
+.insp-visitors > summary {
+  cursor: pointer;
+  color: var(--text);
+  padding: 2px 0;
+  list-style: none;
+  user-select: none;
+}
+.insp-visitors > summary::before {
+  content: "▸ ";
+  color: var(--muted);
+}
+.insp-visitors[open] > summary::before {
+  content: "▾ ";
+}
+.insp-visitors .muted {
+  color: var(--muted);
+}
+.vchart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 46px;
+  margin: 6px 0 2px;
+  padding: 0 2px;
+}
+.vbar {
+  flex: 1 1 0;
+  min-width: 6px;
+  background: linear-gradient(to top, var(--accent-strong, #4a86e0), rgba(74, 134, 224, 0.5));
+  border-radius: 2px 2px 0 0;
+}
+.vchart-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--muted);
+}
+.vchart-empty {
+  font-size: 10.5px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+
 /* Floating tooltip for a hovered person. */
 #person-tip {
   position: fixed;
