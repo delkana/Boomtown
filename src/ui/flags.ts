@@ -50,23 +50,13 @@ const starFill = (cx: number, cy: number, R: number, fill: string): string =>
 const starOutline = (cx: number, cy: number, R: number, stroke: string, w: number): string =>
   `<polygon points="${starPoints(cx, cy, R)}" fill="none" stroke="${stroke}" stroke-width="${w}"/>`;
 
-/** A filled annular sector (ring slice) from deg0→deg1 clockwise — used for the sickle. */
-function arcBand(cx: number, cy: number, ro: number, ri: number, deg0: number, deg1: number): string {
-  const a0 = (deg0 * Math.PI) / 180;
-  const a1 = (deg1 * Math.PI) / 180;
-  const large = Math.abs(deg1 - deg0) > 180 ? 1 : 0;
-  const p = (r: number, a: number): string =>
-    `${(cx + r * Math.cos(a)).toFixed(2)} ${(cy + r * Math.sin(a)).toFixed(2)}`;
-  return `M ${p(ro, a0)} A ${ro} ${ro} 0 ${large} 1 ${p(ro, a1)} L ${p(ri, a1)} A ${ri} ${ri} 0 ${large} 0 ${p(ri, a0)} Z`;
-}
-
 const FLAGS: Record<string, string> = {
   pacifica: `
     <rect width="60" height="40" fill="#1b2a52"/>
     <polygon fill="#ffffff" points="0,16 6,13 10,16 16,11 21,15 30,9 38,14 44,10.5 49,15 54,12 60,16 60,35 0,35"/>
     <rect y="35" width="60" height="5" fill="#2f6a33"/>
     ${starFill(30, 5, 3, "#ffffff")}
-    <polygon fill="#b31942" points="15.3,30.3 15.8,29.2 16.6,28.8 17.1,28.1 17.9,27.4 18.9,26.8 19.4,25.9 19.8,26.5 20.5,26.1 21.1,25.5 21.5,26.2 22.4,25.1 24,23.6 26.3,22.9 29.5,23 33,23.2 36.5,23.5 39.5,23.9 41.6,24.6 43,25.7 43.6,26.9 43.2,27.5 42.7,27.2 42.6,29 42.3,31.4 42.3,32.5 40.2,32.5 40.4,30.2 40,28.9 38.4,29.2 37.6,29.2 36.4,30.6 36,32.5 34.2,32.5 34.4,30.4 34,29.1 31,29.4 28.4,29.3 26.9,30.6 26.4,32.5 24.6,32.5 24.8,30.3 24.4,29 22.6,28.9 21.4,28.8 20.4,30.4 20,32.5 18.1,32.5 18.3,30.2 18.6,29 17.6,28.8 16.7,29.3 15.9,29.9"/>`,
+    <path fill="#b31942" d="M 13.8 29.9 C 13.6 29.0 14.2 28.5 15.2 28.3 C 16.0 28.1 16.4 27.6 16.9 27.0 C 17.1 26.2 17.5 25.8 18.1 25.9 C 18.2 24.8 19.0 24.6 19.4 25.6 C 19.7 26.0 20.2 25.9 20.7 25.8 C 21.6 24.9 22.7 24.0 24.4 23.5 C 27.0 22.7 29.8 22.8 32.4 23.0 C 35.8 23.2 39.0 23.3 41.4 24.2 C 43.0 24.8 43.8 25.8 43.8 27.0 C 43.8 27.6 43.4 27.9 42.9 27.6 C 42.8 29.1 42.7 30.8 42.6 32.4 L 40.4 32.4 L 40.5 28.8 C 39.5 29.1 38.4 29.25 37.2 29.3 L 36.9 32.4 L 34.7 32.4 L 34.85 29.05 C 33.1 29.3 31.1 29.4 29.5 29.32 C 28.8 29.3 28.1 29.22 27.45 29.1 L 27.1 32.4 L 24.95 32.4 L 25.1 28.85 C 24.0 28.75 23.0 28.55 22.1 28.35 L 21.75 32.4 L 19.6 32.4 L 19.85 28.15 C 18.7 27.95 17.5 27.95 16.5 28.15 C 15.5 28.35 14.4 29.0 13.8 29.9 Z"/>`,
 
   commonwealth: `
     <rect width="60" height="40" fill="#012169"/>
@@ -127,11 +117,13 @@ const FLAGS: Record<string, string> = {
 
   ussr: `
     <rect width="60" height="40" fill="#e4181c"/>
-    <path fill="#f6d90f" d="${arcBand(18, 19.5, 9, 6.6, 280, 455)}"/>
-    <rect x="16" y="26.6" width="3.4" height="4.2" rx="1" fill="#f6d90f" transform="rotate(20 17.7 28.7)"/>
-    <line x1="19.3" y1="25" x2="12" y2="14" stroke="#f6d90f" stroke-width="3" stroke-linecap="round"/>
-    <rect x="7.5" y="11.2" width="7.6" height="4" rx="0.8" fill="#f6d90f" transform="rotate(-34 11.3 13.2)"/>
-    ${starOutline(15, 6.6, 3.3, "#f6d90f", 1.1)}`,
+    <g fill="#f6d90f">
+      <path d="M 17.13 10.04 A 10 10 0 1 1 16.26 29.85 L 16.75 27.09 A 7.2 7.2 0 1 0 17.37 12.87 L 19.2 8.6 Z"/>
+      <rect x="14.7" y="27.4" width="3.6" height="4.8" rx="1.3" transform="rotate(20 16.5 29.8)"/>
+      <rect x="6.8" y="10.6" width="8" height="4" rx="1" transform="rotate(-36 10.8 12.6)"/>
+    </g>
+    <line x1="20" y1="25" x2="11.5" y2="13.5" stroke="#f6d90f" stroke-width="3.1" stroke-linecap="round"/>
+    ${starOutline(15, 6.4, 3.3, "#f6d90f", 1.1)}`,
 
   latam: `
     <rect width="60" height="40" fill="#f4a800"/>

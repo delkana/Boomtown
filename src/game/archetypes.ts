@@ -280,15 +280,55 @@ export function isArchetype(id: string): boolean {
   return id in BY_ID;
 }
 
+/** Shared street suffixes for generated addresses. */
+const STREET_SUFFIXES = [
+  "Street", "Avenue", "Ave", "Boulevard", "Blvd", "Road", "Lane", "Way",
+  "Drive", "Plaza", "Row", "Terrace", "Quay", "Walk", "Court", "Square",
+];
+
 /**
- * Deterministic themed name for a plot. Cycles through the pool and appends an
- * ordinal when it wraps, so names stay stable and mostly unique.
+ * Themed street names per archetype. Combined with a number and a suffix these
+ * generate hundreds of region-appropriate street addresses per city, e.g.
+ * "27 Orchard Ave", "1500 Lenin Blvd".
+ */
+const STREETS: Record<string, string[]> = {
+  pacifica: ["Market", "Mission", "Sunset", "Castro", "Lombard", "Geary", "Pike", "Alaskan", "Robson", "Granville", "Hastings", "Cascade", "Redwood", "Pacific", "Cannery", "Ventura", "Sepulveda", "Wilshire", "Cahuenga", "Bayshore"],
+  commonwealth: ["Baker", "Oxford", "Regent", "Fleet", "Downing", "Abbey", "Piccadilly", "Kingsway", "Portland", "Cheapside", "Whitehall", "Strand", "Threadneedle", "Cornhill", "Camden", "Deansgate", "Bishopsgate", "Holborn", "Mayfair", "Kensington"],
+  europa: ["Charlemagne", "Rivoli", "Kurfürsten", "Champs", "Prinsen", "Ringstrasse", "Montenapo", "Schönbrunn", "Élysée", "Concorde", "Rhein", "Kaiser", "Bourse", "Meridian", "Alexander", "Damrak", "Vitruvius", "Concordia", "Europa", "Grunwald"],
+  nordic: ["Storgata", "Drottning", "Kungs", "Vesterbro", "Nyhavn", "Bryggen", "Frost", "Aurora", "Fjord", "Vinter", "Nordlys", "Saga", "Odin", "Freya", "Bifrost", "Midgard", "Havn", "Skagen", "Thule", "Björk"],
+  japan: ["Ginza", "Shibuya", "Shinjuku", "Akihabara", "Roppongi", "Chiyoda", "Nakano", "Harajuku", "Dotonbori", "Sakura", "Kabuki", "Mirai", "Sumida", "Meiji", "Ueno", "Asakusa", "Kanda", "Nihonbashi", "Aoyama", "Kaido"],
+  "united-korea": ["Gangnam", "Itaewon", "Myeongdong", "Hongdae", "Sejong", "Jongno", "Insadong", "Namsan", "Dongdaemun", "Cheonggye", "Gwanghwamun", "Bukchon", "Yeouido", "Hanseong", "Daedong", "Mugunghwa", "Sinchon", "Apgujeong", "Samcheong", "Taegeuk"],
+  oceania: ["George", "Pitt", "Collins", "Flinders", "Bourke", "Queen", "Swanston", "Elizabeth", "Bondi", "Darling", "Harbour", "Southbank", "Federation", "Kirribilli", "Parramatta", "Anzac", "Sturt", "Coral", "Reef", "Manly"],
+  atlantea: ["Wall", "Broadway", "Madison", "Lexington", "Park", "Fifth", "Bay", "Beacon", "Boylston", "Yonge", "King", "Bloor", "Chestnut", "Liberty", "Hudson", "Canal", "Bowery", "Atlantic", "Congress", "Manhattan"],
+  ussr: ["Lenin", "Gagarin", "October", "Pravda", "Kirov", "Prospekt", "Sovetskaya", "Kosmonaut", "Vosstaniya", "Marx", "Engels", "Kalinin", "Volgograd", "Krasnaya", "Mayakovsky", "Tverskaya", "Arbat", "Nevsky", "Zhukov", "Sputnik"],
+  latam: ["Reforma", "Insurgentes", "Bolívar", "Corrientes", "Florida", "Paulista", "Copacabana", "Ipanema", "Libertador", "Independencia", "Amazonas", "Diagonal", "Constitución", "Revolución", "Malecón", "Chapultepec", "Condesa", "Palermo", "Providencia", "Sol"],
+  gulf: ["Zayed", "Corniche", "Marina", "Khalifa", "Jumeirah", "Falcon", "Pearl", "Maktoum", "Deira", "Nakheel", "Dune", "Oasis", "Sabah", "Wasl", "Hamdan", "Rashid", "Dhow", "Souk", "Palm", "Meydan"],
+  india: ["Marine", "Nehru", "Chandni", "Connaught", "Brigade", "Linking", "Bandra", "Juhu", "Rajpath", "Ashoka", "Lotus", "Colaba", "Cyberabad", "Indira", "Netaji", "Chowringhee", "Ballard", "Malabar", "Lodhi", "Peddar"],
+  taiwan: ["Zhongshan", "Xinyi", "Zhongxiao", "Renai", "Dihua", "Ximen", "Guanqian", "Formosa", "Jade", "Keelung", "Bade", "Nanjing", "Fuxing", "Dunhua", "Songshan", "Beitou", "Tamsui", "Yangming", "Minsheng", "Heping"],
+  china: ["Nanjing", "Wangfujing", "Changan", "Huaihai", "Bund", "Jianguo", "Fuxing", "Dragon", "Jade", "Pearl", "Tianfu", "Renmin", "Hongqiao", "Pudong", "Lujiazui", "Silk", "Vermilion", "Phoenix", "Harmony", "Yanan"],
+  "straits-union": ["Orchard", "Raffles", "Bugis", "Marina", "Serangoon", "Geylang", "Bukit", "Merlion", "Sudirman", "Thamrin", "Sukhumvit", "Silom", "Sathorn", "Rizal", "Makati", "Nguyen", "Batavia", "Nusantara", "Selat", "Angkasa"],
+  "african-union": ["Uhuru", "Kenyatta", "Nkrumah", "Mandela", "Sankofa", "Ubuntu", "Kilimanjaro", "Sahel", "Savannah", "Baobab", "Zambezi", "Nile", "Congo", "Azania", "Marina", "Kariba", "Serengeti", "Freedom", "Independence", "Adinkra"],
+};
+
+/**
+ * Deterministic themed name for a plot. Mostly generates a region-appropriate
+ * street address (number + street + suffix); roughly one plot in six keeps a
+ * named tower from the archetype's property list. Pure and reproducible so the
+ * simulation stays deterministic.
  */
 export function propertyNameFor(archetypeId: string, index: number): string {
-  const pool = archetype(archetypeId).propertyNames;
-  const base = pool[index % pool.length];
-  const cycle = Math.floor(index / pool.length);
-  return cycle > 0 ? `${base} ${cycle + 1}` : base;
+  const a = archetype(archetypeId);
+  const h = ((index + 1) * 2654435761) >>> 0;
+  if (h % 6 === 0) {
+    return a.propertyNames[(h >>> 3) % a.propertyNames.length];
+  }
+  const streets = STREETS[a.id] ?? STREETS[DEFAULT_ARCHETYPE];
+  const street = streets[(h >>> 4) % streets.length];
+  const suffix = STREET_SUFFIXES[(h >>> 11) % STREET_SUFFIXES.length];
+  const mag = (h >>> 16) % 3;
+  const seed = h >>> 18;
+  const num = mag === 0 ? 1 + (seed % 98) : mag === 1 ? 100 + (seed % 899) : 1000 + (seed % 3999);
+  return `${num} ${street} ${suffix}`;
 }
 
 /** A random city name from the archetype's real + fictional pool (client-side). */
