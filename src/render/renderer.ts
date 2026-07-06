@@ -69,6 +69,7 @@ interface RoomShell {
   floor(f: number, g: number): Pt;
   base: number[];
   w: number;
+  h: number;
 }
 
 /** Steel-frame color for structural girders. */
@@ -768,31 +769,36 @@ export class Renderer {
   private drawFacade(s: RoomShell, facade: Facade, underground: boolean): void {
     if (underground) return; // no view underground, ever
     const tint = facade.tint ?? 0;
+    const frame = facade.frame;
+    // Panes/windows scale with the room's width in cells, so a 1-wide room has
+    // fewer and a 4-wide room more — each stays a consistent physical size.
+    const cells = Math.max(1, Math.round(s.w / s.h));
+
     switch (facade.pattern) {
-      case "full": // full glass / black-tinted — the entire back wall is glass
-        this.skyWindow(s, 0.03, 0.97, 0.04, 0.96, tint, facade.frame, [0.25, 0.5, 0.75], [0.5]);
+      case "full": // full glass / black-tinted — the whole wall, a grid of panes
+        this.skyWindow(s, 0.03, 0.97, 0.04, 0.96, tint, frame, evenFractions(cells * 2), [0.5]);
         break;
       case "xbrace": // full-wall glass with a steel X across it
-        this.skyWindow(s, 0.03, 0.97, 0.04, 0.96, tint, facade.frame, [0.5], [0.5]);
+        this.skyWindow(s, 0.03, 0.97, 0.04, 0.96, tint, frame, evenFractions(cells * 2), [0.5]);
         this.wallX(s, 0.03, 0.97, 0.04, 0.96, facade.girder);
         break;
       case "vgrid": // curtain wall — a row of tall, narrow vertical panes
-        for (const [f0, f1] of pairs([0.05, 0.185, 0.32, 0.455, 0.59, 0.725, 0.86, 0.95]))
-          this.skyWindow(s, f0 + 0.006, f1 - 0.006, 0.07, 0.62, tint, facade.frame, [], []);
+        for (const [f0, f1] of pairs(spanEdges(cells * 2)))
+          this.skyWindow(s, f0 + 0.006, f1 - 0.006, 0.07, 0.62, tint, frame, [], []);
         break;
-      case "vrect": // brick — a row of tall, narrow (vertical) windows
-        for (const cf of [0.2, 0.4, 0.6, 0.8])
-          this.skyWindow(s, cf - 0.06, cf + 0.06, 0.1, 0.6, tint, facade.frame, [], [0.5]);
+      case "vrect": // brick — tall, narrow (vertical) windows
+        for (const [cf, hw] of windowSlots(cells * 2, 0.34))
+          this.skyWindow(s, cf - hw, cf + hw, 0.1, 0.6, tint, frame, [], [0.5]);
         break;
       case "arch": // art-deco — very tall windows with a lintel cap
-        for (const cf of [0.22, 0.5, 0.78]) {
-          this.skyWindow(s, cf - 0.08, cf + 0.08, 0.08, 0.66, tint, facade.frame, [], [0.55]);
-          this.wallBand(s, cf - 0.1, cf + 0.1, 0.04, 0.08, facade.frame); // lintel cap
+        for (const [cf, hw] of windowSlots(cells, 0.34)) {
+          this.skyWindow(s, cf - hw, cf + hw, 0.08, 0.66, tint, frame, [], [0.55]);
+          this.wallBand(s, cf - hw - 0.02, cf + hw + 0.02, 0.04, 0.08, frame); // lintel cap
         }
         break;
       default: // "rect" — punched rectangular windows (concrete, steel)
-        for (const cf of [0.22, 0.5, 0.78])
-          this.skyWindow(s, cf - 0.12, cf + 0.12, 0.16, 0.46, tint, facade.frame, [0.5], []);
+        for (const [cf, hw] of windowSlots(cells, 0.55))
+          this.skyWindow(s, cf - hw, cf + hw, 0.16, 0.46, tint, frame, [0.5], []);
         break;
     }
   }
@@ -933,6 +939,7 @@ export class Renderer {
       floor: (f, g) => lp(lp(BL, BR, f), lp(bBL, bBR, f), g),
       base,
       w,
+      h,
     };
   }
 
@@ -1453,6 +1460,29 @@ function rgb(c: number[]): string {
 function pairs(xs: number[]): [number, number][] {
   const out: [number, number][] = [];
   for (let i = 0; i < xs.length - 1; i++) out.push([xs[i], xs[i + 1]]);
+  return out;
+}
+
+/** Interior mullion fractions that split a window into `n` equal columns. */
+function evenFractions(n: number): number[] {
+  const out: number[] = [];
+  for (let i = 1; i < n; i++) out.push(i / n);
+  return out;
+}
+
+/** `n + 1` edges spanning [0.05, 0.95] — pair them for `n` contiguous panes. */
+function spanEdges(n: number): number[] {
+  const out: number[] = [];
+  for (let i = 0; i <= n; i++) out.push(0.05 + 0.9 * (i / n));
+  return out;
+}
+
+/** `n` evenly-spaced window slots as [centre, halfWidth] across [0.06, 0.94]. */
+function windowSlots(n: number, fill: number): [number, number][] {
+  const span = 0.88;
+  const slot = span / n;
+  const out: [number, number][] = [];
+  for (let i = 0; i < n; i++) out.push([0.06 + slot * (i + 0.5), (slot / 2) * fill]);
   return out;
 }
 
