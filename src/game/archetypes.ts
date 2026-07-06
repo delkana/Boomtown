@@ -235,6 +235,21 @@ export const ARCHETYPES: Archetype[] = [
     ],
   },
   {
+    id: "straits-union",
+    name: "Straits Union",
+    accent: "#ee2536",
+    blurb:
+      "Monsoon heat and hyper-dense towers: from Singapore's garden-arcologies to Jakarta's flooded stacks, the Straits Union is peak tropical neon.",
+    realCities: ["Singapore", "Kuala Lumpur", "Bangkok", "Jakarta", "Manila", "Ho Chi Minh City", "Hanoi"],
+    fictionalCities: ["Nusantara", "Neo-Singapura", "Straitsport", "Merlion City", "Selatgrad", "Monsoon Bay"],
+    propertyNames: [
+      "Marina Spire", "Merlion Holdings", "Nusantara Prime", "Straits Vertical",
+      "Orchard Systems", "Batavia Werks", "Monsoon Tower", "Raffles Group",
+      "Selat Dynamics", "Garuda Vertical", "Peranakan Plaza", "Angkasa Tower",
+      "Naga Holdings", "Bumi Combine", "Kampung Stack", "Sunda Prime",
+    ],
+  },
+  {
     id: "african-union",
     name: "African Union",
     accent: "#0e7a4a",

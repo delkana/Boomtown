@@ -32,7 +32,7 @@ npm run typecheck  # tsc --noEmit
 **1. Lobby.** On load you get a lobby:
 
 - **Create a City** — pick a **city archetype** (Pacifica, Japan, USSR, Gulf
-  Emirates, African Union, … 15 in all, each with its own flag, background, and
+  Emirates, Straits Union, African Union, … 16 in all, each with its own flag, background, and
   themed property names), then name the city (or 🎲 roll a random name drawn from
   that region's real skyscraper-cities and fictional ones). Set the number of
   properties (plots), max players (≤ 20), your name, and pick a color (each color
@@ -93,7 +93,7 @@ Two rules drive the layout:
 | -------------------------- | -------- | ------------------------------------------------------------------------------------ |
 | `src/game/types.ts`        | STATE    | Serializable domain types (`GameState`, `Plot`, `Unit`, `Player`, `GameConfig`).     |
 | `src/game/constants.ts`    | STATE    | Deterministic tuning: grid, costs, income, tick rate, player color palette.          |
-| `src/game/archetypes.ts`   | STATE    | 15 city archetypes: blurbs, real+fictional city-name pools, themed property names.   |
+| `src/game/archetypes.ts`   | STATE    | 16 city archetypes: blurbs, real+fictional city-name pools, themed property names.   |
 | `src/game/state.ts`        | STATE    | `createGameState` + `serialize` / `deserialize` (the snapshot format).               |
 | `src/game/commands.ts`     | STATE    | `Command` union (`CLAIM_PLOT`, `PLACE_UNIT`, `SELL_UNIT`) — **the wire protocol for intents**. |
 | `src/game/reducer.ts`      | STATE    | `applyCommand` — pure, fully validated, authoritative state transitions.             |

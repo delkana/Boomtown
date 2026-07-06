@@ -66,7 +66,7 @@ const FLAGS: Record<string, string> = {
     <polygon fill="#ffffff" points="0,16 6,13 10,16 16,11 21,15 30,9 38,14 44,10.5 49,15 54,12 60,16 60,35 0,35"/>
     <rect y="35" width="60" height="5" fill="#2f6a33"/>
     ${starFill(30, 5, 3, "#ffffff")}
-    <polygon fill="#b31942" points="16.5,27.2 17.5,25.6 19.5,24.3 20.3,23.1 21.2,24 23.5,22.1 29,22.5 35,22.5 39,22.9 41.6,23.9 42.6,25.2 42.7,26.2 41.9,26.6 41.8,27.2 41.5,32 39.8,32 39.9,28.6 37,28.9 36,32 34.5,32 34.7,28.6 30,29 28,32 26.5,32 26.8,28.3 24.3,28.5 23.4,32 22,32 22.4,27.6 19,27.7"/>`,
+    <polygon fill="#b31942" points="15.3,30.3 15.8,29.2 16.6,28.8 17.1,28.1 17.9,27.4 18.9,26.8 19.4,25.9 19.8,26.5 20.5,26.1 21.1,25.5 21.5,26.2 22.4,25.1 24,23.6 26.3,22.9 29.5,23 33,23.2 36.5,23.5 39.5,23.9 41.6,24.6 43,25.7 43.6,26.9 43.2,27.5 42.7,27.2 42.6,29 42.3,31.4 42.3,32.5 40.2,32.5 40.4,30.2 40,28.9 38.4,29.2 37.6,29.2 36.4,30.6 36,32.5 34.2,32.5 34.4,30.4 34,29.1 31,29.4 28.4,29.3 26.9,30.6 26.4,32.5 24.6,32.5 24.8,30.3 24.4,29 22.6,28.9 21.4,28.8 20.4,30.4 20,32.5 18.1,32.5 18.3,30.2 18.6,29 17.6,28.8 16.7,29.3 15.9,29.9"/>`,
 
   commonwealth: `
     <rect width="60" height="40" fill="#012169"/>
@@ -126,12 +126,12 @@ const FLAGS: Record<string, string> = {
     ${STAR(30, 29, 28, "#ffffff")}`,
 
   ussr: `
-    <rect width="60" height="40" fill="#e01f26"/>
-    <path fill="#f6d500" d="${arcBand(21, 19, 10, 7.5, 95, 265)}"/>
-    <rect x="19.2" y="27.5" width="3.2" height="4.2" rx="0.6" fill="#f6d500" transform="rotate(18 20.8 29.6)"/>
-    <line x1="12" y1="26.5" x2="23" y2="14" stroke="#f6d500" stroke-width="2.7" stroke-linecap="round"/>
-    <rect x="20.6" y="10.3" width="7.8" height="4.3" rx="0.6" fill="#f6d500" transform="rotate(40 24.5 12.4)"/>
-    ${starOutline(15, 6.8, 3.4, "#f6d500", 1)}`,
+    <rect width="60" height="40" fill="#e4181c"/>
+    <path fill="#f6d90f" d="${arcBand(18, 19.5, 9, 6.6, 280, 455)}"/>
+    <rect x="16" y="26.6" width="3.4" height="4.2" rx="1" fill="#f6d90f" transform="rotate(20 17.7 28.7)"/>
+    <line x1="19.3" y1="25" x2="12" y2="14" stroke="#f6d90f" stroke-width="3" stroke-linecap="round"/>
+    <rect x="7.5" y="11.2" width="7.6" height="4" rx="0.8" fill="#f6d90f" transform="rotate(-34 11.3 13.2)"/>
+    ${starOutline(15, 6.6, 3.3, "#f6d90f", 1.1)}`,
 
   latam: `
     <rect width="60" height="40" fill="#f4a800"/>
@@ -184,19 +184,28 @@ const FLAGS: Record<string, string> = {
     ${STAR(14, 25, 20, "#ffd24a")}
     ${STAR(28, 9, 7, "#ffd24a")}${STAR(33, 13, 7, "#ffd24a")}${STAR(33, 20, 7, "#ffd24a")}${STAR(28, 24, 7, "#ffd24a")}`,
 
+  "straits-union": `
+    <rect width="60" height="40" fill="#ffffff"/>
+    <rect width="60" height="20" fill="#ee2536"/>
+    <circle cx="12" cy="10.5" r="6" fill="#ffffff"/>
+    <circle cx="14.3" cy="10" r="5.1" fill="#ee2536"/>
+    ${Array.from({ length: 5 }, (_, k) => {
+      const a = ((k * 72 - 90) * Math.PI) / 180;
+      return starFill(20.5 + 3.2 * Math.cos(a), 10.5 + 3.2 * Math.sin(a), 1.3, "#ffffff");
+    }).join("")}`,
+
   "african-union": `
     <rect width="60" height="40" fill="#3f7a54"/>
     ${Array.from({ length: 40 }, (_, k) => {
       const a = ((k * 9 - 90) * Math.PI) / 180;
-      const r0 = 5.5;
-      const r1 = 14;
+      const r0 = 4.5;
+      const r1 = 13.5;
       const w = (2.4 * Math.PI) / 180;
       const pt = (r: number, ang: number): string =>
         `${(30 + r * Math.cos(ang)).toFixed(2)},${(20 + r * Math.sin(ang)).toFixed(2)}`;
       return `<polygon points="${pt(r1, a)} ${pt(r0, a - w)} ${pt(r0, a + w)}" fill="#ffffff"/>`;
     }).join("")}
-    <polygon fill="#ffffff" points="30,11 34,11.2 36.5,12 37.5,13.8 38.8,15.2 40,16.8 37.6,17.6 37,19.2 35.8,22 34.2,25 32.6,27.6 31.2,29.2 29.8,27.6 28.4,24.4 27,21 25.6,18.4 26.4,16.6 24.2,15.6 24,13.6 25.4,12 27.4,11.4"/>
-    <ellipse cx="39.6" cy="24.5" rx="0.9" ry="2.2" fill="#ffffff" transform="rotate(-18 39.6 24.5)"/>
+    <circle cx="30" cy="20" r="4.7" fill="#ffffff"/>
     ${Array.from({ length: 48 }, (_, k) => {
       const a = ((k * (360 / 48) - 90) * Math.PI) / 180;
       return starFill(30 + 17.5 * Math.cos(a), 20 + 17.5 * Math.sin(a), 0.85, "#f2c33d");
