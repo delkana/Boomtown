@@ -57,7 +57,12 @@ leaveBtn.addEventListener("click", leaveGame);
  */
 async function init(): Promise<void> {
   const params = new URLSearchParams(location.search);
-  const url = params.get("server") || localStorage.getItem("boomtown.serverUrl") || "";
+  // Explicit override wins; otherwise a production build talks to the server it
+  // was served from (same origin), while `npm run dev` stays offline.
+  let url = params.get("server") || localStorage.getItem("boomtown.serverUrl") || "";
+  if (!url && import.meta.env.PROD) {
+    url = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`;
+  }
   let label = "Offline · local";
 
   if (url) {

@@ -17,10 +17,16 @@ const PORT = Number(process.env.PORT) || 8787;
 const dirName = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(dirName, "data");
 const DATA_FILE = path.join(DATA_DIR, "games.json");
+const STATIC_DIR = path.join(dirName, "..", "dist"); // the built web app
 
 // Always seed the built-in demo cities fresh, then merge any saved player games
 // on top (so edits to the demo cities always show, and creations persist).
-const handle = await startServer({ port: PORT, seed: true });
+// The same server also serves the built web app when it's present.
+const handle = await startServer({
+  port: PORT,
+  seed: true,
+  staticDir: fs.existsSync(STATIC_DIR) ? STATIC_DIR : undefined,
+});
 
 if (fs.existsSync(DATA_FILE)) {
   try {
@@ -46,4 +52,4 @@ handle.directory.onChange(() => {
   }, 500);
 });
 
-console.log(`Boomtown server listening on ws://localhost:${handle.port}`);
+console.log(`Boomtown listening on port ${handle.port} (web + WebSocket)`);

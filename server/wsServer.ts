@@ -1,3 +1,6 @@
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import { GameDirectory } from "../src/net/gameDirectory";
 import type { AuthoritativeGame } from "../src/net/authoritativeGame";
@@ -22,10 +25,19 @@ export interface ServerHandle {
 }
 
 export function startServer(
-  opts: { port?: number; seed?: boolean } = {},
+  opts: { port?: number; seed?: boolean; staticDir?: string } = {},
 ): Promise<ServerHandle> {
   const dir = new GameDirectory({ seed: opts.seed ?? true });
-  const wss = new WebSocketServer({ port: opts.port ?? 8787 });
+  // One HTTP server both serves the built web app (in production) and hosts the
+  // WebSocket endpoint, so a single Railway service/port does everything.
+  const httpServer = http.createServer((req, res) => {
+    if (opts.staticDir) serveStatic(opts.staticDir, req, res);
+    else {
+      res.writeHead(426, { "content-type": "text/plain" });
+      res.end("Boomtown WebSocket server");
+    }
+  });
+  const wss = new WebSocketServer({ server: httpServer });
 
   const send = (ws: WebSocket, msg: ServerMsg): void => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
@@ -107,8 +119,8 @@ export function startServer(
   });
 
   return new Promise<ServerHandle>((resolve) => {
-    wss.on("listening", () => {
-      const addr = wss.address();
+    httpServer.listen(opts.port ?? 8787, "0.0.0.0", () => {
+      const addr = httpServer.address();
       const port = typeof addr === "object" && addr ? addr.port : (opts.port ?? 8787);
       resolve({
         port,
@@ -116,9 +128,45 @@ export function startServer(
         close: () =>
           new Promise<void>((res) => {
             for (const c of wss.clients) c.terminate();
-            wss.close(() => res());
+            wss.close(() => httpServer.close(() => res()));
           }),
       });
     });
+  });
+}
+
+/** Content types for the handful of file kinds the built app ships. */
+const MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".ico": "image/x-icon",
+  ".woff2": "font/woff2",
+};
+
+/**
+ * Minimal static file server for the built `dist/`. Guards against path
+ * traversal and falls back to index.html for unknown routes (single-page app).
+ */
+function serveStatic(root: string, req: http.IncomingMessage, res: http.ServerResponse): void {
+  const urlPath = decodeURIComponent((req.url ?? "/").split("?")[0]);
+  const rel = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, "");
+  let file = path.join(root, rel);
+  if (!file.startsWith(root)) file = path.join(root, "index.html"); // traversal → home
+  if (urlPath === "/" || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+    file = path.join(root, "index.html");
+  }
+  fs.readFile(file, (err, data) => {
+    if (err) {
+      res.writeHead(404, { "content-type": "text/plain" });
+      res.end("Not found");
+      return;
+    }
+    res.writeHead(200, { "content-type": MIME[path.extname(file)] ?? "application/octet-stream" });
+    res.end(data);
   });
 }
