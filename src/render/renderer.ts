@@ -17,6 +17,7 @@ import {
 } from "../game/elevator";
 import { claimCost, girderCost, undergroundMultiplier } from "../game/economy";
 import { featureLabel } from "../game/features";
+import { facadeById, type Facade } from "../game/facades";
 import { heatT, type HeatmapKind } from "../game/heatmaps";
 import { skyState } from "../game/clock";
 import { Camera } from "./camera";
@@ -75,6 +76,9 @@ const GIRDER_HILITE = "#7a828f";
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
   private popups: Popup[] = [];
+  /** Current sky colours (top + horizon) — used to fill transparent windows. */
+  private skyTop: number[] = [120, 150, 190];
+  private skyBottom: number[] = [90, 120, 160];
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -127,6 +131,7 @@ export class Renderer {
     hover: HoverState | null,
     tool: Tool,
     heatmap: HeatmapKind,
+    girderStyle = "steel",
   ): void {
     const { ctx, camera } = this;
     const w = camera.viewW;
@@ -139,6 +144,9 @@ export class Renderer {
     const top = mix([9, 12, 24], [40, 92, 150], day);
     let bottom = mix([22, 30, 48], [120, 158, 196], day);
     bottom = mix(bottom, [205, 115, 72], twilight * 0.55); // warm horizon at dawn/dusk
+    // Stash for the transparent room windows (they show this same live sky).
+    this.skyTop = top;
+    this.skyBottom = bottom;
     const sky = ctx.createLinearGradient(0, 0, 0, groundY);
     sky.addColorStop(0, rgb(top));
     sky.addColorStop(1, rgb(bottom));
@@ -191,7 +199,7 @@ export class Renderer {
       ctx.fillRect(0, 0, w, h);
     }
 
-    if (hover) this.drawHoverGhost(state, localPlayerId, hover, tool);
+    if (hover) this.drawHoverGhost(state, localPlayerId, hover, tool, girderStyle);
 
     this.drawPopups();
   }
@@ -452,7 +460,8 @@ export class Renderer {
       }
     }
 
-    // Structural girders (drawn first; rooms are painted over them).
+    // Structural girders (drawn first; rooms are painted over them). Each girder
+    // carries a cosmetic facade style that tints its steel.
     for (const g of plot.girders ?? []) {
       const gx = camera.worldToScreenX(leftWorld + g.col * CELL_SIZE);
       const gy = camera.rowTopScreenY(g.row);
@@ -461,7 +470,7 @@ export class Renderer {
         ctx.fillStyle = "#1a1e26";
         ctx.fillRect(gx + 1, gy + 1, cell - 2, cell - 2);
       }
-      this.drawGirder(gx, gy, cell);
+      this.drawGirder(gx, gy, cell, facadeById(g.style));
     }
 
     // Units (elevators are drawn separately, as continuous shafts).
@@ -475,10 +484,12 @@ export class Renderer {
       const wpx = unit.width * cell;
 
       // Every room type except infrastructure (lobby / elevator) is drawn as an
-      // empty perspective interior; the rest keep a flat colored cell.
+      // empty perspective interior; the rest keep a flat colored cell. The
+      // room's facade/windows come from the girder it's built on.
       const hasInterior = unit.kind !== "lobby";
       if (hasInterior) {
-        this.drawRoomInterior(unit.kind, x + 1, y + 1, wpx - 2, cell - 2);
+        const g = (plot.girders ?? []).find((gg) => gg.col === unit.col && gg.row === unit.row);
+        this.drawRoomInterior(unit.kind, x + 1, y + 1, wpx - 2, cell - 2, facadeById(g?.style), unit.row < 0);
       } else {
         ctx.fillStyle = def.color;
         ctx.fillRect(x + 1, y + 1, wpx - 2, cell - 2);
@@ -593,24 +604,146 @@ export class Renderer {
    * shell" of that room type before any tenants/customers move in. Falls back to
    * a flat fill for kinds that don't have bespoke art yet.
    */
-  private drawRoomInterior(kind: keyof typeof UNIT_DEFS, x: number, y: number, w: number, h: number): void {
+  private drawRoomInterior(
+    kind: keyof typeof UNIT_DEFS,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    facade: Facade,
+    underground: boolean,
+  ): void {
     switch (kind) {
       case "office":
-        return this.drawOfficeInterior(x, y, w, h);
+        return this.drawOfficeInterior(x, y, w, h, facade, underground);
       case "medical":
-        return this.drawMedicalInterior(x, y, w, h);
+        return this.drawMedicalInterior(x, y, w, h, facade, underground);
       case "apartment":
-        return this.drawApartmentInterior(x, y, w, h);
+        return this.drawApartmentInterior(x, y, w, h, facade, underground);
       case "store":
-        return this.drawStoreInterior(x, y, w, h);
+        return this.drawStoreInterior(x, y, w, h, facade, underground);
       case "restaurant":
-        return this.drawRestaurantInterior(x, y, w, h);
+        return this.drawRestaurantInterior(x, y, w, h, facade, underground);
       case "hotel":
-        return this.drawHotelInterior(x, y, w, h);
+        return this.drawHotelInterior(x, y, w, h, facade, underground);
       default:
         this.ctx.fillStyle = UNIT_DEFS[kind].color;
         this.ctx.fillRect(x, y, w, h);
     }
+  }
+
+  // --- facade wall + transparent windows (shared by every room) --------------
+
+  /**
+   * Draw the room's back wall as its girder's facade: the wall material, then
+   * (above ground only) transparent windows filled with the LIVE sky — so you
+   * can watch the sun rise and set through them. Underground rooms get a solid
+   * wall with no windows.
+   */
+  private drawFacade(s: RoomShell, facade: Facade, underground: boolean): void {
+    const { ctx } = this;
+    // Wall material across the whole back wall.
+    this.wallBand(s, 0, 1, 0, 1, facade.wall);
+    if (facade.brick) this.brickCoursing(s, facade);
+    // Re-seat the baseboard seam that the wall just covered.
+    ctx.strokeStyle = rgb(mix(hexRgb(facade.wall), [0, 0, 0], 0.5));
+    ctx.lineWidth = Math.max(0.5, s.w * 0.01);
+    const bl = s.wall(0, 1), br = s.wall(1, 1);
+    ctx.beginPath();
+    ctx.moveTo(bl.x, bl.y);
+    ctx.lineTo(br.x, br.y);
+    ctx.stroke();
+
+    if (underground) return; // no view underground, ever
+
+    const tint = facade.tint ?? 0;
+    switch (facade.pattern) {
+      case "full":
+        this.skyWindow(s, 0.06, 0.94, 0.12, 0.5, tint, facade.frame, [0.33, 0.66]);
+        break;
+      case "xbrace":
+        this.skyWindow(s, 0.06, 0.94, 0.12, 0.5, tint, facade.frame, [0.5]);
+        this.wallX(s, 0.06, 0.94, 0.12, 0.5, facade.girder);
+        break;
+      case "grid": // curtain wall — a lattice of panes
+        for (const [f0, f1] of pairs([0.06, 0.29, 0.52, 0.75, 0.94]))
+          for (const [g0, g1] of pairs([0.12, 0.31, 0.5]))
+            this.skyWindow(s, f0 + 0.01, f1 - 0.01, g0 + 0.01, g1 - 0.01, tint, facade.frame, []);
+        break;
+      case "arch": // art-deco — tall windows with a stepped cap
+        for (const cf of [0.2, 0.5, 0.8]) {
+          this.skyWindow(s, cf - 0.09, cf + 0.09, 0.16, 0.5, tint, facade.frame, []);
+          this.wallBand(s, cf - 0.11, cf + 0.11, 0.12, 0.16, facade.frame); // lintel cap
+        }
+        break;
+      default: // "rect" — a row of punched rectangular windows
+        for (const cf of [0.22, 0.5, 0.78])
+          this.skyWindow(s, cf - 0.12, cf + 0.12, 0.18, 0.46, tint, facade.frame, [0.5]);
+        break;
+    }
+  }
+
+  /** A transparent window on the back wall, filled with the live sky (+tint). */
+  private skyWindow(
+    s: RoomShell,
+    f0: number,
+    f1: number,
+    g0: number,
+    g1: number,
+    tint: number,
+    frame: string,
+    vMull: number[],
+  ): void {
+    const { ctx } = this;
+    const pts = [s.wall(f0, g0), s.wall(f1, g0), s.wall(f1, g1), s.wall(f0, g1)];
+    const topMid = s.lp(pts[0], pts[1], 0.5);
+    const botMid = s.lp(pts[3], pts[2], 0.5);
+    const grad = ctx.createLinearGradient(topMid.x, topMid.y, botMid.x, botMid.y);
+    grad.addColorStop(0, rgb(mix(this.skyTop, [8, 10, 14], tint)));
+    grad.addColorStop(1, rgb(mix(this.skyBottom, [8, 10, 14], tint)));
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (const p of pts) ctx.lineTo(p.x, p.y);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+    // Frame + mullions.
+    ctx.strokeStyle = frame;
+    ctx.lineWidth = Math.max(0.6, s.w * 0.012);
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (const p of pts) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(pts[0].x, pts[0].y);
+    for (const f of vMull) {
+      const ff = f0 + (f1 - f0) * f;
+      const a = s.wall(ff, g0), b = s.wall(ff, g1);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+    }
+    ctx.stroke();
+  }
+
+  /** A steel X-brace drawn across a window region (glass X-brace facade). */
+  private wallX(s: RoomShell, f0: number, f1: number, g0: number, g1: number, color: string): void {
+    const { ctx } = this;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1, s.w * 0.02);
+    ctx.beginPath();
+    let a = s.wall(f0, g0), b = s.wall(f1, g1);
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    a = s.wall(f1, g0);
+    b = s.wall(f0, g1);
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+
+  /** Horizontal brick coursing across the back wall. */
+  private brickCoursing(s: RoomShell, facade: Facade): void {
+    const gs: number[] = [];
+    for (let g = 0.1; g < 1; g += 0.11) gs.push(g);
+    this.wallLines(s, 0, 1, gs, rgb(mix(hexRgb(facade.wall), [230, 220, 205], 0.35)));
   }
 
   /**
@@ -666,39 +799,6 @@ export class Renderer {
   }
 
   // --- room fixtures (all drawn on the shell's perspective surfaces) ---------
-
-  /** A framed window on the back wall (glass gradient + mullions). */
-  private roomWindow(
-    s: RoomShell,
-    f0: number,
-    f1: number,
-    g0: number,
-    g1: number,
-    sky1: number[],
-    sky2: number[],
-    vMull: number[] = [0.5],
-  ): void {
-    const { ctx } = this;
-    const pts = [s.wall(f0, g0), s.wall(f1, g0), s.wall(f1, g1), s.wall(f0, g1)];
-    s.quad(pts, rgb(mix(sky1, sky2, 0.5)));
-    ctx.strokeStyle = rgb(mix(s.base, [0, 0, 0], 0.5));
-    ctx.lineWidth = Math.max(0.6, s.w * 0.012);
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (const p of pts) ctx.lineTo(p.x, p.y);
-    ctx.lineTo(pts[0].x, pts[0].y);
-    for (const f of vMull) {
-      const ff = f0 + (f1 - f0) * f;
-      const a = s.wall(ff, g0), b = s.wall(ff, g1);
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-    }
-    const gm = (g0 + g1) / 2;
-    const ha = s.wall(f0, gm), hb = s.wall(f1, gm);
-    ctx.moveTo(ha.x, ha.y);
-    ctx.lineTo(hb.x, hb.y);
-    ctx.stroke();
-  }
 
   /** A filled rectangle on the back wall (counters, cabinets, signs, curtains). */
   private wallBand(s: RoomShell, f0: number, f1: number, g0: number, g1: number, color: string): void {
@@ -772,75 +872,61 @@ export class Renderer {
     }
   }
 
-  /** Empty open-plan office: bare carpet, a window wall, drop-ceiling lights. */
-  private drawOfficeInterior(x: number, y: number, w: number, h: number): void {
+  /** Empty open-plan office: bare carpet, the facade window wall, ceiling lights. */
+  private drawOfficeInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean): void {
     const s = this.roomShell(x, y, w, h, [91, 143, 176]);
-    this.roomWindow(s, 0.1, 0.9, 0.24, 0.6, [150, 200, 235], [92, 148, 194], [0.37, 0.63]);
+    this.drawFacade(s, facade, ug);
     this.ceilingPanels(s, [0.32, 0.68]);
   }
 
-  /** Empty clinic: bright clinical walls, a small window, a green cross, panels. */
-  private drawMedicalInterior(x: number, y: number, w: number, h: number): void {
+  /** Empty clinic: pale floor, a green cross low on the wall, ceiling panels. */
+  private drawMedicalInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean): void {
     const base = [75, 181, 166];
-    const s = this.roomShell(x, y, w, h, base, {
-      floor: rgb(mix(base, [222, 230, 228], 0.6)), // pale linoleum
-      back: rgb(mix(base, [240, 246, 244], 0.5)),
-    });
-    this.roomWindow(s, 0.1, 0.46, 0.24, 0.58, [170, 210, 235], [110, 160, 200], [0.5]);
-    // Green medical cross on the back-right wall.
-    this.wallBand(s, 0.66, 0.74, 0.28, 0.6, "rgba(40,160,96,0.92)");
-    this.wallBand(s, 0.6, 0.8, 0.38, 0.5, "rgba(40,160,96,0.92)");
+    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [222, 230, 228], 0.6)) });
+    this.drawFacade(s, facade, ug);
+    this.wallBand(s, 0.44, 0.56, 0.62, 0.92, "rgba(40,160,96,0.92)"); // cross (vertical)
+    this.wallBand(s, 0.36, 0.64, 0.7, 0.8, "rgba(40,160,96,0.92)"); // cross (horizontal)
     this.ceilingPanels(s, [0.3, 0.7]);
   }
 
-  /** Empty flat: wood floor, a window, and a built-in kitchenette. */
-  private drawApartmentInterior(x: number, y: number, w: number, h: number): void {
+  /** Empty flat: wood floor, the facade window, a built-in kitchenette below. */
+  private drawApartmentInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean): void {
     const base = [123, 171, 110];
-    const s = this.roomShell(x, y, w, h, base, {
-      floor: rgb(mix([120, 82, 48], [58, 36, 18], 0.4)), // wood
-    });
-    this.roomWindow(s, 0.08, 0.46, 0.22, 0.58, [205, 185, 150], [150, 170, 195], [0.5]);
-    // Kitchenette on the right: lower counter + two upper cabinets.
-    this.wallBand(s, 0.54, 0.92, 0.6, 0.7, "rgba(58,42,30,0.92)");
-    this.wallBand(s, 0.56, 0.68, 0.3, 0.48, "rgba(96,70,50,0.95)");
-    this.wallBand(s, 0.74, 0.86, 0.3, 0.48, "rgba(96,70,50,0.95)");
+    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix([120, 82, 48], [58, 36, 18], 0.4)) });
+    this.drawFacade(s, facade, ug);
+    this.wallBand(s, 0.08, 0.7, 0.72, 0.82, "rgba(58,42,30,0.92)"); // counter
+    this.wallBand(s, 0.5, 0.66, 0.62, 0.72, "rgba(150,150,155,0.55)"); // stove/appliance
+    this.wallBand(s, 0.74, 0.9, 0.58, 0.92, "rgba(210,214,218,0.5)"); // fridge
     this.trackLights(s, [0.5]);
   }
 
-  /** Empty retail unit: polished floor, empty wall shelving, track lights. */
-  private drawStoreInterior(x: number, y: number, w: number, h: number): void {
+  /** Empty retail unit: polished floor, empty low shelving, track lights. */
+  private drawStoreInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean): void {
     const base = [208, 138, 79];
-    const s = this.roomShell(x, y, w, h, base, {
-      floor: rgb(mix(base, [236, 226, 212], 0.62)), // polished
-      back: rgb(mix(base, [235, 228, 214], 0.42)),
-    });
-    this.wallLines(s, 0.1, 0.9, [0.3, 0.45, 0.6, 0.75], "rgba(70,50,32,0.5)");
-    this.wallVLines(s, [0.3, 0.5, 0.7], 0.28, 0.78, "rgba(70,50,32,0.4)");
+    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [236, 226, 212], 0.62)) });
+    this.drawFacade(s, facade, ug);
+    this.wallLines(s, 0.1, 0.9, [0.62, 0.74, 0.86], "rgba(70,50,32,0.5)"); // shelves
+    this.wallVLines(s, [0.3, 0.5, 0.7], 0.6, 0.9, "rgba(70,50,32,0.4)");
     this.trackLights(s, [0.25, 0.5, 0.75]);
   }
 
-  /** Empty dining room: wood floor, a back bar with bottle shelves, pendants. */
-  private drawRestaurantInterior(x: number, y: number, w: number, h: number): void {
+  /** Empty dining room: wood floor, a low back bar, hanging pendant lamps. */
+  private drawRestaurantInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean): void {
     const base = [200, 90, 106];
-    const s = this.roomShell(x, y, w, h, base, {
-      floor: rgb(mix([110, 66, 40], [54, 32, 18], 0.4)), // wood
-      back: rgb(mix(base, [60, 40, 44], 0.35)),
-    });
-    this.wallBand(s, 0.08, 0.92, 0.56, 0.72, "rgba(48,30,26,0.95)"); // bar counter
-    this.wallLines(s, 0.12, 0.88, [0.3, 0.42], "rgba(200,170,120,0.5)"); // bottle shelves
+    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix([110, 66, 40], [54, 32, 18], 0.4)) });
+    this.drawFacade(s, facade, ug);
+    this.wallBand(s, 0.08, 0.92, 0.72, 0.86, "rgba(48,30,26,0.95)"); // bar counter
+    this.wallLines(s, 0.12, 0.88, [0.6, 0.68], "rgba(200,170,120,0.5)"); // bottle shelves
     this.pendantLights(s, [0.28, 0.5, 0.72]);
   }
 
-  /** Empty hotel room: carpet, a curtained window, an empty headboard wall. */
-  private drawHotelInterior(x: number, y: number, w: number, h: number): void {
+  /** Empty hotel room: carpet, the facade window, an empty headboard + bed base. */
+  private drawHotelInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean): void {
     const base = [106, 127, 192];
-    const s = this.roomShell(x, y, w, h, base, {
-      floor: rgb(mix(base, [42, 36, 54], 0.55)), // carpet
-    });
-    this.roomWindow(s, 0.32, 0.68, 0.18, 0.54, [150, 180, 215], [95, 130, 180], []);
-    this.wallBand(s, 0.14, 0.3, 0.14, 0.6, "rgba(70,80,120,0.9)"); // left curtain
-    this.wallBand(s, 0.7, 0.86, 0.14, 0.6, "rgba(70,80,120,0.9)"); // right curtain
-    this.wallBand(s, 0.2, 0.8, 0.66, 0.82, "rgba(120,96,70,0.9)"); // headboard wall
+    const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [42, 36, 54], 0.55)) });
+    this.drawFacade(s, facade, ug);
+    this.wallBand(s, 0.2, 0.8, 0.62, 0.72, "rgba(120,96,70,0.9)"); // headboard
+    this.wallBand(s, 0.16, 0.84, 0.8, 0.92, "rgba(200,200,210,0.5)"); // bed linens hint
   }
 
   /** Small price tag centered at (cx, baselineY) — used for the live girder cost. */
@@ -858,21 +944,26 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Draw a single structural girder (dark steel frame + cross-brace) in a cell. */
-  private drawGirder(x: number, y: number, cell: number): void {
+  /**
+   * Draw a single structural girder (steel frame + cross-brace) in a cell,
+   * tinted by its facade style so the bare frame previews the finished look.
+   */
+  private drawGirder(x: number, y: number, cell: number, facade?: Facade): void {
     const { ctx } = this;
+    const beam = facade?.girder ?? GIRDER_COLOR;
+    const hilite = facade ? rgb(mix(hexRgb(facade.girder), [255, 255, 255], 0.28)) : GIRDER_HILITE;
     const t = Math.max(1, cell * 0.09); // beam thickness
-    ctx.fillStyle = GIRDER_COLOR;
+    ctx.fillStyle = beam;
     // Outer frame (the steel beams).
     ctx.fillRect(x, y, cell, t); // top
     ctx.fillRect(x, y + cell - t, cell, t); // bottom
     ctx.fillRect(x, y, t, cell); // left
     ctx.fillRect(x + cell - t, y, t, cell); // right
     // Thin top highlight for a bit of metallic sheen.
-    ctx.fillStyle = GIRDER_HILITE;
+    ctx.fillStyle = hilite;
     ctx.fillRect(x, y, cell, Math.max(1, t * 0.4));
     // Diagonal cross-brace.
-    ctx.strokeStyle = GIRDER_COLOR;
+    ctx.strokeStyle = beam;
     ctx.lineWidth = Math.max(1, cell * 0.06);
     ctx.beginPath();
     ctx.moveTo(x + t, y + t);
@@ -982,6 +1073,7 @@ export class Renderer {
     localId: string,
     hover: HoverState,
     tool: Tool,
+    girderStyle: string,
   ): void {
     const { ctx, camera } = this;
     const cell = camera.scale(CELL_SIZE);
@@ -1005,7 +1097,8 @@ export class Renderer {
       return;
     }
 
-    // Girder tool: a single structural cell, with a live price for this floor.
+    // Girder tool: a single structural cell in the selected facade style, with a
+    // live price for this floor.
     if (tool === "girder") {
       if (plot.ownerId !== localId) return;
       const gx = camera.worldToScreenX(leftWorld + hover.col * CELL_SIZE);
@@ -1016,12 +1109,21 @@ export class Renderer {
         hover.row < -MAX_DEPTH ||
         hasGirder(plot, hover.col, hover.row) ||
         !girderSupported(plot, hover.col, hover.row);
-      ctx.fillStyle = blocked ? "rgba(200,70,70,0.30)" : "rgba(150,160,175,0.45)";
-      ctx.fillRect(gx + 1, gy + 1, cell - 2, cell - 2);
-      ctx.strokeStyle = blocked ? "#c84646" : GIRDER_COLOR;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(gx + 1, gy + 1, cell - 2, cell - 2);
-      if (!blocked) this.drawPriceTag(`$${girderCost(hover.row)}`, gx + cell / 2, gy - 2);
+      if (blocked) {
+        ctx.fillStyle = "rgba(200,70,70,0.30)";
+        ctx.fillRect(gx + 1, gy + 1, cell - 2, cell - 2);
+        ctx.strokeStyle = "#c84646";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(gx + 1, gy + 1, cell - 2, cell - 2);
+      } else {
+        ctx.globalAlpha = 0.72;
+        this.drawGirder(gx, gy, cell, facadeById(girderStyle));
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = "#78dc78";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(gx + 1, gy + 1, cell - 2, cell - 2);
+        this.drawPriceTag(`$${girderCost(hover.row)}`, gx + cell / 2, gy - 2);
+      }
       return;
     }
 
@@ -1106,6 +1208,21 @@ function mix(a: number[], b: number[], t: number): number[] {
 }
 function rgb(c: number[]): string {
   return `rgb(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])})`;
+}
+
+/** Consecutive overlapping pairs of an array: [a,b,c] -> [[a,b],[b,c]]. */
+function pairs(xs: number[]): [number, number][] {
+  const out: [number, number][] = [];
+  for (let i = 0; i < xs.length - 1; i++) out.push([xs[i], xs[i + 1]]);
+  return out;
+}
+
+/** Parse a #rrggbb hex into an [r,g,b] triple (falls back to mid-grey). */
+function hexRgb(hex: string): number[] {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return [128, 128, 128];
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
 }
 
 /** Heatmap cell color: t=0 red (bad) -> t=1 green (good). */

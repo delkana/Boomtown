@@ -39,6 +39,8 @@ export type Command =
       plotIndex: number;
       col: number;
       row: number;
+      /** Cosmetic facade style id (see src/game/facades.ts); omitted = default. */
+      style?: string;
     }
   | {
       type: "SELL_GIRDER";

@@ -9,6 +9,7 @@ import {
   type RoomPrefs,
 } from "../game/constants";
 import { archetype } from "../game/archetypes";
+import { FACADES } from "../game/facades";
 import { gameTime } from "../game/clock";
 import { claimCost } from "../game/economy";
 import {
@@ -43,6 +44,7 @@ export class Hud {
   private playersEl = must("players");
   private toolbarEl = must("toolbar");
   private claimBtnEl = must("claim-btn");
+  private girderStylesEl = must("girder-styles");
   private overlayEl = must("overlay");
   private inspectorEl = must("inspector");
   private hintEl = must("hint");
@@ -56,10 +58,30 @@ export class Hud {
     private onSelect: (tool: Tool) => void,
     private onSpeed: (speed: number) => void,
     private getInspected: () => InspectRef | null,
+    private getGirderStyle: () => string,
+    private onGirderStyle: (id: string) => void,
   ) {
     this.buildToolbar();
+    this.buildGirderStyles();
     this.buildOverlay();
     this.buildHeader();
+  }
+
+  /** The girder facade sub-menu (shown only while the girder tool is active). */
+  private buildGirderStyles(): void {
+    this.girderStylesEl.innerHTML = `<span class="gs-title">Facade</span>`;
+    for (const f of FACADES) {
+      const btn = document.createElement("button");
+      btn.className = "gs-btn";
+      btn.dataset.style = f.id;
+      btn.title = f.name;
+      btn.innerHTML = `<span class="gs-swatch" style="background:${f.wall};border-color:${f.frame}"></span>${f.name}`;
+      btn.addEventListener("click", () => {
+        this.onGirderStyle(f.id);
+        this.update();
+      });
+      this.girderStylesEl.appendChild(btn);
+    }
   }
 
   /** Render the right-hand room inspector panel (hover or pinned room). */
@@ -269,6 +291,16 @@ export class Hud {
     // Claim button (in the nav cluster) selected/affordability state.
     this.claimBtnEl.classList.toggle("selected", this.getSelected() === "claim");
     this.claimBtnEl.classList.toggle("unaffordable", player.money < cheapestClaim);
+
+    // Girder facade sub-menu: visible only while the girder tool is active.
+    const showStyles = this.getSelected() === "girder";
+    this.girderStylesEl.classList.toggle("hidden", !showStyles);
+    if (showStyles) {
+      const cur = this.getGirderStyle();
+      for (const el of Array.from(this.girderStylesEl.children) as HTMLElement[]) {
+        if (el.dataset.style) el.classList.toggle("active", el.dataset.style === cur);
+      }
+    }
 
     // Toolbar selected/affordability states.
     for (const el of Array.from(this.toolbarEl.children) as HTMLElement[]) {

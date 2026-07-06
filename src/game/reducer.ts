@@ -3,6 +3,7 @@ import type { GameState, Plot, Unit, UnitKind } from "./types";
 import { ELEVATOR_CAR_COST, MAX_DEPTH, MAX_ROWS, SPEED_OPTIONS, UNIT_DEFS } from "./constants";
 import { claimCost, girderCost, undergroundMultiplier } from "./economy";
 import { featureLabel } from "./features";
+import { isFacade } from "./facades";
 import { MAX_CARS_PER_SHAFT, autoCarNeeded, carsInRun, nearestCar, runContaining } from "./elevator";
 
 /**
@@ -96,7 +97,9 @@ function placeGirder(
   const cost = girderCost(cmd.row);
   if (player.money < cost) return fail("Not enough money");
 
-  plot.girders.push({ col: cmd.col, row: cmd.row });
+  const girder: { col: number; row: number; style?: string } = { col: cmd.col, row: cmd.row };
+  if (cmd.style && isFacade(cmd.style)) girder.style = cmd.style; // cosmetic; validated
+  plot.girders.push(girder);
   player.money -= cost;
   return ok();
 }

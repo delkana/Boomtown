@@ -827,3 +827,52 @@ button.primary.big {
   color: #ffd27a;
   border-color: rgba(255, 210, 122, 0.4);
 }
+
+/* Girder facade sub-menu — a strip above the hint while the girder tool is on. */
+#girder-styles {
+  bottom: 150px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  max-width: 92vw;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.gs-title {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 2px;
+}
+.gs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 5px 9px;
+  line-height: 1;
+}
+.gs-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.gs-btn.active {
+  border-color: var(--accent);
+  background: rgba(91, 143, 176, 0.22);
+}
+.gs-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1.5px solid;
+  display: inline-block;
+  flex: none;
+}

@@ -9,6 +9,7 @@ import { ELEVATOR_CAR_COST, GIRDER_BASE_COST, MAX_PLOT_COLS, MIN_PLOT_COLS, STAR
 import { claimCost, girderCost, plotBaseCost, undergroundMultiplier } from "../src/game/economy";
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
 import { servicedRows, elevatorRuns, MAX_CARS_PER_SHAFT } from "../src/game/elevator";
+import { facadeById, DEFAULT_FACADE } from "../src/game/facades";
 import type { GameState } from "../src/game/types";
 
 /** Indices of the first `n` buildable (non-feature) plots. */
@@ -577,6 +578,24 @@ describe("elevator cars", () => {
     expect(s.plots[0].cars).toHaveLength(0);
     expect(s.players["p1"].money).toBeGreaterThan(before);
     expect(servicedRows(s.plots[0]).size).toBe(0);
+  });
+});
+
+describe("girder facades (cosmetic)", () => {
+  it("stores a valid facade style on the girder and ignores invalid ids", () => {
+    const s = freshGame();
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col: 0, row: 0, style: "brick" });
+    applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col: 1, row: 0, style: "not-real" });
+    applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col: 2, row: 0 });
+    const g = (c: number) => s.plots[0].girders.find((gg) => gg.col === c && gg.row === 0)!;
+    expect(g(0).style).toBe("brick");
+    expect(g(1).style).toBeUndefined(); // invalid → left unset (renders as default)
+    expect(g(2).style).toBeUndefined();
+    // Unset styles resolve to the default facade.
+    expect(facadeById(g(2).style).id).toBe(DEFAULT_FACADE);
+    expect(facadeById(g(0).style).id).toBe("brick");
   });
 });
 

@@ -104,6 +104,11 @@ function enterGame(conn: GameConnection): void {
     },
     (speed) => conn.dispatch({ type: "SET_SPEED", playerId: conn.session.playerId, speed }),
     () => input.inspected(),
+    () => input.girderStyle,
+    (id) => {
+      input.girderStyle = id;
+      hud.update();
+    },
   );
 
   const totalPlots = Object.keys(conn.getState().plots).length;
@@ -131,7 +136,7 @@ function enterGame(conn: GameConnection): void {
 
   const loop = new RenderLoop((dt) => {
     input.update(dt);
-    renderer.render(conn.getState(), conn.session.playerId, input.hover, input.selectedTool, hud.heatmap);
+    renderer.render(conn.getState(), conn.session.playerId, input.hover, input.selectedTool, hud.heatmap, input.girderStyle);
     minimap.render();
   });
   loop.start();

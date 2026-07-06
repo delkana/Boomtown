@@ -22,6 +22,8 @@ export class InputController {
   hover: HoverState | null = null;
   /** Currently selected tool: a build unit, "claim", or null (pan/inspect). */
   selectedTool: Tool = "claim";
+  /** Cosmetic facade style applied to newly placed girders (see facades.ts). */
+  girderStyle = "glass";
 
   private dragging = false;
   private dragStartX = 0;
@@ -246,7 +248,7 @@ export class InputController {
       if (tool === "claim") {
         this.conn.dispatch({ type: "CLAIM_PLOT", playerId, plotIndex: cell.plotIndex });
       } else if (tool === "girder") {
-        this.conn.dispatch({ type: "PLACE_GIRDER", playerId, plotIndex: cell.plotIndex, col: cell.col, row: cell.row });
+        this.conn.dispatch({ type: "PLACE_GIRDER", playerId, plotIndex: cell.plotIndex, col: cell.col, row: cell.row, style: this.girderStyle });
       } else if (tool === "elevatorCar") {
         this.conn.dispatch({ type: "PLACE_ELEVATOR_CAR", playerId, plotIndex: cell.plotIndex, col: cell.col, row: cell.row });
       } else if (tool) {
@@ -277,6 +279,7 @@ export class InputController {
       plotIndex: cell.plotIndex,
       col: cell.col,
       row: cell.row,
+      style: this.girderStyle,
     });
   }
 

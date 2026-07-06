@@ -31,6 +31,12 @@ export type UnitKind =
 export interface Girder {
   col: number;
   row: number;
+  /**
+   * Cosmetic facade style (see src/game/facades.ts). Drives how the girder is
+   * drawn and the wall/window look of any room built on it. Optional for
+   * backwards compatibility; absent = the default style.
+   */
+  style?: string;
 }
 
 /**
