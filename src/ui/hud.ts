@@ -1,8 +1,8 @@
 import {
   BUILD_ORDER,
   GIRDER_BASE_COST,
-  MAX_SPEED,
   PLOT_COST_MIN,
+  SPEED_OPTIONS,
   TICK_MINUTES,
   UNIT_DEFS,
 } from "../game/constants";
@@ -53,9 +53,9 @@ export class Hud {
       s.playerName,
     )}`;
 
-    // Speed multiplier buttons (1×..MAX_SPEED).
+    // Speed multiplier buttons.
     this.speedEl.innerHTML = "";
-    for (let n = 1; n <= MAX_SPEED; n++) {
+    for (const n of SPEED_OPTIONS) {
       const btn = document.createElement("button");
       btn.className = "speed-btn";
       btn.dataset.speed = String(n);
@@ -156,8 +156,7 @@ export class Hud {
       <div class="row"><span>Plots owned</span><span>${myPlots.length}</span></div>
       <div class="row"><span>Girders</span><span>${myGirders}</span></div>
       <div class="row"><span>Units</span><span>${myUnits.length}</span></div>
-      <div class="row"><span>Occupancy</span><span>${Math.round(avgOcc * 100)}%</span></div>
-      <div class="row muted"><span>Tick</span><span>${state.tick}</span></div>`;
+      <div class="row"><span>Occupancy</span><span>${Math.round(avgOcc * 100)}%</span></div>`;
 
     this.renderPlayers(state, me);
 

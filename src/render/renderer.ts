@@ -181,10 +181,11 @@ export class Renderer {
       this.drawGirder(gx, gy, cell);
     }
 
-    // Units.
+    // Units (elevators are drawn separately, as continuous shafts).
     const bandH = Math.max(2, cell * 0.07);
     const showLabels = cell >= 30;
     for (const unit of plot.units) {
+      if (unit.kind === "elevator") continue;
       const def = UNIT_DEFS[unit.kind];
       const x = camera.worldToScreenX(leftWorld + unit.col * CELL_SIZE);
       const y = camera.rowTopScreenY(unit.row);
@@ -214,6 +215,14 @@ export class Renderer {
       }
     }
 
+    // Elevators: contiguous vertical runs render as one continuous shaft.
+    for (const run of elevatorRuns(plot)) {
+      const x = camera.worldToScreenX(leftWorld + run.col * CELL_SIZE);
+      const yTop = camera.rowTopScreenY(run.to);
+      const yBottom = camera.rowTopScreenY(run.from) + cell;
+      this.drawElevatorShaft(x, yTop, cell, yBottom - yTop, run.to > run.from, ownerColor, bandH);
+    }
+
     // Nameplate under the plot: themed property name, then owner / status.
     ctx.textBaseline = "top";
     ctx.textAlign = "center";
@@ -237,6 +246,43 @@ export class Renderer {
       ctx.fillText(isOwn ? `★ You · ${owner?.name ?? ""}` : owner?.name ?? "", cx, groundY + 25);
     }
     ctx.textAlign = "left";
+  }
+
+  /**
+   * Draw an elevator run. A single tile looks like a plain elevator; two or more
+   * stacked tiles render as one continuous shaft (rails + a car), not separate
+   * boxes.
+   */
+  private drawElevatorShaft(
+    x: number,
+    yTop: number,
+    cell: number,
+    height: number,
+    continuous: boolean,
+    ownerColor: string,
+    bandH: number,
+  ): void {
+    const { ctx } = this;
+    const w = cell;
+    if (!continuous) {
+      // Single elevator — the classic tile look.
+      ctx.fillStyle = UNIT_DEFS.elevator.color;
+      ctx.fillRect(x + 1, yTop + 1, w - 2, cell - 2);
+    } else {
+      // Continuous shaft: dark channel, two guide rails, and one car.
+      ctx.fillStyle = "#3a3f47";
+      ctx.fillRect(x + 1, yTop + 1, w - 2, height - 2);
+      ctx.fillStyle = "#8a8f98";
+      ctx.fillRect(x + 3, yTop + 2, 2, height - 4);
+      ctx.fillRect(x + w - 5, yTop + 2, 2, height - 4);
+      // Car parked at the bottom of the shaft.
+      const carH = Math.min(cell * 0.85, height - 6);
+      ctx.fillStyle = "#aab0b8";
+      ctx.fillRect(x + 6, yTop + height - carH - 3, w - 12, carH);
+    }
+    // Owner-color band along the very top of the run.
+    ctx.fillStyle = ownerColor;
+    ctx.fillRect(x + 1, yTop + 1, w - 2, bandH);
   }
 
   /** Small price tag centered at (cx, baselineY) — used for the live girder cost. */
@@ -459,6 +505,34 @@ export class Renderer {
     ctx.lineWidth = 2;
     ctx.strokeRect(x + 1, y + 1, wpx - 2, cell - 2);
   }
+}
+
+/** Group a plot's elevators into contiguous vertical runs per column. */
+function elevatorRuns(plot: Plot): { col: number; from: number; to: number }[] {
+  const byCol = new Map<number, number[]>();
+  for (const u of plot.units) {
+    if (u.kind !== "elevator") continue;
+    const rows = byCol.get(u.col) ?? [];
+    rows.push(u.row);
+    byCol.set(u.col, rows);
+  }
+  const runs: { col: number; from: number; to: number }[] = [];
+  for (const [col, rows] of byCol) {
+    rows.sort((a, b) => a - b);
+    let from = rows[0];
+    let prev = rows[0];
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i] === prev + 1) {
+        prev = rows[i];
+      } else {
+        runs.push({ col, from, to: prev });
+        from = rows[i];
+        prev = rows[i];
+      }
+    }
+    runs.push({ col, from, to: prev });
+  }
+  return runs;
 }
 
 /** Apply an alpha to a #rrggbb hex, returning an rgba() string. */

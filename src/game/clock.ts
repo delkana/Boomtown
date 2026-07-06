@@ -6,10 +6,15 @@ import { DAYS_PER_WEEK, MONTHS_PER_YEAR, TICK_MINUTES } from "./constants";
  * week (7 days), and a year is MONTHS_PER_YEAR months. Years start at "Year 1".
  */
 export const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+export const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+] as const;
 
 export interface GameTime {
   year: number; // 1-based
   month: number; // 1-based
+  monthName: string; // "Jan".."Dec"
   dayName: string;
   hour: number; // 0..23
   minute: number; // 0..59
@@ -25,17 +30,20 @@ export function gameTime(tick: number): GameTime {
   const totalDays = Math.floor(totalMinutes / (60 * 24));
   const dayName = DAY_NAMES[((totalDays % DAYS_PER_WEEK) + DAYS_PER_WEEK) % DAYS_PER_WEEK];
   const totalWeeks = Math.floor(totalDays / DAYS_PER_WEEK); // one week == one month
-  const month = (totalWeeks % MONTHS_PER_YEAR) + 1;
+  const monthIdx = totalWeeks % MONTHS_PER_YEAR;
+  const month = monthIdx + 1;
+  const monthName = MONTH_NAMES[monthIdx];
   const year = Math.floor(totalWeeks / MONTHS_PER_YEAR) + 1;
   const time = `${pad(hour)}:${pad(minute)}`;
   return {
     year,
     month,
+    monthName,
     dayName,
     hour,
     minute,
     time,
-    label: `${dayName} · Month ${month} · Year ${year} · ${time}`,
+    label: `${dayName} · ${monthName} · Year ${year} · ${time}`,
   };
 }
 

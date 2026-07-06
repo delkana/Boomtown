@@ -5,6 +5,7 @@ import {
   MIN_PLOTS,
 } from "../game/constants";
 import { isArchetype } from "../game/archetypes";
+import type { FeatureKind } from "../game/features";
 import type { GameState, UnitKind } from "../game/types";
 import { AuthoritativeGame } from "./authoritativeGame";
 import type { CreateGameConfig, GameSummary, JoinRequest } from "./protocol";
@@ -189,11 +190,18 @@ export class GameDirectory {
   }
 
   private seedDemoCities(): void {
-    this.seedCity("new-angeles", "New Angeles", "pacifica", 22, 8, null, [
-      { name: "Redwood Spire Group", color: "#3fb96b", floors: [7] },
-      { name: "Neon Bay Holdings", color: "#4a86e0", floors: [6, 9] },
-      { name: "Cascade Systems", color: "#e79a2f", floors: [5] },
-    ]);
+    this.seedCity(
+      "new-los-angeles", "New Los Angeles", "pacifica", 22, 8, null,
+      [
+        { name: "Redwood Spire Group", color: "#3fb96b", floors: [7] },
+        { name: "Neon Bay Holdings", color: "#4a86e0", floors: [6, 9] },
+        { name: "Cascade Systems", color: "#e79a2f", floors: [5] },
+      ],
+      [
+        { kind: "river", name: "Los Angeles River" },
+        { kind: "river", name: "San Gabriel River" },
+      ],
+    );
     this.seedCity("neo-kyoto", "Neo-Kyoto", "japan", 16, 6, null, [
       { name: "Zaibatsu Prime", color: "#c94ad1", floors: [6] },
       { name: "Mirai Systems", color: "#e0503f", floors: [8, 4] },
@@ -217,6 +225,7 @@ export class GameDirectory {
     maxPlayers: number,
     password: string | null,
     owners: { name: string; color: string; floors: number[] }[],
+    featureOverrides?: { kind: FeatureKind; name: string }[],
   ): void {
     const game = AuthoritativeGame.create(
       id,
@@ -225,6 +234,20 @@ export class GameDirectory {
     );
     this.games.set(id, game);
     this.tokens.set(id, new Map());
+
+    // Optionally pin the city's feature plots to specific kinds/names.
+    if (featureOverrides) {
+      const featurePlots = Object.values(game.state.plots)
+        .filter((p) => p.feature)
+        .sort((a, b) => a.index - b.index);
+      featureOverrides.forEach((ov, i) => {
+        const fp = featurePlots[i];
+        if (fp) {
+          fp.feature = ov.kind;
+          fp.name = ov.name;
+        }
+      });
+    }
 
     const buildable = Object.values(game.state.plots)
       .filter((p) => !p.feature)

@@ -1,6 +1,6 @@
 import type { Command } from "./commands";
 import type { GameState, Plot, Unit, UnitKind } from "./types";
-import { MAX_ROWS, MAX_SPEED, UNIT_DEFS } from "./constants";
+import { MAX_ROWS, SPEED_OPTIONS, UNIT_DEFS } from "./constants";
 import { claimCost, girderCost } from "./economy";
 import { featureLabel } from "./features";
 
@@ -65,7 +65,7 @@ function setSpeed(
 ): CommandResult {
   if (!state.players[cmd.playerId]) return fail("No such player");
   const speed = Math.round(cmd.speed);
-  if (speed < 1 || speed > MAX_SPEED) return fail("Invalid speed");
+  if (!SPEED_OPTIONS.includes(speed)) return fail("Invalid speed");
   state.speed = speed;
   return ok();
 }
