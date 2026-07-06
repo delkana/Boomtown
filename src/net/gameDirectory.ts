@@ -293,6 +293,43 @@ export class GameDirectory {
         { kind: "park", name: "Jardin des Tuileries" },
       ],
     );
+    this.seedCity(
+      "jozi", "Jozi", "african-union", { near: "skyline", far: "hills", latitude: -26 }, 20, 8, null,
+      [
+        { name: "Sankofa Tower", color: "#3fb96b", floors: [8, 5] },
+        { name: "Ubuntu Holdings", color: "#e0a53f", floors: [7] },
+        { name: "Great Zimbabwe Corp", color: "#c94ad1", floors: [6, 9] },
+      ],
+      [
+        { kind: "park", name: "Zoo Lake" },
+        { kind: "park", name: "The Wilds" },
+      ],
+    );
+    this.seedCity(
+      "el-dorado", "El Dorado", "latam", { near: "skyline", far: "mountains", latitude: 5 }, 20, 8, null,
+      [
+        { name: "El Dorado Tower", color: "#1f8a4c", floors: [9, 6] },
+        { name: "Libertador Group", color: "#e0503f", floors: [7] },
+        { name: "Cóndor Prime", color: "#f4c94b", floors: [5, 8] },
+      ],
+      [
+        { kind: "river", name: "Bogotá River" },
+        { kind: "park", name: "Simón Bolívar Park" },
+      ],
+    );
+    this.seedCity(
+      "port-liberty", "Port Liberty", "atlantea", { near: "skyline", far: "ocean", latitude: 41 }, 22, 8, null,
+      [
+        { name: "Empire Spire", color: "#4a86e0", floors: [10, 7] },
+        { name: "Liberty Holdings", color: "#e0503f", floors: [8] },
+        { name: "Hudson Works", color: "#3fb96b", floors: [6, 9] },
+      ],
+      [
+        { kind: "river", name: "Hudson River" },
+        { kind: "river", name: "East River" },
+        { kind: "park", name: "Central Park" },
+      ],
+    );
   }
 
   /** Create a demo city and seed its owners onto BUILDABLE (non-feature) plots. */
