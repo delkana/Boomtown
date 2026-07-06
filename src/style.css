@@ -858,6 +858,17 @@ button.primary.big {
 .insp-title .pin {
   font-size: 11px;
 }
+.insp-stars {
+  font-size: 14px;
+  color: #f4c94b;
+  letter-spacing: 1px;
+  margin: -2px 0 8px;
+}
+.insp-stars .muted {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0;
+}
 .insp-row {
   display: flex;
   justify-content: space-between;

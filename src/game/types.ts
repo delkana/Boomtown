@@ -27,6 +27,7 @@ export type UnitKind =
   | "hotel"
   | "housekeeping"
   | "janitor"
+  | "vending"
   | "elevator";
 
 /** A single structural-support cell (girder) in a tower's frame. */

@@ -112,7 +112,7 @@ const WORKER_COLORS = ["#39424f", "#4a3f2f", "#2f3a44", "#463a4a", "#3a4a3a", "#
  * (offices/clinics/shops/restaurants), apartment residents who live here and
  * commute OUT to a job, and hotel guests on nightly bookings (see stepPerson).
  */
-const PEOPLE_KINDS = new Set(["office", "medical", "store", "restaurant", "apartment", "hotel"]);
+const PEOPLE_KINDS = new Set(["office", "medical", "store", "restaurant", "apartment", "hotel", "vending"]);
 
 export class PeopleSim {
   private people = new Map<string, Person>();

@@ -938,6 +938,8 @@ export class Renderer {
         return this.drawServiceInterior(x, y, w, h, facade, underground, lit, [176, 132, 106], false);
       case "janitor":
         return this.drawServiceInterior(x, y, w, h, facade, underground, lit, [107, 114, 128], true);
+      case "vending":
+        return this.drawServiceInterior(x, y, w, h, facade, underground, lit, [181, 72, 74], true);
       default:
         this.ctx.fillStyle = UNIT_DEFS[kind].color;
         this.ctx.fillRect(x, y, w, h);

@@ -67,10 +67,17 @@ export function noiseRating(plot: Plot, col: number, row: number): number {
   let n = Math.max(0, 30 - Math.abs(row) * 6); // ground-floor proximity
   for (const u of plot.units) {
     const weight = u.kind === "elevator" ? 25 : u.kind === "lobby" ? 20 : u.kind === "office" ? 15 : 0;
-    if (!weight) continue;
-    const dx = Math.max(0, u.col - col, col - (u.col + u.width - 1));
-    const d = Math.abs(u.row - row) + dx;
-    if (d <= 5) n += weight * (1 - d / 6);
+    if (weight) {
+      const dx = Math.max(0, u.col - col, col - (u.col + u.width - 1));
+      const d = Math.abs(u.row - row) + dx;
+      if (d <= 5) n += weight * (1 - d / 6);
+    }
+    // A vending machine hums: +10 on its own tile, +5 up to two tiles either side.
+    if (u.kind === "vending" && u.row === row) {
+      const dx = Math.abs(u.col - col);
+      if (dx === 0) n += 10;
+      else if (dx <= 2) n += 5;
+    }
   }
   return n;
 }

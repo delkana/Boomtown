@@ -21,6 +21,7 @@ import {
   type HeatmapKind,
 } from "../game/heatmaps";
 import { headcountLabel, hasTrades, tenantOpen, daysLabel, shiftLabel, lunchLabel, workScheduleLabel } from "../game/tenants";
+import { buildingStars, starString } from "../game/ratings";
 import { elevatorRuns, runContaining } from "../game/elevator";
 import { dayOfWeek } from "../game/clock";
 import { projectedDailyNet } from "../game/tick";
@@ -162,6 +163,10 @@ export class Hud {
       const rosterHtml = roster.length
         ? `<details class="insp-roster"><summary>${headcountLabel(unit.kind)} · ${roster.length}</summary><div class="roster-list">${rosterRows}</div></details>`
         : `<div class="insp-row"><span>${headcountLabel(unit.kind)}</span><span>${tenant.employees}</span></div>`;
+      // The business's own daily books: rent it pays, wages it pays its staff, and
+      // whether it clears a profit after both.
+      const wages = roster.reduce((sum, w) => sum + w.dailySalary, 0);
+      const bizNet = tenant.dailyRent - wages;
       tenantHtml = `
         <div class="insp-tenant">${escapeHtml(tenant.name)}</div>
         <div class="insp-sub">${escapeHtml(tenant.trade)} · <span class="${open ? "pos" : "neg"}">${open ? "Open" : "Closed"}</span></div>
@@ -169,13 +174,17 @@ export class Hud {
         <div class="insp-row"><span>Days</span><span>${daysLabel(tenant.openDays)}</span></div>
         ${rosterHtml}
         ${visitorChart(unit.kind, tenant)}
-        <div class="insp-row"><span>Rent / day</span><span class="pos">+$${tenant.dailyRent.toLocaleString()}</span></div>`;
+        <div class="insp-row"><span>Rent / day</span><span class="pos">+$${tenant.dailyRent.toLocaleString()}</span></div>
+        <div class="insp-row"><span>Wages / day</span><span class="neg">-$${wages.toLocaleString()}</span></div>
+        <div class="insp-row"><span>Business net / day</span><span class="${bizNet >= 0 ? "pos" : "neg"}">${bizNet < 0 ? "-" : "+"}$${Math.abs(bizNet).toLocaleString()}</span></div>`;
     } else if (hasTrades(unit.kind)) {
       tenantHtml = `<div class="insp-sub">Vacant · seeking a tenant (${appeal}% appeal)</div>`;
     }
 
+    const stars = buildingStars(plot);
     this.inspectorEl.innerHTML = `
       <div class="insp-title">${def.label} · Floor ${unit.row}${info.pinned ? ' <span class="pin">📌</span>' : ""}</div>
+      <div class="insp-stars" title="Building rating — average room quality">${starString(stars)} <span class="muted">${stars.toFixed(1)}</span></div>
       ${tenantHtml}
       <div class="insp-row"><span>Facade</span><span>${facadeVal}</span></div>
       <div class="insp-row"><span>Elevator</span><span>${elevStr}</span></div>
@@ -521,7 +530,8 @@ const TOOL_CATEGORIES: { id: string; label: string; icon: string; tools: string[
   { id: "offices", label: "Offices", icon: "🏢", tools: ["office", "medical", "janitor"] },
   { id: "apartments", label: "Apartments", icon: "🏠", tools: ["apartment"] },
   { id: "hotels", label: "Hotels", icon: "🛎", tools: ["hotel", "housekeeping"] },
-  { id: "retail", label: "Retail", icon: "🛍", tools: ["store", "restaurant"] },
+  { id: "retail", label: "Retail", icon: "🛍", tools: ["store"] },
+  { id: "food", label: "Food", icon: "🍽", tools: ["restaurant", "vending"] },
 ];
 
 /** The category id that contains a tool, or null. */

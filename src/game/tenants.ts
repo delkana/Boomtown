@@ -164,7 +164,17 @@ const SUBSETS: Partial<Record<UnitKind, Subset[]>> = {
   hotel: [
     { id: "hotel", label: "Suites", open: 14, close: 24, days: ALL_WEEK, name: nameGen([(p) => `${p(SUR, 0)} Suites`, (p) => `The ${p(PLACE, 1)} Inn`, (p) => `${p(PLACE, 2)} Hotel`]) },
   ],
+  // Vending machines run 24/7; a route driver from the brand restocks weekly.
+  vending: [
+    { id: "snackman", label: "Snackman Snacks", open: 0, close: 24, days: ALL_WEEK, name: () => "Snackman Snacks" },
+    { id: "redcola", label: "Red Cola", open: 0, close: 24, days: ALL_WEEK, name: () => "Red Cola" },
+    { id: "bluecola", label: "Blue Cola", open: 0, close: 24, days: ALL_WEEK, name: () => "Blue Cola" },
+    { id: "drdoctor", label: "Dr. Doctor", open: 0, close: 24, days: ALL_WEEK, name: () => "Dr. Doctor" },
+  ],
 };
+
+/** Which weekday (0=Mon) each vending brand's route driver restocks. */
+const VENDING_STOCK_DAY: Record<string, number> = { snackman: 0, redcola: 1, bluecola: 2, drdoctor: 3 };
 
 /** People (employees or residents) per width tile, per kind. */
 const HEADCOUNT: Partial<Record<UnitKind, number>> = {
@@ -297,6 +307,20 @@ function buildWorkers(
     }
     return workers;
   }
+  // Vending machine: no tower staff — just the brand's route driver, who restocks
+  // once a week on the brand's day (paid by the vending company, so $0 wages here).
+  if (kind === "vending") {
+    const wh = hashString(`${seed}:stocker`);
+    return [{
+      name: personName(archetypeId, wh),
+      title: "Route Driver",
+      dailySalary: 0,
+      days: [VENDING_STOCK_DAY[subId] ?? 2],
+      startHour: 9,
+      endHour: 17,
+      lunchHour: -1,
+    }];
+  }
 
   const lead = LEAD[subId] ?? { title: "Manager", salary: 300 };
   const staff = staffRoles(kind, subId);
@@ -383,7 +407,7 @@ function juniorTitle(title: string): string {
 
 /** Base daily rent per kind (scaled by appeal + a little variance). */
 const RENT_BASE: Partial<Record<UnitKind, number>> = {
-  office: 1400, medical: 1800, store: 1200, restaurant: 1600, apartment: 1000, hotel: 620,
+  office: 1400, medical: 1800, store: 1200, restaurant: 1600, apartment: 1000, hotel: 620, vending: 320,
 };
 
 /** Whether a kind can hold a tenant at all. */
@@ -420,7 +444,9 @@ export function generateTenant(
           ? 7 + ((h >>> 5) % 6) // 7–12 total across two shifts (~4–7 at once)
           : kind === "apartment"
             ? 1 + ((h >>> 5) % 2) // 1–2 residents
-            : Math.max(1, Math.round((HEADCOUNT[kind] ?? 2) * width * (0.7 + ((h >>> 5) % 50) / 100)));
+            : kind === "vending"
+              ? 1 // just the brand's weekly route driver
+              : Math.max(1, Math.round((HEADCOUNT[kind] ?? 2) * width * (0.7 + ((h >>> 5) % 50) / 100)));
   const days = sub.days ?? ALL_WEEK;
   const base = RENT_BASE[kind] ?? 1000;
   const dailyRent = Math.round(base * (0.5 + Math.max(0, Math.min(1, appeal))) * (0.9 + ((h >>> 9) % 25) / 100));

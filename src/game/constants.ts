@@ -241,6 +241,20 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     service: true,
     windowless: true,
   },
+  vending: {
+    kind: "vending",
+    label: "Vending Machine",
+    hotkey: "",
+    width: 1,
+    cost: 800,
+    upkeep: 60,
+    incomeAtFull: 60,
+    fillRate: 0,
+    color: "#b5484a",
+    // A machine only cares about foot traffic — busy spots sell more.
+    prefs: { foot: 1.0 },
+    windowless: true,
+  },
   elevator: {
     kind: "elevator",
     label: "Elevator Shaft",
@@ -263,6 +277,7 @@ export const BUILD_ORDER: UnitKind[] = [
   "apartment",
   "store",
   "restaurant",
+  "vending",
   "hotel",
   "housekeeping",
   "elevator",

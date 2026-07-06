@@ -5,6 +5,7 @@ import { advanceTick, projectedDailyNet } from "../src/game/tick";
 import { propertyNameFor, archetype } from "../src/game/archetypes";
 import { gameTime, daylightHours, skyState } from "../src/game/clock";
 import { elevatorAccess, viewRating, noiseRating, footTraffic, roomSatisfaction } from "../src/game/heatmaps";
+import { buildingStars } from "../src/game/ratings";
 import { ELEVATOR_CAR_COST, GIRDER_BASE_COST, MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
 import { claimCost, girderCost, plotBaseCost, undergroundMultiplier } from "../src/game/economy";
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
@@ -489,6 +490,50 @@ describe("room types & preferences", () => {
       maxClean = Math.max(maxClean, office.cleanliness!);
     }
     expect(maxClean).toBe(100); // janitors restored it to spotless overnight
+  });
+
+  it("a vending machine is a single-brand tenant with a weekly route driver", () => {
+    const stockDay: Record<string, number> = { snackman: 0, redcola: 1, bluecola: 2, drdoctor: 3 };
+    for (let i = 0; i < 40; i++) {
+      const t = generateTenant("vending", `vend:${i}`, 0.8, 1)!;
+      expect(t.workers).toHaveLength(1);
+      const drv = t.workers[0];
+      expect(drv.title).toBe("Route Driver");
+      expect(drv.dailySalary).toBe(0); // paid by the vending company, not the tower
+      expect(drv.days).toHaveLength(1);
+      expect(drv.days[0]).toBe(stockDay[t.subset]); // restocks on the brand's day
+    }
+  });
+
+  it("a vending machine hums: +10 on it, +5 within two tiles either side", () => {
+    const s = freshGame();
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0], [5, 0]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    const plot = s.plots[0];
+    // Baseline (no machine yet), then add a vending machine at col 5 and diff.
+    const b5 = noiseRating(plot, 5, 0), b7 = noiseRating(plot, 7, 0), b8 = noiseRating(plot, 8, 0);
+    expect(applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "vending", col: 5, row: 0 }).ok).toBe(true);
+    expect(noiseRating(plot, 5, 0) - b5).toBe(10); // on the machine
+    expect(noiseRating(plot, 7, 0) - b7).toBe(5); // two tiles away
+    expect(noiseRating(plot, 8, 0) - b8).toBe(0); // three tiles away → nothing
+  });
+
+  it("building star rating is 0..5 in half-star steps", () => {
+    const s = freshGame();
+    expect(buildingStars(s.plots[0])).toBe(0); // nothing leased yet
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0], [2, 0], [4, 0], [5, 0]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "office", col: 4, row: 0 });
+    for (let i = 0; i < 1600; i++) advanceTick(s);
+    const stars = buildingStars(s.plots[0]);
+    expect(stars).toBeGreaterThan(0);
+    expect(stars).toBeLessThanOrEqual(5);
+    expect((stars * 2) % 1).toBe(0); // half-star steps
   });
 
   it("snapshots daily visitor counts for a leased store", () => {
