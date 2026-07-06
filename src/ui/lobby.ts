@@ -5,6 +5,7 @@ import {
   type ColorOption,
 } from "../game/constants";
 import { ARCHETYPES, DEFAULT_ARCHETYPE, archetype, randomCityName } from "../game/archetypes";
+import { BACKGROUNDS, DEFAULT_BACKGROUND } from "../game/backgrounds";
 import type { GameConnection } from "../net/connection";
 import type { ConnectResult, GameServer } from "../net/localServer";
 import type { GameSummary, PlayerSession } from "../net/protocol";
@@ -24,6 +25,7 @@ export class LobbyScreen {
   private palette: ColorOption[];
   private createColor: string;
   private createArchetype = DEFAULT_ARCHETYPE;
+  private createBackground = DEFAULT_BACKGROUND;
   private joinColor: string | null = null;
   private joinTaken = new Set<string>();
   private joiningGameId: string | null = null;
@@ -71,6 +73,7 @@ export class LobbyScreen {
 
     this.renderCreateColors();
     this.renderArchetypes();
+    this.renderBackgrounds();
 
     this.q("#cf-random").addEventListener("click", () => {
       this.q<HTMLInputElement>("#cf-city").value = randomCityName(this.createArchetype);
@@ -105,6 +108,22 @@ export class LobbyScreen {
     this.q("#cf-blurb").textContent = archetype(this.createArchetype).blurb;
   }
 
+  private renderBackgrounds(): void {
+    const grid = this.q("#cf-backgrounds");
+    grid.innerHTML = "";
+    for (const bg of BACKGROUNDS) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "bg-btn" + (bg.id === this.createBackground ? " selected" : "");
+      btn.textContent = bg.name;
+      btn.addEventListener("click", () => {
+        this.createBackground = bg.id;
+        this.renderBackgrounds();
+      });
+      grid.appendChild(btn);
+    }
+  }
+
   private renderCreateColors(): void {
     this.renderColorGrid(this.q("#cf-colors"), () => this.createColor, new Set(), (id) => {
       this.createColor = id;
@@ -120,6 +139,7 @@ export class LobbyScreen {
       const result = await this.server.createGame({
         cityName: this.q<HTMLInputElement>("#cf-city").value,
         archetype: this.createArchetype,
+        background: this.createBackground,
         plotCount: Number(this.q<HTMLInputElement>("#cf-plots").value),
         maxPlayers: Number(this.q<HTMLInputElement>("#cf-max").value),
         password: this.q<HTMLInputElement>("#cf-pw-toggle").checked
@@ -329,6 +349,9 @@ const SHELL = `
         <div class="field">City archetype
           <div id="cf-archetypes" class="archetype-grid"></div>
           <p id="cf-blurb" class="blurb"></p>
+        </div>
+        <div class="field">Backdrop
+          <div id="cf-backgrounds" class="bg-grid"></div>
         </div>
         <label class="field">City name
           <div class="city-input-row">

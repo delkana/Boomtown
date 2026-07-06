@@ -4,7 +4,7 @@ import { applyCommand } from "../src/game/reducer";
 import { advanceTick, projectedNet } from "../src/game/tick";
 import { propertyNameFor, archetype } from "../src/game/archetypes";
 import { gameTime } from "../src/game/clock";
-import { elevatorAccess, viewRating, noiseRating } from "../src/game/heatmaps";
+import { elevatorAccess, viewRating, noiseRating, footTraffic } from "../src/game/heatmaps";
 import { MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
 import { claimCost, girderCost, plotBaseCost } from "../src/game/economy";
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
@@ -38,6 +38,7 @@ function freshGame(plotCount = 6, archetypeId = "pacifica"): GameState {
   const state = createGameState("test-city", {
     cityName: "Test City",
     archetype: archetypeId,
+    background: "skyline",
     plotCount,
     maxPlayers: 4,
     hasPassword: false,
@@ -485,6 +486,21 @@ describe("heatmaps", () => {
     expect(noiseRating(p, 2, 0)).toBeGreaterThan(noiseRating(p, 6, 6));
     // Right on the elevator is louder than far away on the same floor.
     expect(noiseRating(p, 2, 1)).toBeGreaterThan(noiseRating(p, 6, 8));
+  });
+
+  it("foot traffic peaks on the ground and near elevators, scaled by floor rooms", () => {
+    const s = tower();
+    s.players["p1"].money = 1_000_000;
+    // Put two offices on floor 1 near the shaft.
+    frame(s, "p1", 0, [[3, 1], [4, 1], [5, 1], [6, 1]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "office", col: 3, row: 1 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "office", col: 5, row: 1 });
+    const p = s.plots[0];
+    expect(footTraffic(p, 10, 0)).toBe(100); // ground floor is always busiest
+    // On floor 1, near the elevator beats far from it.
+    expect(footTraffic(p, 3, 1)).toBeGreaterThan(footTraffic(p, 15, 1));
+    // A floor with no rooms has no traffic.
+    expect(footTraffic(p, 8, 8)).toBe(0);
   });
 });
 

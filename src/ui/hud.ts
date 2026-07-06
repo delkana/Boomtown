@@ -101,6 +101,7 @@ export class Hud {
       { k: "elevator", label: "Elevator" },
       { k: "view", label: "View" },
       { k: "noise", label: "Noise" },
+      { k: "foot", label: "Traffic" },
     ];
     this.overlayEl.innerHTML = `<span class="overlay-title">Heatmap</span>`;
     for (const o of opts) {

@@ -5,6 +5,7 @@ import {
   MIN_PLOTS,
 } from "../game/constants";
 import { isArchetype } from "../game/archetypes";
+import { isBackground, DEFAULT_BACKGROUND } from "../game/backgrounds";
 import type { FeatureKind } from "../game/features";
 import type { GameState, UnitKind } from "../game/types";
 import { AuthoritativeGame } from "./authoritativeGame";
@@ -38,6 +39,8 @@ export class GameDirectory {
   /** gameId -> (token -> playerId). Server-only secret. */
   private tokens = new Map<string, Map<string, string>>();
   private listeners = new Set<() => void>();
+  /** Ids of the built-in demo cities — always re-seeded fresh, never persisted. */
+  private seededIds = new Set<string>();
 
   constructor(opts: { seed?: boolean } = {}) {
     if (opts.seed ?? true) this.seedDemoCities();
@@ -77,11 +80,12 @@ export class GameDirectory {
 
     if (!isArchetype(cfg.archetype)) return err("Pick a city archetype");
 
+    const background = isBackground(cfg.background) ? cfg.background : DEFAULT_BACKGROUND;
     const password = cfg.password && cfg.password.length > 0 ? cfg.password : null;
     const id = this.uniqueId(cityName);
     const game = AuthoritativeGame.create(
       id,
-      { cityName, archetype: cfg.archetype, plotCount, maxPlayers, hasPassword: password !== null },
+      { cityName, archetype: cfg.archetype, background, plotCount, maxPlayers, hasPassword: password !== null },
       password,
     );
     this.games.set(id, game);
@@ -129,26 +133,31 @@ export class GameDirectory {
 
   // --- persistence ---------------------------------------------------------
 
+  /** Persist only PLAYER-created games; demo cities are re-seeded fresh on boot. */
   serialize(): string {
     const out: StoredGame[] = [];
     for (const [id, game] of this.games) {
+      if (this.seededIds.has(id)) continue;
       out.push({
         state: game.state,
         password: game.password,
         tokens: [...(this.tokens.get(id) ?? new Map())],
       });
     }
-    return JSON.stringify({ v: 1, games: out });
+    return JSON.stringify({ v: 2, games: out });
   }
 
-  /** Replace the entire directory from a serialized snapshot. */
+  /**
+   * MERGE saved games into the directory (does not clear). Demo cities keep the
+   * freshly-seeded version, so changes to the built-in cities always show up.
+   */
   load(json: string): void {
     const parsed = JSON.parse(json) as { v: number; games: StoredGame[] };
-    this.games.clear();
-    this.tokens.clear();
     for (const g of parsed.games) {
-      // Tolerate saves from before a field existed (girders, speed).
+      if (this.seededIds.has(g.state.id)) continue; // don't clobber fresh demo cities
+      // Tolerate saves from before a field existed (girders, speed, background).
       if (!g.state.speed) g.state.speed = 1;
+      if (!g.state.config.background) g.state.config.background = DEFAULT_BACKGROUND;
       for (const key of Object.keys(g.state.plots)) {
         const plot = g.state.plots[Number(key)];
         if (!plot.girders) plot.girders = [];
@@ -191,7 +200,7 @@ export class GameDirectory {
 
   private seedDemoCities(): void {
     this.seedCity(
-      "new-angeles", "New Angeles", "pacifica", 22, 8, null,
+      "new-angeles", "New Angeles", "pacifica", "palms", 22, 8, null,
       [
         { name: "Redwood Spire Group", color: "#3fb96b", floors: [7] },
         { name: "Neon Bay Holdings", color: "#4a86e0", floors: [6, 9] },
@@ -202,14 +211,14 @@ export class GameDirectory {
         { kind: "river", name: "San Gabriel River" },
       ],
     );
-    this.seedCity("neo-kyoto", "Neo-Kyoto", "japan", 16, 6, null, [
+    this.seedCity("neo-kyoto", "Neo-Kyoto", "japan", "skyline", 16, 6, null, [
       { name: "Zaibatsu Prime", color: "#c94ad1", floors: [6] },
       { name: "Mirai Systems", color: "#e0503f", floors: [8, 4] },
     ]);
-    this.seedCity("kosmograd", "Kosmograd", "ussr", 20, 8, null, [
+    this.seedCity("kosmograd", "Kosmograd", "ussr", "mountains", 20, 8, null, [
       { name: "Red October Combine", color: "#e0503f", floors: [9, 5, 7] },
     ]);
-    this.seedCity("la-defense", "La Défense", "europa", 20, 8, null, [
+    this.seedCity("la-defense", "La Défense", "europa", "skyline", 20, 8, null, [
       { name: "Rheinturm Group", color: "#f4c94b", floors: [10, 6] },
       { name: "Concorde Holdings", color: "#4a86e0", floors: [7] },
       { name: "Pan-Europa Dynamics", color: "#3fb96b", floors: [8] },
@@ -221,6 +230,7 @@ export class GameDirectory {
     id: string,
     cityName: string,
     archetype: string,
+    background: string,
     plotCount: number,
     maxPlayers: number,
     password: string | null,
@@ -229,9 +239,10 @@ export class GameDirectory {
   ): void {
     const game = AuthoritativeGame.create(
       id,
-      { cityName, archetype, plotCount, maxPlayers, hasPassword: password !== null },
+      { cityName, archetype, background, plotCount, maxPlayers, hasPassword: password !== null },
       password,
     );
+    this.seededIds.add(id);
     this.games.set(id, game);
     this.tokens.set(id, new Map());
 

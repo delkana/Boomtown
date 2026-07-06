@@ -4,6 +4,7 @@ import { unitAt, hasGirder, girderSupported } from "../game/reducer";
 import { claimCost, girderCost } from "../game/economy";
 import { featureLabel } from "../game/features";
 import { heatT, type HeatmapKind } from "../game/heatmaps";
+import { gameTime } from "../game/clock";
 import { Camera } from "./camera";
 
 /**
@@ -95,16 +96,28 @@ export class Renderer {
     const { ctx, camera } = this;
     const w = camera.viewW;
     const h = camera.viewH;
+    const groundY = h - camera.groundMargin;
 
-    // Sky gradient.
-    const sky = ctx.createLinearGradient(0, 0, 0, h);
-    sky.addColorStop(0, "#1b2838");
-    sky.addColorStop(1, "#3a5068");
+    // Time of day drives the sky (day/night cycle).
+    const time = gameTime(state.tick);
+    const hourF = time.hour + time.minute / 60;
+    const sun = Math.sin(((hourF - 6) / 24) * 2 * Math.PI); // -1 midnight … +1 noon
+    const day = Math.max(0, sun);
+    const twilight = Math.max(0, 1 - Math.abs(sun) * 3.5); // peaks at sunrise/sunset
+
+    const top = mix([9, 12, 24], [40, 92, 150], day);
+    let bottom = mix([22, 30, 48], [120, 158, 196], day);
+    bottom = mix(bottom, [205, 115, 72], twilight * 0.55); // warm horizon at dawn/dusk
+    const sky = ctx.createLinearGradient(0, 0, 0, groundY);
+    sky.addColorStop(0, rgb(top));
+    sky.addColorStop(1, rgb(bottom));
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, h);
 
+    // Backdrop behind the buildings.
+    this.drawBackground(state.config.background, groundY, day);
+
     // Ground.
-    const groundY = h - camera.groundMargin;
     ctx.fillStyle = "#2a2018";
     ctx.fillRect(0, groundY, w, camera.groundMargin);
     ctx.fillStyle = "#3d2f22";
@@ -124,9 +137,92 @@ export class Renderer {
       }
     }
 
+    // Night dims the whole scene (ghosts + popups stay bright, drawn after).
+    if (day < 0.35) {
+      ctx.fillStyle = `rgba(8,12,28,${((0.35 - day) * 1.15).toFixed(3)})`;
+      ctx.fillRect(0, 0, w, h);
+    }
+
     if (hover) this.drawHoverGhost(state, localPlayerId, hover, tool);
 
     this.drawPopups();
+  }
+
+  /** Draw the city's chosen backdrop silhouette along the horizon (parallax). */
+  private drawBackground(kind: string, groundY: number, day: number): void {
+    if (kind === "clear") return;
+    const { ctx, camera } = this;
+    const w = camera.viewW;
+    const shade = (base: number[]): string => rgb(mix(base, [255, 255, 255], day * 0.12));
+    // Parallax: the backdrop drifts slowly relative to the camera.
+    const px = -(camera.offsetX * 0.12) % 200;
+
+    if (kind === "mountains") {
+      ctx.fillStyle = shade([44, 52, 70]);
+      for (let i = -1; i * 260 + px < w + 260; i++) {
+        const bx = i * 260 + px;
+        this.peak(bx + 20, groundY, 150, 220);
+        this.peak(bx + 150, groundY, 110, 300);
+      }
+    } else if (kind === "hills") {
+      ctx.fillStyle = shade([38, 60, 46]);
+      ctx.beginPath();
+      ctx.moveTo(0, groundY);
+      for (let x = 0; x <= w; x += 20) {
+        const y = groundY - 40 - 28 * Math.sin((x + px) / 90) - 14 * Math.sin((x + px) / 37);
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(w, groundY);
+      ctx.closePath();
+      ctx.fill();
+    } else if (kind === "palms") {
+      // Sandy strip + a few palm silhouettes.
+      ctx.fillStyle = shade([70, 66, 44]);
+      ctx.fillRect(0, groundY - 18, w, 18);
+      ctx.fillStyle = shade([30, 46, 40]);
+      for (let i = -1; i * 180 + px < w + 180; i++) this.palm(i * 180 + px + 60, groundY - 18);
+    } else {
+      // "skyline": a distant row of building silhouettes.
+      ctx.fillStyle = shade([28, 38, 58]);
+      let x = px - 200;
+      let seed = 1;
+      while (x < w + 60) {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        const bw = 26 + (seed % 34);
+        const bh = 60 + ((seed >> 5) % 170);
+        ctx.fillRect(x, groundY - bh, bw, bh);
+        x += bw + 6 + ((seed >> 3) % 10);
+      }
+    }
+  }
+
+  private peak(cx: number, groundY: number, halfW: number, height: number): void {
+    const { ctx } = this;
+    ctx.beginPath();
+    ctx.moveTo(cx - halfW, groundY);
+    ctx.lineTo(cx, groundY - height);
+    ctx.lineTo(cx + halfW, groundY);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  private palm(x: number, baseY: number): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.strokeStyle = ctx.fillStyle as string;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(x, baseY);
+    ctx.quadraticCurveTo(x + 8, baseY - 40, x + 4, baseY - 78);
+    ctx.stroke();
+    ctx.lineWidth = 3;
+    for (const [dx, dy] of [[-34, -12], [-20, -30], [20, -30], [34, -12], [0, -34]] as const) {
+      ctx.beginPath();
+      ctx.moveTo(x + 4, baseY - 78);
+      ctx.quadraticCurveTo(x + 4 + dx * 0.5, baseY - 78 + dy, x + 4 + dx, baseY - 78 + dy + 14);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   /**
@@ -576,6 +672,15 @@ function elevatorRuns(plot: Plot): { col: number; from: number; to: number }[] {
     runs.push({ col, from, to: prev });
   }
   return runs;
+}
+
+/** Linear blend of two rgb triples. */
+function mix(a: number[], b: number[], t: number): number[] {
+  const tt = Math.max(0, Math.min(1, t));
+  return [a[0] + (b[0] - a[0]) * tt, a[1] + (b[1] - a[1]) * tt, a[2] + (b[2] - a[2]) * tt];
+}
+function rgb(c: number[]): string {
+  return `rgb(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])})`;
 }
 
 /** Heatmap cell color: t=0 red (bad) -> t=1 green (good). */

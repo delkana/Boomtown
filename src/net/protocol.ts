@@ -30,6 +30,7 @@ export interface GameSummary {
 export interface CreateGameConfig {
   cityName: string;
   archetype: string;
+  background: string;
   plotCount: number;
   maxPlayers: number;
   /** Plaintext password or null. On a real server this would be sent over TLS and hashed. */

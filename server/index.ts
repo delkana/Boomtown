@@ -18,15 +18,16 @@ const dirName = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(dirName, "data");
 const DATA_FILE = path.join(DATA_DIR, "games.json");
 
-const hasSaved = fs.existsSync(DATA_FILE);
-const handle = await startServer({ port: PORT, seed: !hasSaved });
+// Always seed the built-in demo cities fresh, then merge any saved player games
+// on top (so edits to the demo cities always show, and creations persist).
+const handle = await startServer({ port: PORT, seed: true });
 
-if (hasSaved) {
+if (fs.existsSync(DATA_FILE)) {
   try {
     handle.directory.load(fs.readFileSync(DATA_FILE, "utf8"));
-    console.log("Restored saved cities from", DATA_FILE);
+    console.log("Restored saved player games from", DATA_FILE);
   } catch (e) {
-    console.warn("Could not load saved games; seeding fresh:", e);
+    console.warn("Could not load saved games:", e);
   }
 }
 

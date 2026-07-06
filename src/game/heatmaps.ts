@@ -8,7 +8,7 @@ import type { Plot } from "./types";
  * Each `*Rating` returns a raw score; `heatT` normalizes to 0..1 where 1 is
  * "good" (green) and 0 is "bad" (red) for the overlay.
  */
-export type HeatmapKind = "none" | "elevator" | "view" | "noise";
+export type HeatmapKind = "none" | "elevator" | "view" | "noise" | "foot";
 
 function cellHasRoom(plot: Plot, col: number, row: number): boolean {
   return plot.units.some((u) => row === u.row && col >= u.col && col < u.col + u.width);
@@ -69,6 +69,26 @@ export function noiseRating(plot: Plot, col: number, row: number): number {
   return n;
 }
 
+/**
+ * Foot traffic: heaviest on the ground floor (everyone passes through). On other
+ * floors it peaks next to the elevator and scales with how many rooms share that
+ * floor (more residents/workers = more people funneling to the elevator).
+ */
+export function footTraffic(plot: Plot, col: number, row: number): number {
+  if (row === 0) return 100;
+  const roomsOnFloor = plot.units.filter((u) => u.row === row && u.kind !== "elevator").length;
+  if (roomsOnFloor === 0) return 0;
+  let elevDist = Infinity;
+  for (const u of plot.units) {
+    if (u.kind !== "elevator") continue;
+    const d = Math.abs(u.col - col) + Math.abs(u.row - row);
+    if (d < elevDist) elevDist = d;
+  }
+  if (elevDist === Infinity) return 0; // no elevator reaches this room
+  const proximity = Math.max(0, 1 - elevDist / 8);
+  return Math.min(100, 15 + roomsOnFloor * 14 * proximity);
+}
+
 /** Normalized 0..1 rating (1 = good/green, 0 = bad/red) for the overlay. */
 export function heatT(kind: HeatmapKind, plot: Plot, col: number, row: number): number {
   switch (kind) {
@@ -78,6 +98,8 @@ export function heatT(kind: HeatmapKind, plot: Plot, col: number, row: number): 
       return Math.min(1, viewRating(plot, col, row) / 130);
     case "noise":
       return 1 - Math.min(1, noiseRating(plot, col, row) / 90);
+    case "foot":
+      return footTraffic(plot, col, row) / 100;
     default:
       return 1;
   }

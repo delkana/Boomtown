@@ -84,6 +84,8 @@ export interface GameConfig {
   cityName: string;
   /** City archetype id (theme/region), see src/game/archetypes.ts. */
   archetype: string;
+  /** Backdrop drawn behind the buildings, see src/game/backgrounds.ts. */
+  background: string;
   /** Number of plots in the city strip. */
   plotCount: number;
   /** Max concurrent players (hard-capped by MAX_PLAYERS_LIMIT). */
