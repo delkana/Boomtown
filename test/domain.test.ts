@@ -427,8 +427,8 @@ describe("game clock", () => {
     });
   });
 
-  it("labels year-first with full weekday and AM/PM time", () => {
-    expect(gameTime(0).label).toBe("Year 1 · Jan · Monday · 12:00 AM");
+  it("labels year-first with full month, full weekday, and AM/PM time", () => {
+    expect(gameTime(0).label).toBe("Year 1 · January · Monday · 12:00 AM");
   });
 
   it("formats time in 12-hour AM/PM", () => {

@@ -93,6 +93,7 @@ function enterGame(conn: GameConnection): void {
     conn,
     () => hud.update(),
     (sx, sy, delta) => renderer.addMoneyPopup(sx, sy, delta),
+    () => hud.renderInspector(),
   );
   hud = new Hud(
     conn,
@@ -102,6 +103,7 @@ function enterGame(conn: GameConnection): void {
       hud.update();
     },
     (speed) => conn.dispatch({ type: "SET_SPEED", playerId: conn.session.playerId, speed }),
+    () => input.inspected(),
   );
 
   const totalPlots = Object.keys(conn.getState().plots).length;

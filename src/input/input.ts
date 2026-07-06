@@ -3,6 +3,13 @@ import type { Tool } from "../render/renderer";
 import type { Camera } from "../render/camera";
 import type { HoverState } from "../render/renderer";
 
+/** A room being inspected (hovered transiently, or clicked to pin). */
+export interface InspectRef {
+  plotIndex: number;
+  unitId: string;
+  pinned: boolean;
+}
+
 /**
  * Input layer: translates raw pointer/keyboard events into either
  *   (a) camera movement (pure view state, never leaves the client), or
@@ -21,6 +28,9 @@ export class InputController {
   private dragStartOffset = 0;
   private movedWhileDragging = false;
   private keys = new Set<string>();
+  /** A room clicked to "pin" its inspector panel open. */
+  private pinned: { plotIndex: number; unitId: string } | null = null;
+  private lastInspectKey: string | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -29,8 +39,45 @@ export class InputController {
     private onSelectChange: (tool: Tool) => void,
     /** Called after a money-changing action, at the cursor, with the delta. */
     private moneyFx: (screenX: number, screenY: number, delta: number) => void,
+    /** Called when the inspected room (hover or pin) changes. */
+    private onInspect: () => void,
   ) {
     this.attach();
+  }
+
+  /**
+   * The room to show in the inspector: a pinned room takes priority; otherwise
+   * the hovered room while in inspect (no-tool) mode. Null if nothing to show.
+   */
+  inspected(): InspectRef | null {
+    const state = this.conn.getState();
+    if (this.pinned) {
+      const plot = state.plots[this.pinned.plotIndex];
+      if (plot && plot.units.some((u) => u.id === this.pinned!.unitId)) {
+        return { ...this.pinned, pinned: true };
+      }
+      this.pinned = null; // the pinned room was destroyed
+    }
+    if (this.selectedTool === null && this.hover) {
+      const u = this.roomAt(this.hover.plotIndex, this.hover.col, this.hover.row);
+      if (u) return { plotIndex: this.hover.plotIndex, unitId: u.id, pinned: false };
+    }
+    return null;
+  }
+
+  private roomAt(plotIndex: number, col: number, row: number) {
+    const plot = this.conn.getState().plots[plotIndex];
+    return plot?.units.find((u) => u.row === row && col >= u.col && col < u.col + u.width);
+  }
+
+  /** Fire onInspect only when the inspected room actually changes. */
+  private notifyInspectIfChanged(): void {
+    const cur = this.inspected();
+    const key = cur ? `${cur.pinned ? "P" : "H"}:${cur.plotIndex}:${cur.unitId}` : null;
+    if (key !== this.lastInspectKey) {
+      this.lastInspectKey = key;
+      this.onInspect();
+    }
   }
 
   private attach(): void {
@@ -113,6 +160,8 @@ export class InputController {
       if (Math.abs(dx) > 4) this.movedWhileDragging = true;
       this.camera.offsetX = this.dragStartOffset - dx;
       this.clampCamera();
+    } else {
+      this.notifyInspectIfChanged();
     }
   };
 
@@ -125,7 +174,23 @@ export class InputController {
     } catch {
       /* pointer may already be released */
     }
-    if (wasDrag || !this.selectedTool) return;
+    if (wasDrag) return;
+
+    // Inspect mode (no tool): click toggles the pinned room inspector.
+    if (!this.selectedTool) {
+      const cell = this.camera.screenToCell(x, y);
+      const room = cell ? this.roomAt(cell.plotIndex, cell.col, cell.row) : undefined;
+      if (room && cell) {
+        this.pinned =
+          this.pinned && this.pinned.unitId === room.id
+            ? null // click the pinned room again → unpin
+            : { plotIndex: cell.plotIndex, unitId: room.id };
+      } else {
+        this.pinned = null; // clicked empty space → dismiss
+      }
+      this.notifyInspectIfChanged();
+      return;
+    }
 
     const cell = this.camera.screenToCell(x, y);
     if (!cell) return;
@@ -207,7 +272,13 @@ export class InputController {
       X: "destroy",
     };
     if (map[e.key]) this.setSelected(map[e.key]);
-    if (e.key === "Escape") this.setSelected(null);
+    if (e.key === "Escape") {
+      if (this.pinned) {
+        this.pinned = null;
+        this.notifyInspectIfChanged();
+      }
+      this.setSelected(null);
+    }
     if (e.key === "+" || e.key === "=") this.zoomBy(1.15);
     if (e.key === "-" || e.key === "_") this.zoomBy(1 / 1.15);
   };
@@ -219,5 +290,6 @@ export class InputController {
   setSelected(tool: Tool): void {
     this.selectedTool = tool;
     this.onSelectChange(tool);
+    this.notifyInspectIfChanged();
   }
 }

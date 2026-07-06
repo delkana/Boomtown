@@ -9,9 +9,10 @@ import {
 import { archetype } from "../game/archetypes";
 import { gameTime } from "../game/clock";
 import { claimCost } from "../game/economy";
-import type { HeatmapKind } from "../game/heatmaps";
+import { elevatorAccess, viewRating, noiseRating, type HeatmapKind } from "../game/heatmaps";
 import { projectedNet } from "../game/tick";
 import type { GameConnection } from "../net/connection";
+import type { InspectRef } from "../input/input";
 import type { Tool } from "../render/renderer";
 import { flagSvg } from "./flags";
 
@@ -33,6 +34,7 @@ export class Hud {
   private playersEl = must("players");
   private toolbarEl = must("toolbar");
   private overlayEl = must("overlay");
+  private inspectorEl = must("inspector");
   private hintEl = must("hint");
 
   /** Which heatmap overlay to draw (read by the render loop each frame). */
@@ -43,10 +45,54 @@ export class Hud {
     private getSelected: () => Tool,
     private onSelect: (tool: Tool) => void,
     private onSpeed: (speed: number) => void,
+    private getInspected: () => InspectRef | null,
   ) {
     this.buildToolbar();
     this.buildOverlay();
     this.buildHeader();
+  }
+
+  /** Render the right-hand room inspector panel (hover or pinned room). */
+  renderInspector(): void {
+    const info = this.getInspected();
+    if (!info) {
+      this.inspectorEl.classList.add("hidden");
+      return;
+    }
+    const state = this.conn.getState();
+    const plot = state.plots[info.plotIndex];
+    const unit = plot?.units.find((u) => u.id === info.unitId);
+    if (!plot || !unit) {
+      this.inspectorEl.classList.add("hidden");
+      return;
+    }
+    const def = UNIT_DEFS[unit.kind];
+
+    // Ratings averaged across the room's footprint.
+    let elev = 0, view = 0, noise = 0;
+    for (let c = unit.col; c < unit.col + unit.width; c++) {
+      elev += elevatorAccess(plot, c, unit.row);
+      view += viewRating(plot, c, unit.row);
+      noise += noiseRating(plot, c, unit.row);
+    }
+    const n = unit.width;
+    const elevStr = unit.row === 0 ? "—" : String(Math.round(elev / n));
+
+    const revenue = def.incomeAtFull > 0;
+    const gross = revenue ? Math.round(def.incomeAtFull * unit.occupancy) : 0;
+    const net = gross - def.upkeep;
+
+    this.inspectorEl.innerHTML = `
+      <div class="insp-title">${def.label} · Floor ${unit.row}${info.pinned ? ' <span class="pin">📌</span>' : ""}</div>
+      <div class="insp-row"><span>Elevator</span><span>${elevStr}</span></div>
+      <div class="insp-row"><span>View</span><span>${Math.round(view / n)}</span></div>
+      <div class="insp-row"><span>Noise</span><span>${Math.round(noise / n)}</span></div>
+      <div class="insp-row"><span>Occupancy</span><span>${revenue ? Math.round(unit.occupancy * 100) + "%" : "—"}</span></div>
+      <div class="insp-row"><span>Income / ${TICK_MINUTES}min</span><span class="pos">${revenue ? "+$" + gross.toLocaleString() : "$0"}</span></div>
+      <div class="insp-row"><span>Upkeep</span><span class="neg">-$${def.upkeep.toLocaleString()}</span></div>
+      <div class="insp-row net"><span>Net</span><span class="${net >= 0 ? "pos" : "neg"}">${net < 0 ? "-" : "+"}$${Math.abs(net).toLocaleString()}</span></div>
+      <div class="insp-hint">${info.pinned ? "Click again or Esc to close" : "Click to pin"}</div>`;
+    this.inspectorEl.classList.remove("hidden");
   }
 
   private buildOverlay(): void {
@@ -167,6 +213,7 @@ export class Hud {
     for (const el of Array.from(this.overlayEl.children) as HTMLElement[]) {
       if (el.dataset.hm) el.classList.toggle("active", el.dataset.hm === this.heatmap);
     }
+    this.renderInspector(); // keep pinned/hovered room stats live
 
     const myPlots = Object.values(state.plots).filter((p) => p.ownerId === me);
     const myUnits = myPlots.flatMap((p) => p.units);

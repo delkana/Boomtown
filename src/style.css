@@ -580,6 +580,53 @@ button.primary.big {
   font-variant-numeric: tabular-nums;
 }
 
+/* Room inspector — right side, above the nav controls. */
+#inspector {
+  right: 16px;
+  bottom: 70px;
+  width: 190px;
+  font-variant-numeric: tabular-nums;
+}
+.insp-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--panel-border);
+  padding-bottom: 6px;
+}
+.insp-title .pin {
+  font-size: 11px;
+}
+.insp-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  padding: 2px 0;
+  color: var(--muted);
+}
+.insp-row span:last-child {
+  color: var(--text);
+}
+.insp-row.net {
+  border-top: 1px solid var(--panel-border);
+  margin-top: 4px;
+  padding-top: 5px;
+  font-weight: 600;
+}
+.insp-row .pos {
+  color: var(--pos) !important;
+}
+.insp-row .neg {
+  color: var(--neg) !important;
+}
+.insp-hint {
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
 /* Minimap — top-center, under the topbar. */
 #minimap {
   top: 70px;

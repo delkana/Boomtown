@@ -13,11 +13,16 @@ export const MONTH_NAMES = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ] as const;
+export const MONTH_NAMES_FULL = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
 
 export interface GameTime {
   year: number; // 1-based
   month: number; // 1-based
   monthName: string; // "Jan".."Dec"
+  monthFull: string; // "January".."December"
   dayName: string; // "Mon".."Sun"
   dayFull: string; // "Monday".."Sunday"
   hour: number; // 0..23
@@ -40,6 +45,7 @@ export function gameTime(tick: number): GameTime {
   const monthIdx = totalWeeks % MONTHS_PER_YEAR;
   const month = monthIdx + 1;
   const monthName = MONTH_NAMES[monthIdx];
+  const monthFull = MONTH_NAMES_FULL[monthIdx];
   const year = Math.floor(totalWeeks / MONTHS_PER_YEAR) + 1;
   const time = `${pad(hour)}:${pad(minute)}`;
   const h12 = hour % 12 === 0 ? 12 : hour % 12;
@@ -48,13 +54,14 @@ export function gameTime(tick: number): GameTime {
     year,
     month,
     monthName,
+    monthFull,
     dayName,
     dayFull,
     hour,
     minute,
     time,
     time12,
-    label: `Year ${year} · ${monthName} · ${dayFull} · ${time12}`,
+    label: `Year ${year} · ${monthFull} · ${dayFull} · ${time12}`,
   };
 }
 
