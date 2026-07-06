@@ -178,6 +178,16 @@ interface Role {
   salary: number;
 }
 
+/** Work-week patterns for apartment residents' (external) jobs. */
+const RESIDENT_DAYS = [
+  [0, 1, 2, 3, 4], // Mon–Fri
+  [0, 1, 2, 3, 4], // Mon–Fri (weighted common)
+  [0, 1, 2, 3, 4, 5], // Mon–Sat
+  [1, 2, 3, 4, 5], // Tue–Sat
+  [2, 3, 4, 5, 6], // Wed–Sun
+  [0, 1, 3, 4, 5], // a day off midweek
+];
+
 /** The senior/lead role for each business subset (index-0 person gets this). */
 const LEAD: Record<string, Role> = {
   // office
@@ -258,6 +268,36 @@ function buildWorkers(
   open: number,
   close: number,
 ): Worker[] {
+  // Apartment residents work an (unmodelled) job elsewhere: they get fake work
+  // hours + days so the sim knows when they're out, but no title/salary.
+  if (kind === "apartment") {
+    const workers: Worker[] = [];
+    for (let i = 0; i < count; i++) {
+      const wh = hashString(`${seed}:w${i}`);
+      const wStart = 6 + (wh % 5); // leave for a 6–10am start
+      const wEnd = wStart + 8 + ((wh >>> 3) % 2); // an 8–9h day
+      workers.push({
+        name: personName(archetypeId, wh),
+        title: "",
+        dailySalary: 0,
+        days: RESIDENT_DAYS[wh % RESIDENT_DAYS.length],
+        startHour: wStart,
+        endHour: wEnd,
+        lunchHour: -1,
+      });
+    }
+    return workers;
+  }
+  // Hotel guests have no schedule at all (name only).
+  if (kind === "hotel") {
+    const workers: Worker[] = [];
+    for (let i = 0; i < count; i++) {
+      const wh = hashString(`${seed}:w${i}`);
+      workers.push({ name: personName(archetypeId, wh), title: "", dailySalary: 0, days: [], startHour: 0, endHour: 0, lunchHour: -1 });
+    }
+    return workers;
+  }
+
   const lead = LEAD[subId] ?? { title: "Manager", salary: 300 };
   const staff = staffRoles(kind, subId);
   // Shops and restaurants run two shifts split at the midpoint; the lead works
@@ -331,7 +371,9 @@ export function generateTenant(
         ? 4 + ((h >>> 5) % 4) // 4–7 total across two shifts (~2–4 at once)
         : kind === "restaurant"
           ? 7 + ((h >>> 5) % 6) // 7–12 total across two shifts (~4–7 at once)
-          : Math.max(1, Math.round((HEADCOUNT[kind] ?? 2) * width * (0.7 + ((h >>> 5) % 50) / 100)));
+          : kind === "apartment"
+            ? 1 + ((h >>> 5) % 2) // 1–2 residents
+            : Math.max(1, Math.round((HEADCOUNT[kind] ?? 2) * width * (0.7 + ((h >>> 5) % 50) / 100)));
   const days = sub.days ?? ALL_WEEK;
   const base = RENT_BASE[kind] ?? 1000;
   const dailyRent = Math.round(base * (0.5 + Math.max(0, Math.min(1, appeal))) * (0.9 + ((h >>> 9) % 25) / 100));
@@ -396,6 +438,15 @@ export function shiftLabel(w: Worker): string {
 export function lunchLabel(w: Worker): string {
   if (w.lunchHour < 0) return "";
   return `${hourLabel(w.lunchHour)}–${hourLabel(w.lunchHour + 1)}`;
+}
+
+/**
+ * For a resident (no in-building job but a work schedule elsewhere): their
+ * work days + hours, e.g. "Mon–Fri · 9a–5p". Empty for employees and guests.
+ */
+export function workScheduleLabel(w: Worker): string {
+  if (w.dailySalary > 0 || w.days.length === 0) return "";
+  return `${daysLabel(w.days)} · ${hourLabel(w.startHour)}–${hourLabel(w.endHour)}`;
 }
 
 /** What to call the headcount in the UI for this kind. */

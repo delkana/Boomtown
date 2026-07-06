@@ -20,7 +20,7 @@ import {
   roomSatisfaction,
   type HeatmapKind,
 } from "../game/heatmaps";
-import { headcountLabel, hasTrades, tenantOpen, daysLabel, shiftLabel, lunchLabel } from "../game/tenants";
+import { headcountLabel, hasTrades, tenantOpen, daysLabel, shiftLabel, lunchLabel, workScheduleLabel } from "../game/tenants";
 import { elevatorRuns, runContaining } from "../game/elevator";
 import { dayOfWeek } from "../game/clock";
 import { projectedDailyNet } from "../game/tick";
@@ -145,12 +145,16 @@ export class Hud {
       const roster = tenant.workers ?? [];
       const rosterRows = roster
         .map((w) => {
-          // People without a job here (residents/guests) show just a name.
+          // Employees show job details; residents show their (external) work
+          // schedule so you know when they're home; guests show just a name.
+          const sched = workScheduleLabel(w);
           const meta =
             w.dailySalary > 0
               ? `<div class="roster-meta">${escapeHtml(w.title)} · $${w.dailySalary.toLocaleString()}/day</div>
                  <div class="roster-meta">${daysLabel(w.days)} · ${shiftLabel(w)} · lunch ${lunchLabel(w)}</div>`
-              : "";
+              : sched
+                ? `<div class="roster-meta">Works away · ${sched}</div>`
+                : "";
           return `<div class="roster-row"><div class="roster-name">${escapeHtml(w.name)}</div>${meta}</div>`;
         })
         .join("");

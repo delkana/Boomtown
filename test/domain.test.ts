@@ -707,6 +707,26 @@ describe("tenants", () => {
     }
   });
 
+  it("apartments hold 1–2 residents with an external work schedule (no salary)", () => {
+    const counts = new Set<number>();
+    for (let i = 0; i < 40; i++) {
+      const t = generateTenant("apartment", `apt:${i}`, 0.7, 2)!;
+      counts.add(t.employees);
+      expect(t.employees).toBeGreaterThanOrEqual(1);
+      expect(t.employees).toBeLessThanOrEqual(2);
+      expect(t.workers).toHaveLength(t.employees);
+      for (const r of t.workers) {
+        expect(r.name).toContain(" ");
+        expect(r.dailySalary).toBe(0); // job is elsewhere; not modelled
+        expect(r.title).toBe("");
+        expect(r.days.length).toBeGreaterThan(0); // they work some days
+        expect(r.endHour).toBeGreaterThan(r.startHour);
+        expect(r.startHour).toBeGreaterThanOrEqual(6); // a plausible day-job start
+      }
+    }
+    expect(counts.has(1) && counts.has(2)).toBe(true); // both sizes occur
+  });
+
   it("names follow the city archetype (region-appropriate)", () => {
     const jp = generateTenant("office", "seed:jp", 0.7, 2, "japan")!;
     const su = generateTenant("office", "seed:jp", 0.7, 2, "ussr")!;

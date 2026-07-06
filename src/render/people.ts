@@ -39,6 +39,7 @@ type PState =
 interface Person {
   id: string;
   plotIndex: number;
+  isResident: boolean; // lives here + commutes OUT to work (vs. commuting IN)
   worker: Worker | null; // identity (name, title, shift…)
   roomLeft: number; // office footprint, for milling bounds
   roomW: number;
@@ -85,8 +86,12 @@ export interface PersonView {
 
 const WORKER_COLORS = ["#39424f", "#4a3f2f", "#2f3a44", "#463a4a", "#3a4a3a", "#4a3a34", "#37414a", "#54473a"];
 
-/** Room kinds whose staff commute in and work on-site (residents/guests don't). */
-const WORKING_KINDS = new Set(["office", "medical", "store", "restaurant"]);
+/**
+ * Room kinds whose people the sim animates: workers who commute IN to work
+ * (offices/clinics/shops/restaurants) and apartment residents who live here and
+ * commute OUT to a job (see the resident inversion in stepPerson).
+ */
+const PEOPLE_KINDS = new Set(["office", "medical", "store", "restaurant", "apartment"]);
 
 export class PeopleSim {
   private people = new Map<string, Person>();
@@ -152,17 +157,19 @@ export class PeopleSim {
           });
         }
       }
-      // Workers (offices, clinics, shops, restaurants) commuting to their room.
+      // People with a room to be in: staff commuting to work, or residents
+      // living here and commuting out to a job.
       for (const unit of plot.units) {
-        if (!unit.tenant || !WORKING_KINDS.has(unit.kind)) continue;
+        if (!unit.tenant || !PEOPLE_KINDS.has(unit.kind)) continue;
         const shaftCol = unit.row === 0 ? -1 : this.shaftFor(plot, unit.col, unit.row);
-        if (unit.row !== 0 && shaftCol === null) continue; // office unreachable by lift → no workers
+        if (unit.row !== 0 && shaftCol === null) continue; // room unreachable by lift → no people
         const count = Math.max(1, unit.tenant.employees);
         for (let i = 0; i < count; i++) {
           const id = `${plot.id}:${unit.id}:w${i}`;
           desired.add(id);
           const p = this.people.get(id) ?? this.createPerson(id, plot.index);
           // Keep identity/location/schedule fresh (tenant or layout may have changed).
+          p.isResident = unit.kind === "apartment";
           p.worker = unit.tenant.workers[i] ?? null;
           p.roomLeft = unit.col;
           p.roomW = unit.width;
@@ -186,6 +193,7 @@ export class PeopleSim {
     return {
       id,
       plotIndex,
+      isResident: false,
       worker: null,
       roomLeft: 0,
       roomW: 1,
@@ -214,9 +222,16 @@ export class PeopleSim {
     p.openDays = w ? w.days : [];
     const start = w ? w.startHour : 9;
     const end = w ? w.endHour : 17;
-    // Arrive about an hour before the shift (±20 min); leave 1–15 min after.
-    p.arriveHour = start - 1 + ((h % 40) - 20) / 60;
-    p.departHour = end + (((h >>> 5) % 15) + 1) / 60;
+    if (p.isResident) {
+      // arriveHour/departHour bound the AWAY window: they leave ~1h before work
+      // and return when they get off. Outside this window they're home.
+      p.arriveHour = start - 1 + ((h % 20) - 10) / 60;
+      p.departHour = end + (h % 15) / 60;
+    } else {
+      // Arrive about an hour before the shift (±20 min); leave 1–15 min after.
+      p.arriveHour = start - 1 + ((h % 40) - 20) / 60;
+      p.departHour = end + (((h >>> 5) % 15) + 1) / 60;
+    }
   }
 
   /** Nearest elevator column reaching both the ground and the office floor. */
@@ -370,9 +385,20 @@ export class PeopleSim {
   // --- per-worker state machine ---------------------------------------------
 
   private stepPerson(p: Person, hourF: number, dayIndex: number, dt: number): void {
-    const openDay = p.openDays.includes(dayIndex);
-    const active = openDay && hourF >= p.arriveHour && hourF < p.departHour;
-    const leaving = hourF >= p.departHour || !openDay;
+    const onDay = p.openDays.includes(dayIndex);
+    // `active` = should be in the room; `leaving` = should head out. Workers are
+    // in the room during work hours; residents are home EXCEPT during work hours
+    // (they commute out), so the two triggers invert.
+    let active: boolean;
+    let leaving: boolean;
+    if (p.isResident) {
+      const away = onDay && hourF >= p.arriveHour && hourF < p.departHour; // out at their job
+      active = !away;
+      leaving = away;
+    } else {
+      active = onDay && hourF >= p.arriveHour && hourF < p.departHour;
+      leaving = hourF >= p.departHour || !onDay;
+    }
     const ground = p.officeRow === 0;
     const walk = (target: number, speed = WALK_SPEED): boolean => {
       const d = target - p.x;

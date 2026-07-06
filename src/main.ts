@@ -9,7 +9,7 @@ import { LobbyScreen } from "./ui/lobby";
 import { LocalServer, type GameServer } from "./net/localServer";
 import { RemoteServer } from "./net/remoteServer";
 import type { GameConnection } from "./net/connection";
-import { daysLabel, shiftLabel, lunchLabel } from "./game/tenants";
+import { daysLabel, shiftLabel, lunchLabel, workScheduleLabel } from "./game/tenants";
 import type { Worker } from "./game/types";
 
 /**
@@ -96,13 +96,17 @@ function enterGame(conn: GameConnection): void {
       return;
     }
     const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    // People without a job here (residents/guests) show just a name.
+    // Employees show job details; residents show their (external) work schedule;
+    // guests show just a name.
+    const sched = workScheduleLabel(w);
     const detail =
       w.dailySalary > 0
         ? `<div class="tip-role">${esc(w.title)}</div>
            <div class="tip-line">$${w.dailySalary.toLocaleString()}/day · ${daysLabel(w.days)} · ${shiftLabel(w)}</div>
            <div class="tip-line">Lunch ${lunchLabel(w)}</div>`
-        : "";
+        : sched
+          ? `<div class="tip-line">Works away · ${sched}</div>`
+          : "";
     personTipEl.innerHTML = `<div class="tip-name">${esc(w.name)}</div>${detail}`;
     personTipEl.classList.toggle("locked", locked);
     personTipEl.style.left = `${sx}px`;
