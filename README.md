@@ -67,10 +67,14 @@ every city to `server/data/games.json`, so it survives restarts.
   plot you own multiplies the cost (2nd ×2, 3rd ×3, …). Towers can rise 50 floors.
 - Every city also has a couple of **feature plots** — a river crossing, a park,
   or an elevated highway (~6 tiles wide) — that can't be claimed or built on.
+- **Frame** (`G`): before any room you must build **structural girders** — one
+  per tile, costing `$20 + $5×floor`. A girder must rest on the ground or a
+  girder below it, so the frame rises column by column. Right-click removes a
+  bare girder.
 - **Build** (`1`–`4`): Lobby, Office, Apartment, Elevator — click a grid cell on
-  a plot **you own**. Build a **Lobby** on the ground floor first; everything
-  must rest on the ground or on another unit (no floating). Offices/apartments
-  only earn money when a Lobby exists **and** an Elevator reaches their floor.
+  a plot **you own** that is already girdered across the room's footprint. Build
+  a **Lobby** on the ground floor first. Offices/apartments only earn money when
+  a Lobby exists **and** an Elevator reaches their floor.
 - **Right-click** a unit to sell it (50% refund).
 - **Drag** or use **arrow keys** / `A`,`D` to pan the city. `Esc` deselects.
   **Leave** (top bar) returns to the lobby.
@@ -122,7 +126,7 @@ Two rules drive the layout:
 | `src/game/economy.ts`      | STATE    | Land pricing: width-based base cost × ownership multiplier. Shared by reducer + UI.   |
 | `src/game/features.ts`     | STATE    | Non-buildable city features (river/park/highway): kinds, names, placement helpers.   |
 | `src/game/hash.ts`         | STATE    | Deterministic string hash used for reproducible city generation.                     |
-| `src/game/commands.ts`     | STATE    | `Command` union (`CLAIM_PLOT`, `PLACE_UNIT`, `SELL_UNIT`) — **the wire protocol for intents**. |
+| `src/game/commands.ts`     | STATE    | `Command` union (claim, place/sell girder, place/sell unit) — **the wire protocol for intents**. |
 | `src/game/reducer.ts`      | STATE    | `applyCommand` — pure, fully validated, authoritative state transitions.             |
 | `src/game/tick.ts`         | STATE    | `advanceTick` — pure economy step (occupancy, income, upkeep).                       |
 | `src/net/protocol.ts`      | BOUNDARY | Wire DTOs + WebSocket message unions (`ClientMsg`, `ServerMsg`).                      |

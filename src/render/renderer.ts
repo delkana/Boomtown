@@ -1,6 +1,6 @@
 import { CELL_SIZE, MAX_ROWS, UNIT_DEFS } from "../game/constants";
 import type { GameState, Plot } from "../game/types";
-import { unitAt } from "../game/reducer";
+import { unitAt, hasGirder } from "../game/reducer";
 import { claimCost } from "../game/economy";
 import { featureLabel } from "../game/features";
 import { Camera } from "./camera";
@@ -17,8 +17,11 @@ export interface HoverState {
   row: number;
 }
 
-/** What the player currently has selected: a build unit, "claim", or nothing. */
-export type Tool = keyof typeof UNIT_DEFS | "claim" | null;
+/** What the player currently has selected: a build unit, girder, claim, or nothing. */
+export type Tool = keyof typeof UNIT_DEFS | "claim" | "girder" | null;
+
+/** Steel-frame color for structural girders. */
+const GIRDER_COLOR = "#b5793a";
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
@@ -120,6 +123,13 @@ export class Renderer {
       }
     }
 
+    // Structural girders (drawn first; rooms are painted over them).
+    for (const g of plot.girders ?? []) {
+      const gx = camera.worldToScreenX(leftWorld + g.col * CELL_SIZE);
+      const gy = camera.rowTopScreenY(g.row);
+      this.drawGirder(gx, gy, cell);
+    }
+
     // Units.
     const bandH = Math.max(2, cell * 0.07);
     const showLabels = cell >= 30;
@@ -176,6 +186,27 @@ export class Renderer {
       ctx.fillText(isOwn ? `★ You · ${owner?.name ?? ""}` : owner?.name ?? "", cx, groundY + 25);
     }
     ctx.textAlign = "left";
+  }
+
+  /** Draw a single structural girder (steel frame + cross-brace) in a cell. */
+  private drawGirder(x: number, y: number, cell: number): void {
+    const { ctx } = this;
+    const t = Math.max(1, cell * 0.09); // beam thickness
+    ctx.fillStyle = GIRDER_COLOR;
+    // Outer frame.
+    ctx.fillRect(x, y, cell, t); // top
+    ctx.fillRect(x, y + cell - t, cell, t); // bottom
+    ctx.fillRect(x, y, t, cell); // left
+    ctx.fillRect(x + cell - t, y, t, cell); // right
+    // Diagonal cross-brace.
+    ctx.strokeStyle = GIRDER_COLOR;
+    ctx.lineWidth = Math.max(1, cell * 0.06);
+    ctx.beginPath();
+    ctx.moveTo(x + t, y + t);
+    ctx.lineTo(x + cell - t, y + cell - t);
+    ctx.moveTo(x + cell - t, y + t);
+    ctx.lineTo(x + t, y + cell - t);
+    ctx.stroke();
   }
 
   /** Draw a non-buildable city feature (river / park / highway) + its nameplate. */
@@ -292,6 +323,25 @@ export class Renderer {
       ctx.strokeStyle = canAfford ? "#78dc78" : "#c84646";
       ctx.lineWidth = 2;
       ctx.strokeRect(x + 1, top + 1, w - 2, hgt - 2);
+      return;
+    }
+
+    // Girder tool: a single structural cell.
+    if (tool === "girder") {
+      if (plot.ownerId !== localId) return;
+      const gx = camera.worldToScreenX(leftWorld + hover.col * CELL_SIZE);
+      const gy = camera.rowTopScreenY(hover.row);
+      const supported = hover.row === 0 || hasGirder(plot, hover.col, hover.row - 1);
+      const blocked =
+        hover.col >= plot.cols ||
+        hover.row >= MAX_ROWS ||
+        hasGirder(plot, hover.col, hover.row) ||
+        !supported;
+      ctx.fillStyle = blocked ? "rgba(200,70,70,0.30)" : "rgba(181,121,58,0.45)";
+      ctx.fillRect(gx + 1, gy + 1, cell - 2, cell - 2);
+      ctx.strokeStyle = blocked ? "#c84646" : GIRDER_COLOR;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(gx + 1, gy + 1, cell - 2, cell - 2);
       return;
     }
 

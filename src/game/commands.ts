@@ -29,6 +29,20 @@ export type Command =
       plotIndex: number;
     }
   | {
+      type: "PLACE_GIRDER";
+      playerId: string;
+      plotIndex: number;
+      col: number;
+      row: number;
+    }
+  | {
+      type: "SELL_GIRDER";
+      playerId: string;
+      plotIndex: number;
+      col: number;
+      row: number;
+    }
+  | {
       type: "PLACE_UNIT";
       playerId: string;
       plotIndex: number;

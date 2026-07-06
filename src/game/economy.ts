@@ -1,4 +1,6 @@
 import {
+  GIRDER_BASE_COST,
+  GIRDER_COST_PER_FLOOR,
   MAX_PLOT_COLS,
   MIN_PLOT_COLS,
   PLOT_COST_MAX,
@@ -16,6 +18,11 @@ import type { GameState } from "./types";
  *   2. How much land the player already holds — the Nth plot a player buys
  *      costs N× its base price (1st plot ×1, 2nd ×2, 3rd ×3, …).
  */
+
+/** Cost of one girder tile on a given floor: base + per-floor surcharge. */
+export function girderCost(row: number): number {
+  return GIRDER_BASE_COST + GIRDER_COST_PER_FLOOR * row;
+}
 
 /** Base land price for a plot of the given width, before the ownership multiplier. */
 export function plotBaseCost(cols: number): number {

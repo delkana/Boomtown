@@ -107,6 +107,12 @@ export class AuthoritativeGame {
         width: def.width,
         occupancy: s.occupancy ?? 0,
       });
+      // Seed the structural girders under each unit so the frame is consistent.
+      for (let c = s.col; c < s.col + def.width; c++) {
+        if (!plot.girders.some((g) => g.col === c && g.row === s.row)) {
+          plot.girders.push({ col: c, row: s.row });
+        }
+      }
     }
   }
 

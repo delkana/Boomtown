@@ -19,6 +19,12 @@ import type { FeatureKind } from "./features";
 /** What kind of thing can occupy a grid cell on a tower floor. */
 export type UnitKind = "lobby" | "office" | "apartment" | "elevator";
 
+/** A single structural-support cell (girder) in a tower's frame. */
+export interface Girder {
+  col: number;
+  row: number;
+}
+
 /** A single placed unit on a plot's tower grid. */
 export interface Unit {
   id: string;
@@ -55,6 +61,11 @@ export interface Plot {
   feature: FeatureKind | null;
   /** Owning player id, or `null` if the plot is unclaimed / for sale. */
   ownerId: string | null;
+  /**
+   * Structural frame: the cells that have girders. A room can only be placed
+   * where girders already fill its footprint, so you build the skeleton first.
+   */
+  girders: Girder[];
   units: Unit[];
 }
 

@@ -146,6 +146,11 @@ export class GameDirectory {
     this.games.clear();
     this.tokens.clear();
     for (const g of parsed.games) {
+      // Tolerate saves from before a field existed (e.g. girders).
+      for (const key of Object.keys(g.state.plots)) {
+        const plot = g.state.plots[Number(key)];
+        if (!plot.girders) plot.girders = [];
+      }
       const game = new AuthoritativeGame(g.state, g.password);
       this.games.set(g.state.id, game);
       this.tokens.set(g.state.id, new Map(g.tokens));

@@ -4,7 +4,7 @@ import { applyCommand } from "../src/game/reducer";
 import { advanceTick, projectedNet } from "../src/game/tick";
 import { propertyNameFor, archetype } from "../src/game/archetypes";
 import { MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
-import { claimCost, plotBaseCost } from "../src/game/economy";
+import { claimCost, girderCost, plotBaseCost } from "../src/game/economy";
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
 import type { GameState } from "../src/game/types";
 
@@ -15,6 +15,15 @@ function buildable(s: GameState, n: number): number[] {
     .map((p) => p.index)
     .sort((a, b) => a - b)
     .slice(0, n);
+}
+
+/** Place girders up each listed [col,row] column from the ground to that row. */
+function frame(s: GameState, playerId: string, plotIndex: number, cells: [number, number][]): void {
+  for (const [col, row] of cells) {
+    for (let r = 0; r <= row; r++) {
+      applyCommand(s, { type: "PLACE_GIRDER", playerId, plotIndex, col, row: r });
+    }
+  }
 }
 
 /**
@@ -139,8 +148,9 @@ describe("PLACE_UNIT", () => {
     expect(r.error).toMatch(/lobby/i);
   });
 
-  it("places a lobby on the ground and charges for it", () => {
+  it("places a lobby on the ground (over girders) and charges for it", () => {
     const s = claimed();
+    frame(s, "p1", 0, [[0, 0], [1, 0]]);
     const before = s.players["p1"].money;
     const r = applyCommand(s, {
       type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0,
@@ -152,6 +162,7 @@ describe("PLACE_UNIT", () => {
 
   it("forbids a lobby off the ground floor", () => {
     const s = claimed();
+    frame(s, "p1", 0, [[0, 3], [1, 3]]);
     const r = applyCommand(s, {
       type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 3,
     });
@@ -160,23 +171,26 @@ describe("PLACE_UNIT", () => {
 
   it("allows only one lobby", () => {
     const s = claimed();
+    frame(s, "p1", 0, [[0, 0], [1, 0], [2, 0], [3, 0]]);
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
     const r = applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 2, row: 0 });
     expect(r.ok).toBe(false);
   });
 
-  it("rejects floating units (needs support below)", () => {
+  it("rejects a room with no girders under it", () => {
     const s = claimed();
+    frame(s, "p1", 0, [[0, 0], [1, 0]]);
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
     const r = applyCommand(s, {
       type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "office", col: 4, row: 3,
     });
     expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/support/i);
+    expect(r.error).toMatch(/girder|support/i);
   });
 
   it("rejects overlapping footprints", () => {
     const s = claimed();
+    frame(s, "p1", 0, [[0, 0], [1, 0]]);
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
     // lobby is 2 wide at col 0 → col 1 is occupied
     const r = applyCommand(s, {
@@ -187,6 +201,7 @@ describe("PLACE_UNIT", () => {
 
   it("rejects placement past the plot's right edge", () => {
     const s = claimed();
+    frame(s, "p1", 0, [[0, 0], [1, 0]]);
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
     // office is 2 wide; placing it at (cols - 1) spills past the plot edge.
     const r = applyCommand(s, {
@@ -196,10 +211,66 @@ describe("PLACE_UNIT", () => {
   });
 });
 
+describe("girders (structural supports)", () => {
+  function owned(): GameState {
+    const s = freshGame();
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    return s;
+  }
+
+  it("cost is $20 + $5 per floor above the ground", () => {
+    expect(girderCost(0)).toBe(20);
+    expect(girderCost(1)).toBe(25);
+    expect(girderCost(10)).toBe(70);
+  });
+
+  it("places a ground girder and deducts its cost", () => {
+    const s = owned();
+    const before = s.players["p1"].money;
+    const r = applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col: 0, row: 0 });
+    expect(r.ok).toBe(true);
+    expect(s.plots[0].girders).toHaveLength(1);
+    expect(s.players["p1"].money).toBe(before - 20);
+  });
+
+  it("needs the ground or a girder directly below", () => {
+    const s = owned();
+    expect(applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col: 0, row: 2 }).ok).toBe(false);
+    applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col: 0, row: 0 });
+    expect(applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col: 0, row: 1 }).ok).toBe(true);
+  });
+
+  it("gates a room until its whole footprint is framed", () => {
+    const s = owned();
+    applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col: 0, row: 0 });
+    const half = applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    expect(half.ok).toBe(false); // lobby is 2 wide; only one cell framed
+    applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col: 1, row: 0 });
+    const full = applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    expect(full.ok).toBe(true);
+  });
+
+  it("sells a bare girder but not one under a room or supporting another", () => {
+    const s = owned();
+    applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col: 0, row: 0 });
+    applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col: 0, row: 1 });
+    // (0,0) supports (0,1) → can't sell it yet.
+    expect(applyCommand(s, { type: "SELL_GIRDER", playerId: "p1", plotIndex: 0, col: 0, row: 0 }).ok).toBe(false);
+    // The top girder is free to sell.
+    expect(applyCommand(s, { type: "SELL_GIRDER", playerId: "p1", plotIndex: 0, col: 0, row: 1 }).ok).toBe(true);
+    // Put a lobby over (0,0)+(1,0); now (0,0) can't be sold (room on it).
+    applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col: 1, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    expect(applyCommand(s, { type: "SELL_GIRDER", playerId: "p1", plotIndex: 0, col: 0, row: 0 }).ok).toBe(false);
+  });
+});
+
 describe("SELL_UNIT", () => {
   it("removes the unit and refunds half", () => {
     const s = freshGame();
     applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0]]);
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
     const id = s.plots[0].units[0].id;
     const before = s.players["p1"].money;
@@ -215,6 +286,7 @@ describe("advanceTick economy", () => {
     const s = freshGame();
     s.players["p1"].money = 1_000_000;
     applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0], [2, 0], [4, 0], [5, 0]]);
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 0 });
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "office", col: 4, row: 0 });
@@ -324,6 +396,7 @@ describe("serialize / deserialize", () => {
   it("round-trips state losslessly", () => {
     const s = freshGame();
     applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0]]);
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
     advanceTick(s);
     const copy = deserialize(serialize(s));

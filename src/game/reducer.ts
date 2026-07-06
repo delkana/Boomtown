@@ -1,7 +1,7 @@
 import type { Command } from "./commands";
 import type { GameState, Plot, Unit, UnitKind } from "./types";
 import { MAX_ROWS, UNIT_DEFS } from "./constants";
-import { claimCost } from "./economy";
+import { claimCost, girderCost } from "./economy";
 import { featureLabel } from "./features";
 
 /**
@@ -27,6 +27,10 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
   switch (cmd.type) {
     case "CLAIM_PLOT":
       return claimPlot(state, cmd);
+    case "PLACE_GIRDER":
+      return placeGirder(state, cmd);
+    case "SELL_GIRDER":
+      return sellGirder(state, cmd);
     case "PLACE_UNIT":
       return placeUnit(state, cmd);
     case "SELL_UNIT":
@@ -36,6 +40,64 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
       return { ok: false, error: `Unknown command ${(_never as Command).type}` };
     }
   }
+}
+
+function ownedBuildablePlot(
+  state: GameState,
+  playerId: string,
+  plotIndex: number,
+): { ok: true; plot: Plot } | { ok: false; error: string } {
+  const player = state.players[playerId];
+  if (!player) return { ok: false, error: "No such player" };
+  const plot = state.plots[plotIndex];
+  if (!plot) return { ok: false, error: "No such plot" };
+  if (plot.feature) return { ok: false, error: `${featureLabel(plot.feature)} — nothing can be built here` };
+  if (plot.ownerId === null) return { ok: false, error: "Claim this plot before building" };
+  if (plot.ownerId !== playerId) return { ok: false, error: "You don't own this plot" };
+  return { ok: true, plot };
+}
+
+function placeGirder(
+  state: GameState,
+  cmd: Extract<Command, { type: "PLACE_GIRDER" }>,
+): CommandResult {
+  const owned = ownedBuildablePlot(state, cmd.playerId, cmd.plotIndex);
+  if (!owned.ok) return fail(owned.error);
+  const plot = owned.plot;
+  const player = state.players[cmd.playerId];
+
+  if (cmd.row < 0 || cmd.row >= MAX_ROWS) return fail("Out of vertical bounds");
+  if (cmd.col < 0 || cmd.col >= plot.cols) return fail("Outside the plot");
+  if (hasGirder(plot, cmd.col, cmd.row)) return fail("Support already here");
+  // Girders rise from the ground: a girder needs the ground or a girder below.
+  if (cmd.row > 0 && !hasGirder(plot, cmd.col, cmd.row - 1))
+    return fail("Girders must rest on the ground or another girder");
+
+  const cost = girderCost(cmd.row);
+  if (player.money < cost) return fail("Not enough money");
+
+  plot.girders.push({ col: cmd.col, row: cmd.row });
+  player.money -= cost;
+  return ok();
+}
+
+function sellGirder(
+  state: GameState,
+  cmd: Extract<Command, { type: "SELL_GIRDER" }>,
+): CommandResult {
+  const owned = ownedBuildablePlot(state, cmd.playerId, cmd.plotIndex);
+  if (!owned.ok) return fail(owned.error);
+  const plot = owned.plot;
+  const player = state.players[cmd.playerId];
+
+  const idx = plot.girders.findIndex((g) => g.col === cmd.col && g.row === cmd.row);
+  if (idx < 0) return fail("No support here");
+  if (isOccupied(plot, cmd.col, cmd.row)) return fail("Remove the room on this girder first");
+  if (hasGirder(plot, cmd.col, cmd.row + 1)) return fail("Remove the girder above first");
+
+  plot.girders.splice(idx, 1);
+  player.money += Math.floor(girderCost(cmd.row) * 0.5);
+  return ok();
 }
 
 function claimPlot(
@@ -62,14 +124,10 @@ function placeUnit(
   state: GameState,
   cmd: Extract<Command, { type: "PLACE_UNIT" }>,
 ): CommandResult {
+  const owned = ownedBuildablePlot(state, cmd.playerId, cmd.plotIndex);
+  if (!owned.ok) return fail(owned.error);
+  const plot = owned.plot;
   const player = state.players[cmd.playerId];
-  if (!player) return fail("No such player");
-
-  const plot = state.plots[cmd.plotIndex];
-  if (!plot) return fail("No such plot");
-  if (plot.feature) return fail(`${featureLabel(plot.feature)} — nothing can be built here`);
-  if (plot.ownerId === null) return fail("Claim this plot before building");
-  if (plot.ownerId !== cmd.playerId) return fail("You don't own this plot");
 
   const def = UNIT_DEFS[cmd.kind];
   if (!def) return fail("Unknown unit type");
@@ -89,17 +147,11 @@ function placeUnit(
   if (!hasLobby && cmd.kind !== "lobby")
     return fail("Build a Lobby on the ground floor first");
 
-  // Overlap check across the unit's full footprint.
+  // Overlap + support: every footprint cell must be free of other rooms AND
+  // already have a girder (you build the structural frame first).
   for (let c = cmd.col; c < cmd.col + def.width; c++) {
     if (isOccupied(plot, c, cmd.row)) return fail("Space is occupied");
-  }
-
-  // Support check: nothing floats — a cell must sit on the ground (row 0) or on
-  // top of another unit.
-  if (cmd.row > 0) {
-    for (let c = cmd.col; c < cmd.col + def.width; c++) {
-      if (!isOccupied(plot, c, cmd.row - 1)) return fail("Must build on solid support");
-    }
+    if (!hasGirder(plot, c, cmd.row)) return fail("Build structural supports (girders) here first");
   }
 
   // Affordability.
@@ -144,6 +196,11 @@ export function isOccupied(plot: Plot, col: number, row: number): boolean {
   return plot.units.some(
     (u) => row === u.row && col >= u.col && col < u.col + u.width,
   );
+}
+
+/** Does cell (col,row) have a structural girder? */
+export function hasGirder(plot: Plot, col: number, row: number): boolean {
+  return (plot.girders ?? []).some((g) => g.col === col && g.row === row);
 }
 
 /** The unit occupying a cell, if any. */

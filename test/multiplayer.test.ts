@@ -130,6 +130,11 @@ describe("networked multiplayer", () => {
     a.command({ type: "CLAIM_PLOT", playerId: aId, plotIndex: 0 });
     await b.waitForSnapshot((s) => s.plots[0].ownerId === aId);
 
+    // Frame the ground cells, then build the lobby over them.
+    a.command({ type: "PLACE_GIRDER", playerId: aId, plotIndex: 0, col: 0, row: 0 });
+    a.command({ type: "PLACE_GIRDER", playerId: aId, plotIndex: 0, col: 1, row: 0 });
+    await b.waitForSnapshot((s) => s.plots[0].girders.length >= 2);
+
     a.command({ type: "PLACE_UNIT", playerId: aId, plotIndex: 0, kind: "lobby", col: 0, row: 0 });
     const seen = await b.waitForSnapshot((s) => s.plots[0].units.some((u) => u.kind === "lobby"));
     expect(seen.plots[0].units[0].kind).toBe("lobby");

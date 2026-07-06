@@ -129,6 +129,14 @@ export class InputController {
     const playerId = this.conn.session.playerId;
     if (this.selectedTool === "claim") {
       this.conn.dispatch({ type: "CLAIM_PLOT", playerId, plotIndex: cell.plotIndex });
+    } else if (this.selectedTool === "girder") {
+      this.conn.dispatch({
+        type: "PLACE_GIRDER",
+        playerId,
+        plotIndex: cell.plotIndex,
+        col: cell.col,
+        row: cell.row,
+      });
     } else {
       this.conn.dispatch({
         type: "PLACE_UNIT",
@@ -141,7 +149,7 @@ export class InputController {
     }
   };
 
-  /** Right-click sells the unit under the cursor (on your own plots). */
+  /** Right-click sells the room under the cursor, or an empty girder. */
   private onContextMenu = (e: MouseEvent): void => {
     e.preventDefault();
     const { x, y } = this.localPointer(e);
@@ -154,13 +162,20 @@ export class InputController {
     const unit = plot.units.find(
       (u) => u.row === cell.row && cell.col >= u.col && cell.col < u.col + u.width,
     );
-    if (!unit) return;
-    this.conn.dispatch({
-      type: "SELL_UNIT",
-      playerId,
-      plotIndex: cell.plotIndex,
-      unitId: unit.id,
-    });
+    if (unit) {
+      this.conn.dispatch({ type: "SELL_UNIT", playerId, plotIndex: cell.plotIndex, unitId: unit.id });
+      return;
+    }
+    // No room here — sell a bare girder if there is one.
+    if ((plot.girders ?? []).some((g) => g.col === cell.col && g.row === cell.row)) {
+      this.conn.dispatch({
+        type: "SELL_GIRDER",
+        playerId,
+        plotIndex: cell.plotIndex,
+        col: cell.col,
+        row: cell.row,
+      });
+    }
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
@@ -170,6 +185,9 @@ export class InputController {
       "2": "office",
       "3": "apartment",
       "4": "elevator",
+      "5": "girder",
+      g: "girder",
+      G: "girder",
       c: "claim",
       C: "claim",
     };

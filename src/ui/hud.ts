@@ -1,10 +1,19 @@
-import { BUILD_ORDER, PLOT_COST_MIN, TICK_SECONDS, UNIT_DEFS } from "../game/constants";
+import {
+  BUILD_ORDER,
+  GIRDER_BASE_COST,
+  PLOT_COST_MIN,
+  TICK_SECONDS,
+  UNIT_DEFS,
+} from "../game/constants";
 import { archetype } from "../game/archetypes";
 import { claimCost } from "../game/economy";
 import { projectedNet } from "../game/tick";
 import type { GameConnection } from "../net/connection";
 import type { Tool } from "../render/renderer";
 import { flagSvg } from "./flags";
+
+/** Toolbar swatch color for the girder tool (matches the in-canvas girders). */
+const GIRDER_SWATCH = "#b5793a";
 
 /**
  * HUD: the DOM-based in-game UI (city header, player chip, stats, build
@@ -55,6 +64,18 @@ export class Hud {
     claim.addEventListener("click", () => this.toggle("claim"));
     this.toolbarEl.appendChild(claim);
 
+    // Girder (structural support) — built before any room.
+    const girder = document.createElement("button");
+    girder.className = "tool";
+    girder.dataset.tool = "girder";
+    girder.innerHTML = `
+      <span class="swatch" style="background:${GIRDER_SWATCH}"></span>
+      <span class="tool-label">Girder</span>
+      <span class="tool-cost">from $${GIRDER_BASE_COST}</span>
+      <span class="tool-key">G</span>`;
+    girder.addEventListener("click", () => this.toggle("girder"));
+    this.toolbarEl.appendChild(girder);
+
     for (const kind of BUILD_ORDER) {
       const def = UNIT_DEFS[kind];
       const btn = document.createElement("button");
@@ -83,6 +104,7 @@ export class Hud {
 
     const myPlots = Object.values(state.plots).filter((p) => p.ownerId === me);
     const myUnits = myPlots.flatMap((p) => p.units);
+    const myGirders = myPlots.reduce((n, p) => n + (p.girders?.length ?? 0), 0);
     const net = myPlots.reduce((sum, p) => sum + projectedNet(p), 0);
     const revenueUnits = myUnits.filter((u) => UNIT_DEFS[u.kind].incomeAtFull > 0);
     const avgOcc =
@@ -96,6 +118,7 @@ export class Hud {
       <div class="row"><span>Net / ${TICK_SECONDS}s</span>
         <span class="${netClass}">${net >= 0 ? "+" : ""}$${net.toLocaleString()}</span></div>
       <div class="row"><span>Plots owned</span><span>${myPlots.length}</span></div>
+      <div class="row"><span>Girders</span><span>${myGirders}</span></div>
       <div class="row"><span>Units</span><span>${myUnits.length}</span></div>
       <div class="row"><span>Occupancy</span><span>${Math.round(avgOcc * 100)}%</span></div>
       <div class="row muted"><span>Tick</span><span>${state.tick}</span></div>`;
@@ -113,7 +136,8 @@ export class Hud {
     // Toolbar selected/affordability states.
     for (const el of Array.from(this.toolbarEl.children) as HTMLElement[]) {
       const tool = el.dataset.tool as Exclude<Tool, null>;
-      const cost = tool === "claim" ? cheapestClaim : UNIT_DEFS[tool].cost;
+      const cost =
+        tool === "claim" ? cheapestClaim : tool === "girder" ? GIRDER_BASE_COST : UNIT_DEFS[tool].cost;
       el.classList.toggle("selected", this.getSelected() === tool);
       el.classList.toggle("unaffordable", player.money < cost);
     }
@@ -125,13 +149,16 @@ export class Hud {
       this.hintEl.textContent = `⚠ ${err}`;
       this.hintEl.className = "panel warn";
     } else if (sel === "claim") {
-      this.hintEl.textContent = `Claim mode — click an "Available" plot to buy it. Then build on it.`;
+      this.hintEl.textContent = `Claim mode — click an "Available" plot to buy it, then frame it.`;
+      this.hintEl.className = "panel";
+    } else if (sel === "girder") {
+      this.hintEl.textContent = `Girder mode — build the frame first ($${GIRDER_BASE_COST} +$5/floor). Rooms need girders under them. Right-click removes.`;
       this.hintEl.className = "panel";
     } else if (sel) {
-      this.hintEl.textContent = `Placing ${UNIT_DEFS[sel].label} — click a cell on a plot you own. Right-click sells. Esc deselects.`;
+      this.hintEl.textContent = `Placing ${UNIT_DEFS[sel].label} — needs girders underneath. Click a framed cell. Right-click sells. Esc deselects.`;
       this.hintEl.className = "panel";
     } else {
-      this.hintEl.textContent = `Pick a tool (1–4, or C to claim). Drag or use arrow keys to pan the city.`;
+      this.hintEl.textContent = `Girders first (G), then rooms (1–4). C to claim land. Drag or arrow keys to pan.`;
       this.hintEl.className = "panel";
     }
   }

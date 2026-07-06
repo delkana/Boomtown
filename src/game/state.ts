@@ -60,6 +60,7 @@ export function createGameState(id: string, config: GameConfig): GameState {
         name: featureName(kind, `${id}:fname:${i}`),
         feature: kind,
         ownerId: null,
+        girders: [],
         units: [],
       };
     } else {
@@ -70,6 +71,7 @@ export function createGameState(id: string, config: GameConfig): GameState {
         name: propertyNameFor(config.archetype, i),
         feature: null,
         ownerId: null,
+        girders: [],
         units: [],
       };
     }

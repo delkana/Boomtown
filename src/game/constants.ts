@@ -28,6 +28,13 @@ export const MAX_PLOT_COLS = 17;
 export const PLOT_COST_MIN = 4000;
 export const PLOT_COST_MAX = 20000;
 
+/**
+ * Structural supports (girders). Each girder tile costs GIRDER_BASE_COST plus
+ * GIRDER_COST_PER_FLOOR for every floor it sits above the ground.
+ */
+export const GIRDER_BASE_COST = 20;
+export const GIRDER_COST_PER_FLOOR = 5;
+
 /** Player's starting cash. */
 export const STARTING_MONEY = 25000;
 
