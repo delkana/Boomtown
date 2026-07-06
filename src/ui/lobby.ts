@@ -257,18 +257,46 @@ export class LobbyScreen {
     const token = this.membershipToken(g.id);
     if (token) {
       const result = await this.server.reconnect(g.id, token);
-      if (!result.ok) {
-        // Stale token (e.g. server restarted without persistence) — re-prompt.
-        this.joined.delete(g.id);
-        saveJoined(this.joined);
-        this.memberships = this.memberships.filter((m) => m.gameId !== g.id);
-        this.openJoinModal(g);
+      if (result.ok) {
+        this.finish(result, this.q("#cf-error"));
         return;
       }
-      this.finish(result, this.q("#cf-error"));
-      return;
+      // Stale token (e.g. a demo city was re-seeded on a server restart) — forget
+      // it and fall through to a fresh join instead of dead-ending.
+      this.joined.delete(g.id);
+      saveJoined(this.joined);
+      this.memberships = this.memberships.filter((m) => m.gameId !== g.id);
     }
+    // Signed in? Join straight away with your account name + color — no re-typing.
+    // Only fall back to the modal for anonymous players, password-protected games,
+    // or if the auto-join is refused (e.g. every color already taken).
+    if (this.profile && !g.hasPassword && (await this.autoJoin(g))) return;
     this.openJoinModal(g);
+  }
+
+  /**
+   * Join a game using the signed-in account's display name and preferred color
+   * (falling back to the first free color if it's taken). Returns false if the
+   * server refuses, so the caller can open the manual join modal instead.
+   */
+  private async autoJoin(g: GameSummary): Promise<boolean> {
+    if (!this.profile) return false;
+    const taken = new Set(g.players.map((p) => p.color));
+    const preferHex = this.palette.find((c) => c.id === this.profile!.color)?.hex;
+    const colorId =
+      preferHex && !taken.has(preferHex)
+        ? this.profile!.color
+        : this.palette.find((c) => !taken.has(c.hex))?.id;
+    if (!colorId) return false; // no free color left — let the modal show why
+    const result = await this.server.joinGame({
+      gameId: g.id,
+      playerName: this.profile.displayName,
+      playerColor: colorId,
+      password: null,
+    });
+    if (!result.ok) return false; // e.g. name already taken in this city
+    this.finish(result, this.q("#cf-error"));
+    return true;
   }
 
   // --- Join modal ----------------------------------------------------------

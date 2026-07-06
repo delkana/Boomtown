@@ -473,8 +473,9 @@ export class Hud {
       this.hintEl.textContent = `Placing ${UNIT_DEFS[sel].label} — needs girders underneath. Click a framed cell. Use the Destroy tool to remove. Esc deselects.`;
       this.hintEl.className = "panel";
     } else {
-      this.hintEl.textContent = `Girders first (G, drag to paint), then rooms (1–7), a shaft (8) + its cars (9). C to claim. Drag or arrows to pan.`;
-      this.hintEl.className = "panel";
+      // Idle (no tool): no on-screen tip — keep the play area clean.
+      this.hintEl.textContent = "";
+      this.hintEl.className = "panel hidden";
     }
     // Lift the hint above whichever sub-menus are open so nothing overlaps.
     const girderOpen = sel === "girder"; // the facade strip shows too
