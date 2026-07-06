@@ -890,11 +890,18 @@ export class Renderer {
     const { ctx } = this;
     // With the lights off, every surface fades toward night — a dark room.
     const dim = (col: string): string => (lit ? col : rgb(mix(hexRgb(col), [9, 11, 17], 0.8)));
-    const vp: Pt = { x: x + w * 0.54, y: y + h * 0.46 }; // slightly off-centre → subtle 3-point feel
-    const depth = 0.52;
-    const to = (p: Pt): Pt => ({ x: p.x + (vp.x - p.x) * depth, y: p.y + (vp.y - p.y) * depth });
     const TL: Pt = { x, y }, TR: Pt = { x: x + w, y }, BR: Pt = { x: x + w, y: y + h }, BL: Pt = { x, y: y + h };
-    const bTL = to(TL), bTR = to(TR), bBR = to(BR), bBL = to(BL);
+    // Perspective depth is a FIXED inset based on the cell height (not a fraction
+    // of the room's size), so wide (3–4) and narrow (1) rooms recede by the same
+    // amount and don't look stretched — the same fix used for tall shafts. A
+    // small rightward bias keeps the subtle off-centre (3-point) feel.
+    const dx = h * 0.34;
+    const dy = h * 0.24;
+    const bias = h * 0.05;
+    const bTL: Pt = { x: x + dx + bias, y: y + dy };
+    const bTR: Pt = { x: x + w - dx + bias, y: y + dy };
+    const bBR: Pt = { x: x + w - dx + bias, y: y + h - dy };
+    const bBL: Pt = { x: x + dx + bias, y: y + h - dy };
     const lp = (a: Pt, b: Pt, f: number): Pt => ({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
     const quad = (pts: Pt[], fill: string): void => {
       ctx.beginPath();

@@ -838,10 +838,14 @@ button.primary.big {
   color: #ffd27a;
   border-color: rgba(255, 210, 122, 0.4);
 }
+/* Lifted above the sub-menus when one is open, so nothing overlaps. */
+#hint.raised {
+  bottom: 214px;
+}
 
-/* Tool sub-menu — the open category's tools, just above the hint. */
+/* Tool sub-menu — the open category's tools, sitting right above the toolbar. */
 #tool-submenu {
-  bottom: 150px;
+  bottom: 108px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -861,10 +865,17 @@ button.primary.big {
   font-size: 18px;
   margin-bottom: 3px;
 }
+.tool.cat.open {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.12);
+}
+.tool.cat.selected {
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
 
 /* Girder facade sub-menu — a strip above the tool sub-menu while girder is on. */
 #girder-styles {
-  bottom: 202px;
+  bottom: 160px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;

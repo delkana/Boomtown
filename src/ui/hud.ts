@@ -50,6 +50,8 @@ export class Hud {
   private girderStylesEl = must("girder-styles");
   /** Which toolbar category's sub-menu is currently open. */
   private openCategory: string | null = null;
+  /** Last selected tool, to auto-open its category only when it changes. */
+  private lastSelectedTool: Tool = "claim";
   private overlayEl = must("overlay");
   private inspectorEl = must("inspector");
   private hintEl = must("hint");
@@ -345,16 +347,23 @@ export class Hud {
       }
     }
 
-    // Toolbar: keep the selected tool's category open, then render its sub-menu.
+    // Toolbar: only auto-open a category when the SELECTED tool changes (e.g. a
+    // hotkey) — manual category browsing/closing is otherwise left to the user.
     const sel0 = this.getSelected();
-    const selCat = categoryOf(sel0);
-    if (selCat) this.openCategory = selCat;
+    if (sel0 !== this.lastSelectedTool) {
+      this.lastSelectedTool = sel0;
+      const c = categoryOf(sel0);
+      if (c) this.openCategory = c;
+    }
     this.renderToolSubmenu();
 
-    // Category buttons highlight when open / holding the selected tool; Destroy too.
+    // Category buttons: highlighted when their menu is open OR they hold the
+    // selected tool (so you can see where the active tool lives while browsing).
+    const selCat = categoryOf(sel0);
     for (const el of Array.from(this.toolbarEl.children) as HTMLElement[]) {
       if (el.dataset.cat) {
-        el.classList.toggle("selected", this.openCategory === el.dataset.cat);
+        el.classList.toggle("open", this.openCategory === el.dataset.cat);
+        el.classList.toggle("selected", selCat === el.dataset.cat);
       } else if (el.dataset.tool === "destroy") {
         el.classList.toggle("selected", sel0 === "destroy");
       }
@@ -394,6 +403,8 @@ export class Hud {
       this.hintEl.textContent = `Girders first (G, drag to paint), then rooms (1–7), a shaft (8) + its cars (9). C to claim. Drag or arrows to pan.`;
       this.hintEl.className = "panel";
     }
+    // Lift the hint above any open sub-menus so nothing overlaps.
+    this.hintEl.classList.toggle("raised", this.openCategory !== null || sel === "girder");
   }
 
   /** Roster of everyone in this city, with owner color and holdings. */
