@@ -1068,12 +1068,6 @@ button.primary.big {
 #nav-controls button:hover {
   background: rgba(255, 255, 255, 0.12);
 }
-#nav-controls #zoom-in,
-#nav-controls #zoom-out {
-  width: 34px;
-  font-size: 18px;
-  font-weight: 700;
-}
 /* Claim tool lives here, next to "My Plots". */
 #nav-controls .nav-claim {
   font-weight: 600;
@@ -1374,10 +1368,6 @@ button.primary.big {
     right: calc(8px + env(safe-area-inset-right));
     gap: 5px;
     padding: 6px;
-  }
-  #nav-controls #zoom-in,
-  #nav-controls #zoom-out {
-    display: none;
   }
   #nav-controls button {
     min-height: 32px;

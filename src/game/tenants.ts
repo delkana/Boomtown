@@ -300,67 +300,63 @@ function buildWorkers(
 
   const lead = LEAD[subId] ?? { title: "Manager", salary: 300 };
   const staff = staffRoles(kind, subId);
-  // Shops and restaurants run two shifts split at the midpoint; the lead works
-  // the full day and the staff alternate early/late, so only part of the roster
-  // is ever on the clock at once. Offices and clinics all work the full day.
-  const shifted = kind === "store" || kind === "restaurant";
-  const mid = Math.round((open + close) / 2);
+  const open7 = days.length === 7;
   const workers: Worker[] = [];
-  for (let i = 0; i < count; i++) {
-    const wh = hashString(`${seed}:w${i}`);
-    const role = i === 0 ? lead : staff[wh % staff.length];
-    const salary = role.salary === 0 ? 0 : Math.round(role.salary * (0.9 + ((wh >>> 5) % 20) / 100));
-    let start = open;
-    let end = close;
-    if (shifted && i > 0) {
-      const late = i % 2 === 0; // alternate, so both shifts get staffed
-      start = late ? mid : open;
-      end = late ? close : mid;
-    }
-    // A lunch break only for full-ish days (7h+); shorter shifts skip it.
-    const shiftMid = Math.floor((start + end) / 2);
-    const lunchHour =
-      salary === 0 || end - start < 7 ? -1 : Math.max(start + 1, Math.min(end - 2, shiftMid - 1 + ((wh >>> 9) % 3)));
-    workers.push({
-      name: personName(archetypeId, wh),
-      title: role.title,
-      dailySalary: salary,
-      days,
-      startHour: start,
-      endHour: end,
-      lunchHour,
-    });
+  let salt = 0;
+
+  // A shift of `len` hours anchored at the open time (early) or the close time
+  // (late), clamped to the actual open period. Staggering early/late covers long
+  // open hours, and capping shift length keeps everyone under 50 hours a week.
+  const span = Math.max(1, close - open);
+  const early = (len: number) => ({ s: open, e: open + Math.min(len, span) });
+  const late = (len: number) => ({ s: Math.max(open, close - Math.min(len, span)), e: close });
+
+  const add = (title: string, baseSalary: number, wdays: number[], s: number, e: number): void => {
+    const wh = hashString(`${seed}:w${salt++}`);
+    const salary = baseSalary === 0 ? 0 : Math.round(baseSalary * (0.9 + ((wh >>> 5) % 20) / 100));
+    const mid = Math.floor((s + e) / 2);
+    const lunchHour = salary === 0 || e - s < 7 ? -1 : Math.max(s + 1, Math.min(e - 2, mid - 1 + ((wh >>> 9) % 3)));
+    workers.push({ name: personName(archetypeId, wh), title, dailySalary: salary, days: wdays.slice(), startHour: s, endHour: e, lunchHour });
+  };
+
+  // --- Leadership ---
+  if (open7) {
+    // 7-day business: the lead works 4 × 11h; a secondary (junior) lead covers
+    // the other 3 days plus 1 overlap day with the lead, also 11h.
+    const l = early(11);
+    add(lead.title, lead.salary, [0, 1, 2, 3], l.s, l.e); // Mon–Thu
+    add(juniorTitle(lead.title), Math.round(lead.salary * 0.8), [3, 4, 5, 6], l.s, l.e); // Thu(overlap)–Sun
+  } else {
+    // Otherwise the lead works the open weekdays (capped at 5 days), ≤10h shifts.
+    const l = early(10);
+    add(lead.title, lead.salary, cappedDays(days, 0), l.s, l.e);
   }
-  return withDayOffCoverage(workers, seed, archetypeId);
+
+  // --- Non-leadership staff ---
+  const roles = open7 ? Math.max(1, Math.round((count - 1) / 2)) : Math.max(1, count - 1);
+  for (let r = 0; r < roles; r++) {
+    const role = staff[r % staff.length];
+    const sh = r % 2 === 0 ? early(10) : late(10); // stagger early/late shifts
+    if (open7) {
+      // Each role is two people: one works four days, the other the opposite three.
+      add(role.title, role.salary, [0, 1, 2, 3], sh.s, sh.e);
+      add(role.title, role.salary, [4, 5, 6], sh.s, sh.e);
+    } else {
+      add(role.title, role.salary, cappedDays(days, r + 1), sh.s, sh.e);
+    }
+  }
+  return workers;
 }
 
 /**
- * Nobody should work all seven days. For any full-timer scheduled every weekday,
- * take one (deterministically chosen, spread across the roster) day off them and
- * add a part-time worker who covers exactly that day — same job, same shift. If
- * the person is the lead, the cover gets a subordinate title (Assistant Manager,
- * Sous Chef, …) since you wouldn't staff two bosses.
+ * No one works more than five days a week. Businesses open five days or fewer
+ * keep their whole week; a six-day business drops one day per person (staggered
+ * by worker index) so the week still gets covered.
  */
-function withDayOffCoverage(workers: Worker[], seed: string, archetypeId: string): Worker[] {
-  const out: Worker[] = [];
-  for (let i = 0; i < workers.length; i++) {
-    const w = workers[i];
-    out.push(w);
-    if (w.dailySalary <= 0 || w.days.length < 7) continue; // already gets a day off
-    const offDay = hashString(`${seed}:off${i}`) % 7;
-    w.days = w.days.filter((d) => d !== offDay); // main worker drops to a 6-day week
-    const ph = hashString(`${seed}:cover${i}`);
-    out.push({
-      name: personName(archetypeId, ph),
-      title: i === 0 ? juniorTitle(w.title) : w.title,
-      dailySalary: w.dailySalary,
-      days: [offDay],
-      startHour: w.startHour,
-      endHour: w.endHour,
-      lunchHour: w.lunchHour,
-    });
-  }
-  return out;
+function cappedDays(openDays: number[], workerIdx: number): number[] {
+  if (openDays.length <= 5) return openDays.slice();
+  const drop = workerIdx % openDays.length;
+  return openDays.filter((_, i) => i !== drop);
 }
 
 /** A subordinate version of a leadership title, for a part-time day-off cover. */

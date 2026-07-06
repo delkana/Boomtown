@@ -103,6 +103,8 @@ export class Renderer {
   /** Current in-game hour (0..24) + weekday (0=Mon), for room lights. */
   private hourF = 12;
   private dayIndex = 0;
+  private night = 0; // 0 = full daylight … 1 = deep night (for window glow)
+  private curLit = true; // whether the room currently being drawn has its lights on
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -181,6 +183,7 @@ export class Renderer {
 
     // Latitude + season drive the sky (day/night lengths shift through the year).
     const { day, twilight } = skyState(state.tick, state.config.latitude ?? 0);
+    this.night = 1 - day; // lit windows glow warm at night instead of showing dark sky
 
     const top = mix([9, 12, 24], [40, 92, 150], day);
     let bottom = mix([22, 30, 48], [120, 158, 196], day);
@@ -583,6 +586,7 @@ export class Renderer {
         lit = false;
       }
       const subset = unit.tenant?.subset ?? "";
+      this.curLit = lit; // so the window glass glows warm at night for lit rooms
       this.drawRoomInterior(unit.kind, x + 1, y + 1, wpx - 2, cell - 2, facadeById(g?.style), unit.row < 0, lit, occupied, subset);
 
       // Owner-color band along the top edge so ownership reads at a glance.
@@ -1019,6 +1023,13 @@ export class Renderer {
     if (tint > 0) {
       path();
       ctx.fillStyle = `rgba(8,10,14,${tint})`;
+      ctx.fill();
+    }
+    // A lit room at night: the glass glows with warm interior light instead of
+    // showing the dark night sky, so lit rooms read as consistently bright.
+    if (this.curLit && this.night > 0) {
+      path();
+      ctx.fillStyle = `rgba(255,224,168,${(this.night * 0.62).toFixed(3)})`;
       ctx.fill();
     }
     // Frame + mullions.

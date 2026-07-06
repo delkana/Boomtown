@@ -346,8 +346,8 @@ describe("feature spacing", () => {
         latitude: 40, plotCount: 10, maxPlayers: 4, hasPassword: false,
       });
       const feats = Object.values(s.plots).filter((p) => p.feature).map((p) => p.index).sort((a, b) => a - b);
-      expect(feats).toHaveLength(2);
-      expect(feats[1] - feats[0]).toBeGreaterThanOrEqual(2);
+      expect(feats).toHaveLength(3); // each city gets three special plots
+      for (let k = 1; k < feats.length; k++) expect(feats[k] - feats[k - 1]).toBeGreaterThanOrEqual(2);
     }
   });
 });
@@ -672,119 +672,87 @@ describe("tenants", () => {
     expect(hi.dailyRent).toBeGreaterThan(lo.dailyRent);
   });
 
-  it("offices are small teams of 4–6 (7-day offices add part-time day-off cover)", () => {
-    for (let i = 0; i < 60; i++) {
-      const t = generateTenant("office", `office:${i}`, 0.7, 2 + (i % 3))!;
-      const full = t.workers.filter((w) => w.days.length > 1); // full-timers
-      const part = t.workers.filter((w) => w.days.length === 1); // day-off covers
-      expect(full.length).toBeGreaterThanOrEqual(4);
-      expect(full.length).toBeLessThanOrEqual(6);
-      expect(t.workers).toHaveLength(t.employees); // employees counts the whole roster
-      // No employee works all seven days.
-      for (const w of t.workers) expect(w.days.length).toBeLessThanOrEqual(6);
-      for (const w of full) {
-        expect(w.name).toContain(" "); // given + family
-        expect(w.title).toBeTruthy();
-        expect(w.dailySalary).toBeGreaterThan(0);
-        // They work the whole open week, minus at most one day off.
-        expect(w.days.length).toBeGreaterThanOrEqual(t.openDays.length - 1);
-        for (const d of w.days) expect(t.openDays).toContain(d);
-        expect(w.startHour).toBe(t.openHour);
-        expect(w.endHour).toBe(t.closeHour);
-        // A 1-hour lunch that sits inside the shift.
-        expect(w.lunchHour).toBeGreaterThanOrEqual(t.openHour + 1);
-        expect(w.lunchHour + 1).toBeLessThanOrEqual(t.closeHour - 1);
-      }
-      // Part-time covers only appear for genuinely 7-day offices, one day each.
-      if (part.length) {
-        expect(t.openDays.length).toBe(7);
-        for (const p of part) {
-          expect(p.days.length).toBe(1);
-          expect(t.openDays).toContain(p.days[0]);
-          expect(p.title).toBeTruthy();
+  it("no worker is scheduled more than 5 days or 50 hours a week", () => {
+    for (const kind of ["office", "medical", "store", "restaurant"] as const) {
+      for (let i = 0; i < 40; i++) {
+        const t = generateTenant(kind, `${kind}:cap:${i}`, 0.8, 3)!;
+        expect(t.workers).toHaveLength(t.employees); // employees counts the whole roster
+        for (const w of t.workers) {
+          expect(w.name).toContain(" "); // given + family
+          expect(w.title).toBeTruthy();
+          expect(w.dailySalary).toBeGreaterThan(0);
+          expect(w.days.length).toBeGreaterThan(0);
+          expect(w.days.length).toBeLessThanOrEqual(5); // never more than 5 of 7 days
+          expect((w.endHour - w.startHour) * w.days.length).toBeLessThanOrEqual(50); // ≤50h/week
+          for (const d of w.days) expect(t.openDays).toContain(d); // only days the business is open
         }
       }
     }
   });
 
-  it("clinics are small full-day teams of 4–6", () => {
-    for (let i = 0; i < 40; i++) {
-      const t = generateTenant("medical", `med:${i}`, 0.7, 2)!;
-      expect(t.employees).toBeGreaterThanOrEqual(4);
-      expect(t.employees).toBeLessThanOrEqual(6);
-      expect(t.workers).toHaveLength(t.employees);
+  it("7-day business: lead works 4×11h; a junior secondary lead covers the rest with one overlap", () => {
+    for (let i = 0; i < 80; i++) {
+      const t = generateTenant("restaurant", `sevenlead:${i}`, 0.85, 3)!;
+      if (t.openDays.length !== 7) continue;
+      const shift = Math.min(11, t.closeHour - t.openHour);
+      const [lead, sec] = t.workers;
+      expect(lead.days.length).toBe(4);
+      expect(lead.endHour - lead.startHour).toBe(shift);
+      expect(sec.days.length).toBe(4);
+      expect(sec.endHour - sec.startHour).toBe(shift);
+      expect(sec.title).toBeTruthy();
+      expect(sec.title).not.toBe(lead.title); // a subordinate, not a second boss
+      // Together they cover all seven days, overlapping on exactly one.
+      expect(new Set([...lead.days, ...sec.days]).size).toBe(7);
+      expect(lead.days.filter((d) => sec.days.includes(d))).toHaveLength(1);
+      return;
+    }
+    throw new Error("expected an all-week restaurant");
+  });
+
+  it("7-day business: each non-lead role splits into a 4-day and a 3-day person", () => {
+    for (let i = 0; i < 80; i++) {
+      const t = generateTenant("store", `sevenstaff:${i}`, 0.85, 3)!;
+      if (t.openDays.length !== 7) continue;
+      const staff = t.workers.slice(2); // after lead + secondary lead
+      expect(staff.length).toBeGreaterThan(0);
+      expect(staff.length % 2).toBe(0); // people come in role pairs
+      for (const w of staff) expect(w.endHour - w.startHour).toBeLessThanOrEqual(10); // 10h shifts
+      const fours = staff.filter((w) => w.days.length === 4).length;
+      const threes = staff.filter((w) => w.days.length === 3).length;
+      expect(fours).toBe(threes); // one 4-day + one 3-day per role
+      expect(fours).toBeGreaterThan(0);
+      return;
+    }
+    throw new Error("expected an all-week store");
+  });
+
+  it("non-7-day businesses staff their open weekdays (≤5 days, ≤10h shifts)", () => {
+    for (let i = 0; i < 60; i++) {
+      const t = generateTenant("office", `mf:${i}`, 0.7, 2)!;
+      if (t.openDays.length === 7) continue; // realty is the 7-day office
+      expect(t.workers.length).toBeGreaterThanOrEqual(4); // a lead + staff
       for (const w of t.workers) {
-        expect(w.startHour).toBe(t.openHour); // everyone works the full day
-        expect(w.endHour).toBe(t.closeHour);
+        expect(w.days.length).toBeLessThanOrEqual(5);
+        expect(w.endHour - w.startHour).toBeLessThanOrEqual(10);
       }
     }
   });
 
-  it("shops and restaurants run shifts, capping how many work at once", () => {
-    // Count who is actually on the clock on a given weekday + hour (day-off covers
-    // replace the person they cover, so per-day concurrency is unchanged).
+  it("7-day shops split coverage so not everyone works at once", () => {
     const concurrentAt = (t: NonNullable<ReturnType<typeof generateTenant>>, hour: number, day: number): number =>
       t.workers.filter((w) => w.days.includes(day) && hour >= w.startHour && hour < w.endHour).length;
-    for (let i = 0; i < 40; i++) {
-      const store = generateTenant("store", `shop:${i}`, 0.7, 2)!;
-      const rest = generateTenant("restaurant", `eat:${i}`, 0.7, 2)!;
-      // The roster is split across two shifts, so not everyone works at once.
-      const storeStarts = new Set(store.workers.map((w) => w.startHour));
-      const restStarts = new Set(rest.workers.map((w) => w.startHour));
-      expect(storeStarts.size).toBeGreaterThan(1); // more than one shift start
-      expect(restStarts.size).toBeGreaterThan(1);
-      const fullStore = store.workers.filter((w) => w.days.length > 1).length;
-      // No employee works all seven days.
-      for (const w of [...store.workers, ...rest.workers]) expect(w.days.length).toBeLessThanOrEqual(6);
-      for (let day = 0; day < 7; day++) {
-        for (let h = 0; h < 24; h++) {
-          expect(concurrentAt(store, h, day)).toBeLessThanOrEqual(fullStore); // never more than the full-time roster
-          expect(concurrentAt(rest, h, day)).toBeLessThanOrEqual(8); // restaurants: ≤8 at any time
-        }
-      }
-      // Fewer work at once than the full-time roster (shifts actually split it).
-      const maxStore = Math.max(
-        ...Array.from({ length: 7 }, (_, day) => Array.from({ length: 24 }, (_, h) => concurrentAt(store, h, day))).flat(),
-      );
-      expect(maxStore).toBeLessThan(fullStore);
-    }
-  });
-
-  it("no one works all seven days; 7-day businesses get one-day part-time cover", () => {
-    let sawCover = false;
     for (let i = 0; i < 60; i++) {
-      const t = generateTenant("restaurant", `cover:${i}`, 0.85, 3)!;
-      // Nobody is scheduled all seven days.
-      for (const w of t.workers) expect(w.days.length).toBeLessThanOrEqual(6);
-      const full = t.workers.filter((w) => w.dailySalary > 0 && w.days.length > 1);
-      const part = t.workers.filter((w) => w.days.length === 1);
-      for (const p of part) {
-        expect(p.days.length).toBe(1);
-        expect(t.openDays).toContain(p.days[0]); // covers a day the business is open
-      }
-      if (t.openDays.length === 7) {
-        // Every full-timer gave up exactly one day and gained a one-day cover.
-        expect(part.length).toBe(full.length);
-        for (const w of full) expect(w.days.length).toBe(6);
-        sawCover = true;
-      }
+      const store = generateTenant("store", `shop:${i}`, 0.7, 2)!;
+      if (store.openDays.length !== 7) continue;
+      const roster = store.workers.length;
+      let maxConcurrent = 0;
+      for (let day = 0; day < 7; day++)
+        for (let h = 0; h < 24; h++) maxConcurrent = Math.max(maxConcurrent, concurrentAt(store, h, day));
+      expect(maxConcurrent).toBeLessThan(roster); // day-split coverage: never the whole roster at once
+      return;
     }
-    expect(sawCover).toBe(true); // at least one all-week restaurant exercised cover
-  });
-
-  it("a lead's part-time cover gets a subordinate title", () => {
-    for (let i = 0; i < 80; i++) {
-      const t = generateTenant("restaurant", `lead:${i}`, 0.85, 3)!;
-      if (t.openDays.length !== 7) continue; // only all-week businesses trigger cover
-      const lead = t.workers[0];
-      expect(lead.days.length).toBe(6); // the lead took a day off
-      const cover = t.workers[1]; // covers are pushed right after the person they cover
-      expect(cover.days.length).toBe(1);
-      expect(cover.title).toBeTruthy();
-      expect(cover.title).not.toBe(lead.title); // a subordinate, not a second boss
-      return; // one all-week restaurant is enough
-    }
-    throw new Error("expected at least one all-week restaurant");
+    throw new Error("expected an all-week store");
   });
 
   it("apartments hold 1–2 residents with an external work schedule (no salary)", () => {

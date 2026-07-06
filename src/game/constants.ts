@@ -20,8 +20,8 @@ export const PLOT_GAP_COLS = 2;
  * Plots vary in width. Each city plot gets a footprint between MIN and MAX
  * columns (chosen deterministically at city generation, see state.ts).
  */
-export const MIN_PLOT_COLS = 7;
-export const MAX_PLOT_COLS = 17;
+export const MIN_PLOT_COLS = 9;
+export const MAX_PLOT_COLS = 19;
 
 /**
  * Base land price scales linearly with plot width: a MIN_PLOT_COLS plot costs

@@ -14,7 +14,7 @@ import {
   DEFAULT_FAR,
 } from "../game/backgrounds";
 import type { FeatureKind } from "../game/features";
-import type { GameConfig, GameState, UnitKind } from "../game/types";
+import type { GameConfig, GameState } from "../game/types";
 import { AuthoritativeGame } from "./authoritativeGame";
 import type { CreateGameConfig, GameSummary, JoinRequest } from "./protocol";
 
@@ -250,89 +250,50 @@ export class GameDirectory {
   }
 
   private seedDemoCities(): void {
-    this.seedCity(
-      "new-angeles", "New Angeles", "pacifica", { near: "palms", far: "ocean", latitude: 34 }, 22, 8, null,
-      [
-        { name: "Redwood Spire Group", color: "#3fb96b", floors: [7] },
-        { name: "Neon Bay Holdings", color: "#4a86e0", floors: [6, 9] },
-        { name: "Cascade Systems", color: "#e79a2f", floors: [5] },
-      ],
-      [
-        { kind: "river", name: "Los Angeles River" },
-        { kind: "river", name: "San Gabriel River" },
-      ],
-    );
-    this.seedCity(
-      "neo-kyoto", "Neo-Kyoto", "japan", { near: "skyline", far: "mountains", latitude: 35 }, 16, 6, null,
-      [
-        { name: "Zaibatsu Prime", color: "#c94ad1", floors: [6] },
-        { name: "Mirai Systems", color: "#e0503f", floors: [8, 4] },
-      ],
-      [
-        { kind: "river", name: "Kamo River" },
-        { kind: "park", name: "Maruyama Park" },
-      ],
-    );
-    this.seedCity(
-      "kosmograd", "Kosmograd", "ussr", { near: "firs", far: "mountains", latitude: 56 }, 20, 8, null,
-      [{ name: "Red October Combine", color: "#e0503f", floors: [9, 5, 7] }],
-      [
-        { kind: "river", name: "Moskva Canal" },
-        { kind: "park", name: "Gorky Park" },
-      ],
-    );
-    this.seedCity(
-      "la-defense", "La Défense", "europa", { near: "oldtown", far: "hills", latitude: 49 }, 20, 8, null,
-      [
-        { name: "Rheinturm Group", color: "#f4c94b", floors: [10, 6] },
-        { name: "Concorde Holdings", color: "#4a86e0", floors: [7] },
-        { name: "Pan-Europa Dynamics", color: "#3fb96b", floors: [8] },
-      ],
-      [
-        { kind: "river", name: "Seine Crossing" },
-        { kind: "park", name: "Jardin des Tuileries" },
-      ],
-    );
-    this.seedCity(
-      "jozi", "Jozi", "african-union", { near: "skyline", far: "hills", latitude: -26 }, 20, 8, null,
-      [
-        { name: "Sankofa Tower", color: "#3fb96b", floors: [8, 5] },
-        { name: "Ubuntu Holdings", color: "#e0a53f", floors: [7] },
-        { name: "Great Zimbabwe Corp", color: "#c94ad1", floors: [6, 9] },
-      ],
-      [
-        { kind: "park", name: "Zoo Lake" },
-        { kind: "park", name: "The Wilds" },
-      ],
-    );
-    this.seedCity(
-      "el-dorado", "El Dorado", "latam", { near: "skyline", far: "mountains", latitude: 5 }, 20, 8, null,
-      [
-        { name: "El Dorado Tower", color: "#1f8a4c", floors: [9, 6] },
-        { name: "Libertador Group", color: "#e0503f", floors: [7] },
-        { name: "Cóndor Prime", color: "#f4c94b", floors: [5, 8] },
-      ],
-      [
-        { kind: "river", name: "Bogotá River" },
-        { kind: "park", name: "Simón Bolívar Park" },
-      ],
-    );
-    this.seedCity(
-      "port-liberty", "Port Liberty", "atlantea", { near: "skyline", far: "ocean", latitude: 41 }, 22, 8, null,
-      [
-        { name: "Empire Spire", color: "#4a86e0", floors: [10, 7] },
-        { name: "Liberty Holdings", color: "#e0503f", floors: [8] },
-        { name: "Hudson Works", color: "#3fb96b", floors: [6, 9] },
-      ],
-      [
-        { kind: "river", name: "Hudson River" },
-        { kind: "river", name: "East River" },
-        { kind: "park", name: "Central Park" },
-      ],
-    );
+    // Demo cities start EMPTY — no AI-owned towers, just open buildable lots and
+    // three special feature plots (a name-appropriate mix of parks + water).
+    this.seedCity("new-angeles", "New Angeles", "pacifica", { near: "palms", far: "ocean", latitude: 34 }, 22, 8, [
+      { kind: "river", name: "Los Angeles River" },
+      { kind: "river", name: "San Gabriel River" },
+      { kind: "park", name: "Griffith Park" },
+    ]);
+    this.seedCity("neo-kyoto", "Neo-Kyoto", "japan", { near: "skyline", far: "mountains", latitude: 35 }, 16, 6, [
+      { kind: "river", name: "Kamo River" },
+      { kind: "river", name: "Katsura River" },
+      { kind: "park", name: "Maruyama Park" },
+    ]);
+    this.seedCity("kosmograd", "Kosmograd", "ussr", { near: "firs", far: "mountains", latitude: 56 }, 20, 8, [
+      { kind: "river", name: "Moskva Canal" },
+      { kind: "river", name: "Neva Canal" },
+      { kind: "park", name: "Gorky Park" },
+    ]);
+    this.seedCity("la-defense", "La Défense", "europa", { near: "oldtown", far: "hills", latitude: 49 }, 20, 8, [
+      { kind: "river", name: "Seine Crossing" },
+      { kind: "river", name: "Rhine Canal" },
+      { kind: "park", name: "Jardin des Tuileries" },
+    ]);
+    this.seedCity("jozi", "Jozi", "african-union", { near: "skyline", far: "hills", latitude: -26 }, 20, 8, [
+      { kind: "river", name: "Braamfontein Spruit" },
+      { kind: "park", name: "Zoo Lake" },
+      { kind: "park", name: "The Wilds" },
+    ]);
+    this.seedCity("el-dorado", "El Dorado", "latam", { near: "skyline", far: "mountains", latitude: 5 }, 20, 8, [
+      { kind: "river", name: "Bogotá River" },
+      { kind: "river", name: "El Salitre Canal" },
+      { kind: "park", name: "Simón Bolívar Park" },
+    ]);
+    this.seedCity("port-liberty", "Port Liberty", "atlantea", { near: "skyline", far: "ocean", latitude: 41 }, 22, 8, [
+      { kind: "river", name: "Hudson River" },
+      { kind: "river", name: "East River" },
+      { kind: "park", name: "Central Park" },
+    ]);
   }
 
-  /** Create a demo city and seed its owners onto BUILDABLE (non-feature) plots. */
+  /**
+   * Create an empty demo city: open buildable lots plus its three special
+   * feature plots (parks / water crossings), pinned to the given names/kinds.
+   * No AI owners or buildings — players build the whole skyline themselves.
+   */
   private seedCity(
     id: string,
     cityName: string,
@@ -340,9 +301,7 @@ export class GameDirectory {
     backdrop: { near: string; far: string; latitude: number },
     plotCount: number,
     maxPlayers: number,
-    password: string | null,
-    owners: { name: string; color: string; floors: number[] }[],
-    featureOverrides?: { kind: FeatureKind; name: string }[],
+    features: { kind: FeatureKind; name: string }[],
   ): void {
     const game = AuthoritativeGame.create(
       id,
@@ -354,42 +313,25 @@ export class GameDirectory {
         latitude: backdrop.latitude,
         plotCount,
         maxPlayers,
-        hasPassword: password !== null,
+        hasPassword: false,
       },
-      password,
+      null,
     );
     this.seededIds.add(id);
     this.games.set(id, game);
     this.tokens.set(id, new Map());
 
-    // Optionally pin the city's feature plots to specific kinds/names.
-    if (featureOverrides) {
-      const featurePlots = Object.values(game.state.plots)
-        .filter((p) => p.feature)
-        .sort((a, b) => a.index - b.index);
-      featureOverrides.forEach((ov, i) => {
-        const fp = featurePlots[i];
-        if (fp) {
-          fp.feature = ov.kind;
-          fp.name = ov.name;
-        }
-      });
-    }
-
-    const buildable = Object.values(game.state.plots)
-      .filter((p) => !p.feature)
-      .map((p) => p.index)
-      .sort((a, b) => a - b);
-
-    let next = 0;
-    for (const owner of owners) {
-      const player = game.addPlayer(owner.name, owner.color);
-      for (const floors of owner.floors) {
-        if (next >= buildable.length) break;
-        const plotIndex = buildable[next++];
-        game.seedPlot(player.id, plotIndex, sampleTower(floors, game.state.plots[plotIndex].cols));
+    // Pin the city's feature plots to the given kinds/names (parks + crossings).
+    const featurePlots = Object.values(game.state.plots)
+      .filter((p) => p.feature)
+      .sort((a, b) => a.index - b.index);
+    features.forEach((f, i) => {
+      const fp = featurePlots[i];
+      if (fp) {
+        fp.feature = f.kind;
+        fp.name = f.name;
       }
-    }
+    });
   }
 }
 
@@ -408,23 +350,4 @@ function randomToken(): string {
   const c = (globalThis as { crypto?: Crypto }).crypto;
   if (c?.randomUUID) return c.randomUUID();
   return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-}
-
-/** A valid, supported tower that fits within a plot `cols` wide. */
-function sampleTower(
-  floors: number,
-  cols: number,
-): { kind: UnitKind; col: number; row: number; occupancy?: number }[] {
-  const specs: { kind: UnitKind; col: number; row: number; occupancy?: number }[] = [];
-  specs.push({ kind: "lobby", col: 0, row: 0 });
-  for (let r = 0; r < floors; r++) {
-    specs.push({ kind: "elevator", col: 2, row: r });
-    // Fill revenue columns starting at col 4, as many 2-wide units as fit.
-    let slot = 0;
-    for (let c = 4; c + 2 <= cols; c += 2, slot++) {
-      const kind: UnitKind = (r + slot) % 2 === 0 ? "office" : "apartment";
-      specs.push({ kind, col: c, row: r, occupancy: 0.55 + ((r + slot) % 3) * 0.12 });
-    }
-  }
-  return specs;
 }

@@ -29,8 +29,6 @@ const lobbyEl = document.getElementById("lobby")!;
 const gameRoot = document.getElementById("game-root")!;
 const leaveBtn = document.getElementById("leave-btn")!;
 const minimapEl = document.getElementById("minimap")!;
-const zoomInBtn = document.getElementById("zoom-in")!;
-const zoomOutBtn = document.getElementById("zoom-out")!;
 const jumpBtn = document.getElementById("jump-btn")!;
 
 /** Everything tied to one active in-game session; torn down on leave. */
@@ -181,15 +179,9 @@ function enterGame(conn: GameConnection): void {
   hud.update();
 
   // Nav controls.
-  const onZoomIn = () => input.zoomBy(1.25);
-  const onZoomOut = () => input.zoomBy(1 / 1.25);
   const onJump = () => jumpToMyPlots(conn, camera, Math.floor(totalPlots / 2));
-  zoomInBtn.addEventListener("click", onZoomIn);
-  zoomOutBtn.addEventListener("click", onZoomOut);
   jumpBtn.addEventListener("click", onJump);
   const buttons = [
-    () => zoomInBtn.removeEventListener("click", onZoomIn),
-    () => zoomOutBtn.removeEventListener("click", onZoomOut),
     () => jumpBtn.removeEventListener("click", onJump),
   ];
 

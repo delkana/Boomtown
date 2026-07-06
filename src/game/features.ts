@@ -19,8 +19,8 @@ export const FEATURE_KINDS: FeatureKind[] = ["river", "park"];
 /** Feature plots are a fixed ~6 tiles wide. */
 export const FEATURE_COLS = 6;
 
-/** How many feature plots each city gets. */
-export const FEATURE_COUNT = 2;
+/** How many special (park / water-crossing) feature plots each city gets. */
+export const FEATURE_COUNT = 3;
 
 /** Human-facing type label (shown under the plot). */
 export function featureLabel(kind: FeatureKind): string {
