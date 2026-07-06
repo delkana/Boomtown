@@ -173,9 +173,12 @@ const FLAGS: Record<string, string> = {
       .join("")}`,
 
   china: `
-    <rect width="60" height="40" fill="#d21f2b"/>
-    ${STAR(14, 25, 20, "#ffd24a")}
-    ${STAR(28, 9, 7, "#ffd24a")}${STAR(33, 13, 7, "#ffd24a")}${STAR(33, 20, 7, "#ffd24a")}${STAR(28, 24, 7, "#ffd24a")}`,
+    <rect width="60" height="40" fill="#ee1c25"/>
+    ${starFill(10, 10, 6, "#ffde00")}
+    <g transform="rotate(239.04 20 4)">${starFill(20, 4, 2, "#ffde00")}</g>
+    <g transform="rotate(261.87 24 8)">${starFill(24, 8, 2, "#ffde00")}</g>
+    <g transform="rotate(-74.05 24 14)">${starFill(24, 14, 2, "#ffde00")}</g>
+    <g transform="rotate(-51.34 20 18)">${starFill(20, 18, 2, "#ffde00")}</g>`,
 
   "straits-union": `
     <rect width="60" height="40" fill="#ffffff"/>
