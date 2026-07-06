@@ -19,11 +19,15 @@ const FLAGS: Record<string, string> = {
     <polygon points="24,40 44,22 60,40" fill="#124b52"/>`,
 
   commonwealth: `
-    <rect width="60" height="40" fill="#0a1433"/>
-    <line x1="0" y1="0" x2="60" y2="40" stroke="#39c2ff" stroke-width="4"/>
-    <line x1="60" y1="0" x2="0" y2="40" stroke="#39c2ff" stroke-width="4"/>
-    <rect x="25" width="10" height="40" fill="#ff3d81"/>
-    <rect y="15" width="60" height="10" fill="#ff3d81"/>`,
+    <rect width="60" height="40" fill="#012169"/>
+    <line x1="0" y1="0" x2="60" y2="40" stroke="#ffffff" stroke-width="8"/>
+    <line x1="60" y1="0" x2="0" y2="40" stroke="#ffffff" stroke-width="8"/>
+    <line x1="0" y1="0" x2="60" y2="40" stroke="#c8102e" stroke-width="3"/>
+    <line x1="60" y1="0" x2="0" y2="40" stroke="#c8102e" stroke-width="3"/>
+    <rect x="24" width="12" height="40" fill="#ffffff"/>
+    <rect y="14" width="60" height="12" fill="#ffffff"/>
+    <rect x="26" width="8" height="40" fill="#c8102e"/>
+    <rect y="16" width="60" height="8" fill="#c8102e"/>`,
 
   europa: `
     <rect width="60" height="40" fill="#0a2a6a"/>
@@ -36,21 +40,23 @@ const FLAGS: Record<string, string> = {
 
   nordic: `
     <rect width="60" height="40" fill="#0b2a3a"/>
-    <rect width="60" height="3" fill="#8affc0"/>
     <rect y="17" width="60" height="6" fill="#6ff0e0"/>
     <rect x="16" width="6" height="40" fill="#6ff0e0"/>`,
 
   japan: `
-    <rect width="60" height="40" fill="#12121a"/>
-    <circle cx="30" cy="20" r="10" fill="#ff2b4e"/>
-    <rect x="18" y="18.5" width="24" height="2" fill="#39c2ff"/>
-    <rect x="22" y="24" width="16" height="1.5" fill="#ff8fb0"/>`,
+    <rect width="60" height="40" fill="#ffffff"/>
+    <circle cx="30" cy="20" r="11" fill="#bc002d"/>`,
 
   "united-korea": `
-    <rect width="60" height="40" fill="#0e1a2b"/>
-    <circle cx="30" cy="20" r="10" fill="#e8eef5"/>
-    <path d="M20 20 a10 10 0 0 1 20 0 z" fill="#e23b4e"/>
-    <path d="M20 20 a10 10 0 0 0 20 0 z" fill="#2b6fe2"/>`,
+    <rect width="60" height="40" fill="#ed1c27"/>
+    <rect width="60" height="4" fill="#024fa2"/>
+    <rect y="4" width="60" height="2.5" fill="#ffffff"/>
+    <rect y="33.5" width="60" height="2.5" fill="#ffffff"/>
+    <rect y="36" width="60" height="4" fill="#024fa2"/>
+    ${STAR(13, 25, 12, "#ffffff")}
+    <circle cx="35" cy="20" r="9" fill="#ffffff"/>
+    <path d="M26 20 a9 9 0 0 1 18 0 z" fill="#ed1c27"/>
+    <path d="M26 20 a9 9 0 0 0 18 0 z" fill="#024fa2"/>`,
 
   oceania: `
     <rect width="60" height="40" fill="#0a1f3a"/>
@@ -59,10 +65,8 @@ const FLAGS: Record<string, string> = {
     <circle cx="46" cy="26" r="6" fill="#ffce4a"/>`,
 
   atlantea: `
-    <rect width="60" height="40" fill="#0a1f2e"/>
-    ${[6, 14, 22, 30].map((y) => `<rect y="${y}" width="60" height="3" fill="#d23b52"/>`).join("")}
-    <rect width="24" height="19" fill="#123a4a"/>
-    ${STAR(12, 14, 12, "#eaf2ff")}`,
+    <rect width="60" height="40" fill="#0a1f3a"/>
+    ${STAR(30, 29, 28, "#ffffff")}`,
 
   ussr: `
     <rect width="60" height="40" fill="#b3161a"/>
