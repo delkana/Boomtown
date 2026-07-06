@@ -2,6 +2,7 @@ import type { GameConnection } from "../net/connection";
 import type { Tool } from "../render/renderer";
 import type { Camera } from "../render/camera";
 import type { HoverState } from "../render/renderer";
+import type { Worker } from "../game/types";
 
 /** A room being inspected (hovered transiently, or clicked to pin). */
 export interface InspectRef {
@@ -52,6 +53,10 @@ export class InputController {
     private moneyFx: (screenX: number, screenY: number, delta: number) => void,
     /** Called when the inspected room (hover or pin) changes. */
     private onInspect: () => void,
+    /** Hit-test the person under a screen point (for hover tooltips). */
+    private personAt: (screenX: number, screenY: number) => Worker | null,
+    /** Called on move with the hovered person (or null) at the cursor. */
+    private onPersonHover: (worker: Worker | null, screenX: number, screenY: number) => void,
   ) {
     this.attach();
   }
@@ -160,6 +165,7 @@ export class InputController {
 
   private onPointerLeave = (): void => {
     this.hover = null;
+    this.onPersonHover(null, 0, 0);
   };
 
   private onWheel = (e: WheelEvent): void => {
@@ -209,7 +215,9 @@ export class InputController {
       this.camera.offsetX = this.dragStartOffset - dx;
       this.camera.offsetY = this.dragStartOffsetY + dy; // drag down reveals higher content
       this.clampCamera();
+      this.onPersonHover(null, 0, 0);
     } else {
+      this.onPersonHover(this.personAt(x, y), x, y);
       this.notifyInspectIfChanged();
     }
   };

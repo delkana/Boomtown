@@ -9,6 +9,8 @@ import { LobbyScreen } from "./ui/lobby";
 import { LocalServer, type GameServer } from "./net/localServer";
 import { RemoteServer } from "./net/remoteServer";
 import type { GameConnection } from "./net/connection";
+import { daysLabel, shiftLabel } from "./game/tenants";
+import type { Worker } from "./game/types";
 
 /**
  * Composition root. Two phases:
@@ -87,6 +89,24 @@ function enterGame(conn: GameConnection): void {
   const renderer = new Renderer(canvas, camera);
   let hud: Hud;
 
+  const personTipEl = document.getElementById("person-tip")!;
+  const showPersonTip = (w: Worker | null, sx: number, sy: number): void => {
+    if (!w) {
+      personTipEl.classList.add("hidden");
+      return;
+    }
+    const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const detail =
+      w.dailySalary > 0
+        ? `<div class="tip-role">${esc(w.title)}</div>
+           <div class="tip-line">$${w.dailySalary.toLocaleString()}/day · ${daysLabel(w.days)} · ${shiftLabel(w)}</div>`
+        : `<div class="tip-role">${esc(w.title)}</div>`;
+    personTipEl.innerHTML = `<div class="tip-name">${esc(w.name)}</div>${detail}`;
+    personTipEl.style.left = `${sx + 16}px`;
+    personTipEl.style.top = `${sy + 16}px`;
+    personTipEl.classList.remove("hidden");
+  };
+
   const input = new InputController(
     canvas,
     camera,
@@ -94,6 +114,8 @@ function enterGame(conn: GameConnection): void {
     () => hud.update(),
     (sx, sy, delta) => renderer.addMoneyPopup(sx, sy, delta),
     () => hud.renderInspect(),
+    (sx, sy) => renderer.personAt(sx, sy),
+    showPersonTip,
   );
   hud = new Hud(
     conn,

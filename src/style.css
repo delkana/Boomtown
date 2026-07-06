@@ -748,6 +748,77 @@ button.primary.big {
   opacity: 0.8;
 }
 
+/* Collapsible employee/resident roster in the inspector. */
+.insp-roster {
+  margin: 3px 0;
+  font-size: 12px;
+}
+.insp-roster > summary {
+  cursor: pointer;
+  color: var(--text);
+  padding: 2px 0;
+  list-style: none;
+  user-select: none;
+}
+.insp-roster > summary::before {
+  content: "▸ ";
+  color: var(--muted);
+}
+.insp-roster[open] > summary::before {
+  content: "▾ ";
+}
+.roster-list {
+  max-height: 210px;
+  overflow-y: auto;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.roster-row {
+  border-left: 2px solid var(--panel-border);
+  padding: 1px 0 1px 7px;
+}
+.roster-name {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 600;
+}
+.roster-meta {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+/* Floating tooltip for a hovered person. */
+#person-tip {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  background: rgba(14, 18, 24, 0.94);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  max-width: 230px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+#person-tip.hidden {
+  display: none;
+}
+.tip-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+.tip-role {
+  font-size: 11px;
+  color: var(--muted);
+}
+.tip-line {
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
 /* Minimap — top-center, under the topbar. */
 #minimap {
   top: 70px;

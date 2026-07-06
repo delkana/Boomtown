@@ -20,7 +20,7 @@ import {
   roomSatisfaction,
   type HeatmapKind,
 } from "../game/heatmaps";
-import { headcountLabel, hasTrades, tenantOpen, daysLabel } from "../game/tenants";
+import { headcountLabel, hasTrades, tenantOpen, daysLabel, shiftLabel } from "../game/tenants";
 import { elevatorRuns, runContaining } from "../game/elevator";
 import { dayOfWeek } from "../game/clock";
 import { projectedDailyNet } from "../game/tick";
@@ -142,12 +142,26 @@ export class Hud {
     let tenantHtml = "";
     if (tenant) {
       const open = tenantOpen(tenant, hourF, day);
+      const roster = tenant.workers ?? [];
+      const rosterRows = roster
+        .map((w) => {
+          const meta =
+            w.dailySalary > 0
+              ? `<div class="roster-meta">${escapeHtml(w.title)} · $${w.dailySalary.toLocaleString()}/day</div>
+                 <div class="roster-meta">${daysLabel(w.days)} · ${shiftLabel(w)}</div>`
+              : `<div class="roster-meta">${escapeHtml(w.title)}</div>`;
+          return `<div class="roster-row"><div class="roster-name">${escapeHtml(w.name)}</div>${meta}</div>`;
+        })
+        .join("");
+      const rosterHtml = roster.length
+        ? `<details class="insp-roster"><summary>${headcountLabel(unit.kind)} · ${roster.length}</summary><div class="roster-list">${rosterRows}</div></details>`
+        : `<div class="insp-row"><span>${headcountLabel(unit.kind)}</span><span>${tenant.employees}</span></div>`;
       tenantHtml = `
         <div class="insp-tenant">${escapeHtml(tenant.name)}</div>
         <div class="insp-sub">${escapeHtml(tenant.trade)} · <span class="${open ? "pos" : "neg"}">${open ? "Open" : "Closed"}</span></div>
         <div class="insp-row"><span>Hours</span><span>${hr(tenant.openHour)}–${hr(tenant.closeHour)}</span></div>
         <div class="insp-row"><span>Days</span><span>${daysLabel(tenant.openDays)}</span></div>
-        <div class="insp-row"><span>${headcountLabel(unit.kind)}</span><span>${tenant.employees}</span></div>
+        ${rosterHtml}
         <div class="insp-row"><span>Rent / day</span><span class="pos">+$${tenant.dailyRent.toLocaleString()}</span></div>`;
     } else if (hasTrades(unit.kind)) {
       tenantHtml = `<div class="insp-sub">Vacant · seeking a tenant (${appeal}% appeal)</div>`;

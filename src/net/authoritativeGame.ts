@@ -108,7 +108,9 @@ export class AuthoritativeGame {
       const def = UNIT_DEFS[s.kind];
       const id = `u${this.state.nextUnitSeq++}`;
       // Seeded rooms come pre-leased so demo towers look occupied.
-      const tenant = hasTrades(s.kind) ? generateTenant(s.kind, `${plot.id}:${id}`, 0.75, def.width) : null;
+      const tenant = hasTrades(s.kind)
+        ? generateTenant(s.kind, `${plot.id}:${id}`, 0.75, def.width, this.state.config.archetype)
+        : null;
       plot.units.push({
         id,
         kind: s.kind,

@@ -62,6 +62,24 @@ export interface ElevatorCar {
 }
 
 /**
+ * One person on a tenant's roster — an employee (office/shop/clinic/restaurant)
+ * or an occupant (apartment resident / hotel guest). Generated with the tenant.
+ */
+export interface Worker {
+  /** Full name, region-appropriate for the city (see src/game/names.ts). */
+  name: string;
+  /** Job title, e.g. "Software Engineer", "Managing Partner", or "Resident". */
+  title: string;
+  /** Daily wage cost (0 for residents/guests). */
+  dailySalary: number;
+  /** Weekdays this person works: 0 = Monday … 6 = Sunday. */
+  days: number[];
+  /** Shift start/end hours (0..24). */
+  startHour: number;
+  endHour: number;
+}
+
+/**
  * A business/household occupying a revenue room. A room either has a tenant or
  * is vacant (dark). Generated deterministically when one moves in; see
  * src/game/tenants.ts. Rent is paid to the owner once a day, at midnight.
@@ -78,8 +96,10 @@ export interface Tenant {
   closeHour: number;
   /** Weekdays the business operates: 0 = Monday … 6 = Sunday. */
   openDays: number[];
-  /** How many people work / live here. */
+  /** How many people work / live here (equals workers.length). */
   employees: number;
+  /** The roster of people who work / live here (names, titles, shifts). */
+  workers: Worker[];
   /** Rent paid to the plot owner each day at midnight. */
   dailyRent: number;
 }

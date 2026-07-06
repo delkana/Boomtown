@@ -8,7 +8,7 @@ import {
   UNIT_DEFS,
 } from "../game/constants";
 import { tenantLit } from "../game/tenants";
-import type { GameState, Plot } from "../game/types";
+import type { GameState, Plot, Worker } from "../game/types";
 import { unitAt, hasGirder, girderSupported } from "../game/reducer";
 import {
   elevatorRuns,
@@ -89,6 +89,8 @@ export class Renderer {
   private popups: Popup[] = [];
   /** Visual-only sim of people commuting + elevator cars answering their calls. */
   private people = new PeopleSim();
+  /** Per-frame person hit boxes (screen space), for hover tooltips. */
+  private personHits: { x0: number; y0: number; x1: number; y1: number; worker: Worker }[] = [];
   /** Current in-game hour (0..24) + weekday (0=Mon), for room lights. */
   private hourF = 12;
   private dayIndex = 0;
@@ -162,6 +164,7 @@ export class Renderer {
     // People commute and elevator cars answer their calls — a continuous,
     // visual-only sim independent of the economy tick, scaled by game speed.
     this.people.update(state, this.hourF, this.dayIndex, (dtMs / 1000) * (state.speed || 1));
+    this.personHits.length = 0; // rebuilt as people are drawn this frame
 
     // Latitude + season drive the sky (day/night lengths shift through the year).
     const { day, twilight } = skyState(state.tick, state.config.latitude ?? 0);
@@ -585,14 +588,24 @@ export class Renderer {
       const pos = this.people.carPos(car.id, car.position);
       const x = camera.worldToScreenX(leftWorld + car.col * CELL_SIZE);
       const y = camera.groundScreenY - (pos + 1) * cell;
-      this.drawElevatorCar(x, y, cell, car.doorSide ?? "right");
+      this.drawElevatorCar(x, y, cell, car.doorSide ?? "right", this.people.carDoorOpen(car.id));
     }
 
-    // People (office workers) commuting through the plot.
+    // People (office workers) commuting through the plot. Record a hit box for
+    // each so hovering a person can show who they are.
     for (const p of this.people.peopleIn(plot.index)) {
       const px = camera.worldToScreenX(leftWorld + p.x * CELL_SIZE);
       const py = camera.groundScreenY - p.floor * cell; // standing on the floor line
       this.drawPerson(px, py, cell, p.color);
+      if (p.worker && cell >= 8) {
+        this.personHits.push({
+          x0: px - cell * 0.16,
+          y0: py - cell * 0.42,
+          x1: px + cell * 0.16,
+          y1: py + cell * 0.06,
+          worker: p.worker,
+        });
+      }
     }
 
     // Nameplate under the plot: themed property name, then owner / status.
@@ -679,7 +692,7 @@ export class Renderer {
   }
 
   /** Draw one elevator car (a metallic cabin) at a screen position in its shaft. */
-  private drawElevatorCar(x: number, y: number, cell: number, doorSide: "left" | "right"): void {
+  private drawElevatorCar(x: number, y: number, cell: number, doorSide: "left" | "right", open = 0): void {
     const { ctx } = this;
     const ix = x + 1, iy = y + 1, iw = cell - 2, ih = cell - 2;
     // A little 3-point-perspective cabin: floor/ceiling/side/back walls recede.
@@ -701,29 +714,48 @@ export class Renderer {
     poly([TL, bTL, bBL, BL], "#8a9098"); // left wall
     poly([TR, bTR, bBR, BR], "#9aa0a8"); // right wall
     poly([bTL, bTR, bBR, bBL], "#adb3bb"); // back wall
-    // Bright metal double doors on the chosen side wall (default right).
+    // Bright metal double doors on the chosen side wall (default right). The two
+    // leaves slide apart (`open` 0..1) toward the jambs when loading/unloading.
     const wall = doorSide === "left" ? { f: TL, fb: BL, b: bTL, bb: bBL } : { f: TR, fb: BR, b: bTR, bb: bBR };
-    // Door frame fills the whole side wall in a bright brushed steel.
-    poly([wall.f, wall.b, wall.bb, wall.fb], "#c3c9cf");
-    // Two door leaves inset from the frame, meeting at a centre seam.
+    poly([wall.f, wall.b, wall.bb, wall.fb], "#c3c9cf"); // frame (brushed steel)
     const lerp = (a: Pt, b: Pt, t: number): Pt => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-    const fTop = lerp(wall.f, wall.b, 0.12), bTop = lerp(wall.f, wall.b, 0.88);
-    const fBot = lerp(wall.fb, wall.bb, 0.12), bBot = lerp(wall.fb, wall.bb, 0.88);
     const topIn = 0.07, botIn = 1.0; // reach the floor; keep a small lintel up top
-    const fT = lerp(fTop, fBot, topIn), fB = lerp(fTop, fBot, botIn);
-    const bT = lerp(bTop, bBot, topIn), bB = lerp(bTop, bBot, botIn);
-    const mT = lerp(fT, bT, 0.5), mB = lerp(fB, bB, 0.5);
-    poly([fT, mT, mB, fB], "#9198a0"); // front leaf
-    poly([mT, bT, bB, mB], "#868d95"); // back leaf (slightly darker with depth)
-    ctx.strokeStyle = "#41474f"; // centre seam between the leaves
+    // A vertical door edge at depth `d` along the wall (front→back): its top and floor points.
+    const edge = (d: number): { T: Pt; B: Pt } => {
+      const te = lerp(wall.f, wall.b, d);
+      const be = lerp(wall.fb, wall.bb, d);
+      return { T: lerp(te, be, topIn), B: lerp(te, be, botIn) };
+    };
+    const leaf = (d0: number, d1: number, fill: string): void => {
+      const a = edge(d0), b = edge(d1);
+      poly([a.T, b.T, b.B, a.B], fill);
+    };
+    const j0 = 0.12, j1 = 0.88, mid = 0.5;
+    const frontR = mid - (mid - j0) * open; // inner edge of the front leaf
+    const backL = mid + (j1 - mid) * open; // inner edge of the back leaf
+    leaf(j0, j1, "#20252b"); // the open doorway behind the leaves (dark)
+    leaf(j0, frontR, "#9198a0"); // front leaf
+    leaf(backL, j1, "#868d95"); // back leaf (a touch darker with depth)
+    ctx.strokeStyle = "#41474f"; // dark edges of the two leaves
     ctx.lineWidth = Math.max(0.8, cell * 0.03);
-    ctx.beginPath();
-    ctx.moveTo(mT.x, mT.y);
-    ctx.lineTo(mB.x, mB.y);
-    ctx.stroke();
+    for (const e of [edge(frontR), edge(backL)]) {
+      ctx.beginPath();
+      ctx.moveTo(e.T.x, e.T.y);
+      ctx.lineTo(e.B.x, e.B.y);
+      ctx.stroke();
+    }
     ctx.strokeStyle = "#5a626c";
     ctx.lineWidth = 1;
     ctx.strokeRect(ix + 0.5, iy + 0.5, iw - 1, ih - 1);
+  }
+
+  /** The person under a screen point (topmost drawn), or null — for hover tooltips. */
+  personAt(screenX: number, screenY: number): Worker | null {
+    for (let i = this.personHits.length - 1; i >= 0; i--) {
+      const h = this.personHits[i];
+      if (screenX >= h.x0 && screenX <= h.x1 && screenY >= h.y0 && screenY <= h.y1) return h.worker;
+    }
+    return null;
   }
 
   /** A little person standing on the floor line at (px, py) — feet at py. */

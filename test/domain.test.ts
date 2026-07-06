@@ -652,6 +652,34 @@ describe("tenants", () => {
     expect(hi.dailyRent).toBeGreaterThan(lo.dailyRent);
   });
 
+  it("offices are small teams of 4–6 with a full staff roster", () => {
+    for (let i = 0; i < 60; i++) {
+      const t = generateTenant("office", `office:${i}`, 0.7, 2 + (i % 3))!;
+      expect(t.employees).toBeGreaterThanOrEqual(4);
+      expect(t.employees).toBeLessThanOrEqual(6);
+      expect(t.workers).toHaveLength(t.employees); // roster matches the headcount
+      // Each worker has a name, title, shift and work days.
+      for (const w of t.workers) {
+        expect(w.name).toContain(" "); // given + family
+        expect(w.title).toBeTruthy();
+        expect(w.dailySalary).toBeGreaterThan(0);
+        expect(w.days).toEqual(t.openDays);
+        expect(w.startHour).toBe(t.openHour);
+        expect(w.endHour).toBe(t.closeHour);
+      }
+    }
+  });
+
+  it("names follow the city archetype (region-appropriate)", () => {
+    const jp = generateTenant("office", "seed:jp", 0.7, 2, "japan")!;
+    const su = generateTenant("office", "seed:jp", 0.7, 2, "ussr")!;
+    // Same seed, different region → different name pools → different rosters.
+    expect(jp.workers[0].name).not.toBe(su.workers[0].name);
+    // Distinct people within a single office.
+    const names = new Set(jp.workers.map((w) => w.name));
+    expect(names.size).toBe(jp.workers.length);
+  });
+
   it("assigns a subset from the kind's set and pulls from a large name pool", () => {
     const t = generateTenant("restaurant", "seed", 0.7, 4)!;
     expect(["mexican", "chinese", "pizza", "american", "sushi", "cafe"]).toContain(t.subset);

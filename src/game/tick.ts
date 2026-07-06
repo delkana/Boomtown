@@ -45,7 +45,7 @@ export function advanceTick(state: GameState): void {
             const moveHour = 6 + (hashString(`${plot.id}:${unit.id}:hour:${day}`) % 14); // 6am–7pm
             const moveTick = day * TICKS_PER_DAY + moveHour * (60 / TICK_MINUTES);
             if (state.tick >= moveTick) {
-              unit.tenant = generateTenant(unit.kind, `${plot.id}:${unit.id}`, appeal, unit.width);
+              unit.tenant = generateTenant(unit.kind, `${plot.id}:${unit.id}`, appeal, unit.width, state.config.archetype);
             }
           }
         }
