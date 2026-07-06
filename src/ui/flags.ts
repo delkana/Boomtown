@@ -134,15 +134,20 @@ const FLAGS: Record<string, string> = {
     ${starOutline(15, 6.8, 3.4, "#f6d500", 1)}`,
 
   latam: `
-    <rect width="60" height="40" fill="#4aa3e0"/>
-    <rect y="27" width="60" height="13" fill="#1f8a4c"/>
-    <circle cx="30" cy="17" r="6" fill="#f4c94b"/>
-    ${[0, 60, 120, 180, 240, 300]
-      .map((deg) => {
-        const r = (deg * Math.PI) / 180;
-        return `<line x1="${30 + 7 * Math.cos(r)}" y1="${17 + 7 * Math.sin(r)}" x2="${30 + 10 * Math.cos(r)}" y2="${17 + 10 * Math.sin(r)}" stroke="#f4c94b" stroke-width="1.4"/>`;
-      })
-      .join("")}`,
+    <rect width="60" height="40" fill="#f4a800"/>
+    <line x1="0" y1="0" x2="60" y2="40" stroke="#cc1f2e" stroke-width="6"/>
+    <line x1="60" y1="0" x2="0" y2="40" stroke="#cc1f2e" stroke-width="6"/>
+    <polygon points="30,5 53,20 30,35 7,20" fill="#123a78"/>
+    ${Array.from({ length: 16 }, (_, k) => {
+      const a = (k * 22.5 * Math.PI) / 180;
+      const r0 = 5.4;
+      const r1 = 9.6;
+      const w = (5 * Math.PI) / 180;
+      const pt = (r: number, ang: number): string =>
+        `${(30 + r * Math.cos(ang)).toFixed(2)},${(20 + r * Math.sin(ang)).toFixed(2)}`;
+      return `<polygon points="${pt(r1, a)} ${pt(r0, a - w)} ${pt(r0, a + w)}" fill="#f4a800"/>`;
+    }).join("")}
+    <circle cx="30" cy="20" r="4.6" fill="#f4a800" stroke="#123a78" stroke-width="0.9"/>`,
 
   gulf: `
     <rect width="60" height="40" fill="#d2202e"/>
@@ -180,15 +185,22 @@ const FLAGS: Record<string, string> = {
     ${STAR(28, 9, 7, "#ffd24a")}${STAR(33, 13, 7, "#ffd24a")}${STAR(33, 20, 7, "#ffd24a")}${STAR(28, 24, 7, "#ffd24a")}`,
 
   "african-union": `
-    <rect width="60" height="40" fill="#0e7a4a"/>
-    <circle cx="30" cy="20" r="9" fill="none" stroke="#f4c94b" stroke-width="2"/>
-    <circle cx="30" cy="20" r="3.4" fill="#f4c94b"/>
-    ${[0, 72, 144, 216, 288]
-      .map((deg) => {
-        const r = ((deg - 90) * Math.PI) / 180;
-        return STAR(30 + 9 * Math.cos(r), 21 + 9 * Math.sin(r), 5, "#f4c94b");
-      })
-      .join("")}`,
+    <rect width="60" height="40" fill="#3f7a54"/>
+    ${Array.from({ length: 40 }, (_, k) => {
+      const a = ((k * 9 - 90) * Math.PI) / 180;
+      const r0 = 5.5;
+      const r1 = 14;
+      const w = (2.4 * Math.PI) / 180;
+      const pt = (r: number, ang: number): string =>
+        `${(30 + r * Math.cos(ang)).toFixed(2)},${(20 + r * Math.sin(ang)).toFixed(2)}`;
+      return `<polygon points="${pt(r1, a)} ${pt(r0, a - w)} ${pt(r0, a + w)}" fill="#ffffff"/>`;
+    }).join("")}
+    <polygon fill="#ffffff" points="30,11 34,11.2 36.5,12 37.5,13.8 38.8,15.2 40,16.8 37.6,17.6 37,19.2 35.8,22 34.2,25 32.6,27.6 31.2,29.2 29.8,27.6 28.4,24.4 27,21 25.6,18.4 26.4,16.6 24.2,15.6 24,13.6 25.4,12 27.4,11.4"/>
+    <ellipse cx="39.6" cy="24.5" rx="0.9" ry="2.2" fill="#ffffff" transform="rotate(-18 39.6 24.5)"/>
+    ${Array.from({ length: 48 }, (_, k) => {
+      const a = ((k * (360 / 48) - 90) * Math.PI) / 180;
+      return starFill(30 + 17.5 * Math.cos(a), 20 + 17.5 * Math.sin(a), 0.85, "#f2c33d");
+    }).join("")}`,
 };
 
 /** Inline SVG flag markup for an archetype id (falls back to a neutral flag). */
