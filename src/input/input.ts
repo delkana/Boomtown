@@ -1,6 +1,5 @@
 import type { GameConnection } from "../net/connection";
 import type { Tool } from "../render/renderer";
-import { MAX_PLOTS } from "../game/constants";
 import type { Camera } from "../render/camera";
 import type { HoverState } from "../render/renderer";
 
@@ -72,8 +71,7 @@ export class InputController {
   }
 
   private clampCamera(): void {
-    const plotCount = this.conn.getState().config.plotCount || MAX_PLOTS;
-    this.camera.clampToWorld(0, plotCount - 1);
+    this.camera.clampToWorld();
   }
 
   private localPointer(e: PointerEvent | MouseEvent): { x: number; y: number } {

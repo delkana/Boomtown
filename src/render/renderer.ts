@@ -1,6 +1,7 @@
-import { CELL_SIZE, CLAIM_COST, MAX_ROWS, PLOT_COLS, UNIT_DEFS } from "../game/constants";
+import { CELL_SIZE, MAX_ROWS, UNIT_DEFS } from "../game/constants";
 import type { GameState, Plot } from "../game/types";
 import { unitAt } from "../game/reducer";
+import { claimCost } from "../game/economy";
 import { Camera } from "./camera";
 
 /**
@@ -66,7 +67,7 @@ export class Renderer {
     const cell = camera.scale(CELL_SIZE); // screen px per grid cell at current zoom
     const leftWorld = camera.plotLeftWorldX(plot.index);
     const leftScreen = camera.worldToScreenX(leftWorld);
-    const plotPxW = PLOT_COLS * cell;
+    const plotPxW = plot.cols * cell;
 
     // Cull off-screen plots.
     if (leftScreen + plotPxW < 0 || leftScreen > camera.viewW) return;
@@ -96,7 +97,7 @@ export class Renderer {
     if (isOwn) {
       ctx.strokeStyle = "rgba(255,255,255,0.07)";
       ctx.lineWidth = 1;
-      for (let c = 0; c <= PLOT_COLS; c++) {
+      for (let c = 0; c <= plot.cols; c++) {
         const x = leftScreen + c * cell;
         ctx.beginPath();
         ctx.moveTo(x, camera.rowTopScreenY(MAX_ROWS - 1));
@@ -156,8 +157,13 @@ export class Renderer {
 
     ctx.font = "11px system-ui, sans-serif";
     if (!plot.ownerId) {
+      const price = claimCost(state, localId, plot.index);
       ctx.fillStyle = "rgba(150,210,150,0.85)";
-      ctx.fillText(`Available · $${CLAIM_COST.toLocaleString()}`, cx, groundY + 25);
+      ctx.fillText(
+        `${plot.cols}-wide · Available · $${price.toLocaleString()}`,
+        cx,
+        groundY + 25,
+      );
     } else {
       ctx.fillStyle = ownerColor;
       ctx.fillText(isOwn ? `★ You · ${owner?.name ?? ""}` : owner?.name ?? "", cx, groundY + 25);
@@ -179,15 +185,17 @@ export class Renderer {
 
     if (tool === "claim") {
       if (plot.ownerId) return; // only unclaimed plots are claimable
-      const canAfford = (state.players[localId]?.money ?? 0) >= CLAIM_COST;
+      const canAfford =
+        (state.players[localId]?.money ?? 0) >= claimCost(state, localId, plot.index);
       const x = camera.worldToScreenX(leftWorld);
       const top = camera.rowTopScreenY(2);
       const hgt = camera.groundScreenY - top;
+      const w = plot.cols * cell;
       ctx.fillStyle = canAfford ? "rgba(120,220,120,0.18)" : "rgba(200,70,70,0.18)";
-      ctx.fillRect(x, top, PLOT_COLS * cell, hgt);
+      ctx.fillRect(x, top, w, hgt);
       ctx.strokeStyle = canAfford ? "#78dc78" : "#c84646";
       ctx.lineWidth = 2;
-      ctx.strokeRect(x + 1, top + 1, PLOT_COLS * cell - 2, hgt - 2);
+      ctx.strokeRect(x + 1, top + 1, w - 2, hgt - 2);
       return;
     }
 
@@ -199,7 +207,7 @@ export class Renderer {
     const wpx = def.width * cell;
 
     const blocked =
-      hover.col + def.width > PLOT_COLS ||
+      hover.col + def.width > plot.cols ||
       hover.row >= MAX_ROWS ||
       !!unitAt(plot, hover.col, hover.row);
     ctx.fillStyle = blocked ? "rgba(200,70,70,0.35)" : "rgba(120,220,120,0.35)";

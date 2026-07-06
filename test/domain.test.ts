@@ -3,7 +3,8 @@ import { createGameState, serialize, deserialize } from "../src/game/state";
 import { applyCommand } from "../src/game/reducer";
 import { advanceTick, projectedNet } from "../src/game/tick";
 import { propertyNameFor, archetype } from "../src/game/archetypes";
-import { CLAIM_COST, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
+import { MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
+import { claimCost, plotBaseCost } from "../src/game/economy";
 import type { GameState } from "../src/game/types";
 
 /**
@@ -33,6 +34,14 @@ describe("createGameState", () => {
     expect(Object.values(s.plots).every((p) => p.ownerId === null)).toBe(true);
   });
 
+  it("gives each plot a width within [MIN, MAX]_PLOT_COLS", () => {
+    const s = freshGame(12);
+    for (const p of Object.values(s.plots)) {
+      expect(p.cols).toBeGreaterThanOrEqual(MIN_PLOT_COLS);
+      expect(p.cols).toBeLessThanOrEqual(MAX_PLOT_COLS);
+    }
+  });
+
   it("assigns deterministic non-empty themed property names", () => {
     const a = freshGame(6, "japan");
     const b = freshGame(6, "japan");
@@ -43,12 +52,30 @@ describe("createGameState", () => {
 });
 
 describe("CLAIM_PLOT", () => {
-  it("claims an unowned plot and deducts the cost", () => {
+  it("claims an unowned plot and deducts the width-based cost", () => {
     const s = freshGame();
+    const cost = claimCost(s, "p1", 0);
+    expect(cost).toBe(plotBaseCost(s.plots[0].cols)); // first plot: ×1
     const r = applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
     expect(r.ok).toBe(true);
     expect(s.plots[0].ownerId).toBe("p1");
-    expect(s.players["p1"].money).toBe(STARTING_MONEY - CLAIM_COST);
+    expect(s.players["p1"].money).toBe(STARTING_MONEY - cost);
+  });
+
+  it("charges escalating multiples for each additional plot (×1, ×2, ×3)", () => {
+    const s = freshGame(6);
+    s.players["p1"].money = 10_000_000; // enough for several
+    expect(claimCost(s, "p1", 0)).toBe(plotBaseCost(s.plots[0].cols) * 1);
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    expect(claimCost(s, "p1", 1)).toBe(plotBaseCost(s.plots[1].cols) * 2);
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 1 });
+    expect(claimCost(s, "p1", 2)).toBe(plotBaseCost(s.plots[2].cols) * 3);
+  });
+
+  it("prices land from PLOT_COST_MIN (narrow) up to PLOT_COST_MAX (wide)", () => {
+    expect(plotBaseCost(MIN_PLOT_COLS)).toBe(4000);
+    expect(plotBaseCost(MAX_PLOT_COLS)).toBe(20000);
+    expect(plotBaseCost(MIN_PLOT_COLS + 1)).toBeGreaterThan(plotBaseCost(MIN_PLOT_COLS));
   });
 
   it("rejects claiming a plot you already own", () => {
@@ -68,7 +95,7 @@ describe("CLAIM_PLOT", () => {
 
   it("rejects claiming without enough money", () => {
     const s = freshGame();
-    s.players["p1"].money = CLAIM_COST - 1;
+    s.players["p1"].money = claimCost(s, "p1", 0) - 1;
     const r = applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
     expect(r.ok).toBe(false);
   });
@@ -77,6 +104,7 @@ describe("CLAIM_PLOT", () => {
 describe("PLACE_UNIT", () => {
   function claimed(): GameState {
     const s = freshGame();
+    s.players["p1"].money = 1_000_000; // plenty to build with, regardless of plot width
     applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
     return s;
   }
@@ -144,13 +172,14 @@ describe("PLACE_UNIT", () => {
     expect(r.ok).toBe(false);
   });
 
-  it("rejects placement outside the horizontal bounds", () => {
+  it("rejects placement past the plot's right edge", () => {
     const s = claimed();
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    // office is 2 wide; placing it at (cols - 1) spills past the plot edge.
     const r = applyCommand(s, {
-      type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "office", col: 7, row: 0,
+      type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "office", col: s.plots[0].cols - 1, row: 0,
     });
-    expect(r.ok).toBe(false); // office is 2 wide, col 7 spills past col 8
+    expect(r.ok).toBe(false);
   });
 });
 
@@ -171,6 +200,7 @@ describe("SELL_UNIT", () => {
 describe("advanceTick economy", () => {
   function servicedTower(): GameState {
     const s = freshGame();
+    s.players["p1"].money = 1_000_000;
     applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 0 });

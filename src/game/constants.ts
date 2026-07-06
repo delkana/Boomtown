@@ -7,17 +7,29 @@ import type { UnitKind } from "./types";
 
 /** Grid geometry, in world units (1 cell = CELL_SIZE px at zoom 1). */
 export const CELL_SIZE = 48;
-/** Columns per plot (tower footprint width). */
-export const PLOT_COLS = 8;
 /** Max floors above ground you can build. */
-export const MAX_ROWS = 20;
+export const MAX_ROWS = 50;
 /** Horizontal gap (in cells) between adjacent plots in the city strip. */
 export const PLOT_GAP_COLS = 2;
 
+/**
+ * Plots vary in width. Each city plot gets a footprint between MIN and MAX
+ * columns (chosen deterministically at city generation, see state.ts).
+ */
+export const MIN_PLOT_COLS = 7;
+export const MAX_PLOT_COLS = 17;
+
+/**
+ * Base land price scales linearly with plot width: a MIN_PLOT_COLS plot costs
+ * PLOT_COST_MIN, a MAX_PLOT_COLS plot costs PLOT_COST_MAX. The price a player
+ * actually pays also multiplies by how many plots they already own (see
+ * src/game/economy.ts).
+ */
+export const PLOT_COST_MIN = 4000;
+export const PLOT_COST_MAX = 20000;
+
 /** Player's starting cash. */
 export const STARTING_MONEY = 25000;
-/** One-time cost to claim an unowned plot. */
-export const CLAIM_COST = 4000;
 
 /** Real seconds between economy ticks (server-driven). */
 export const TICK_SECONDS = 2;

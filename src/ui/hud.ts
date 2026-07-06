@@ -1,5 +1,6 @@
-import { BUILD_ORDER, CLAIM_COST, TICK_SECONDS, UNIT_DEFS } from "../game/constants";
+import { BUILD_ORDER, PLOT_COST_MIN, TICK_SECONDS, UNIT_DEFS } from "../game/constants";
 import { archetype } from "../game/archetypes";
+import { claimCost } from "../game/economy";
 import { projectedNet } from "../game/tick";
 import type { GameConnection } from "../net/connection";
 import type { Tool } from "../render/renderer";
@@ -49,7 +50,7 @@ export class Hud {
     claim.innerHTML = `
       <span class="swatch claim-swatch">＋</span>
       <span class="tool-label">Claim Plot</span>
-      <span class="tool-cost">$${CLAIM_COST.toLocaleString()}</span>
+      <span class="tool-cost">from $${PLOT_COST_MIN.toLocaleString()}</span>
       <span class="tool-key">C</span>`;
     claim.addEventListener("click", () => this.toggle("claim"));
     this.toolbarEl.appendChild(claim);
@@ -101,10 +102,17 @@ export class Hud {
 
     this.renderPlayers(state, me);
 
+    // Cheapest plot the player could currently claim (for the claim tool state).
+    let cheapestClaim = Infinity;
+    for (const key of Object.keys(state.plots)) {
+      const p = state.plots[Number(key)];
+      if (!p.ownerId) cheapestClaim = Math.min(cheapestClaim, claimCost(state, me, p.index));
+    }
+
     // Toolbar selected/affordability states.
     for (const el of Array.from(this.toolbarEl.children) as HTMLElement[]) {
       const tool = el.dataset.tool as Exclude<Tool, null>;
-      const cost = tool === "claim" ? CLAIM_COST : UNIT_DEFS[tool].cost;
+      const cost = tool === "claim" ? cheapestClaim : UNIT_DEFS[tool].cost;
       el.classList.toggle("selected", this.getSelected() === tool);
       el.classList.toggle("unaffordable", player.money < cost);
     }

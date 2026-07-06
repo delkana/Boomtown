@@ -28,7 +28,9 @@ export interface GameServer {
   reconnect(gameId: string, token: string): Promise<ConnectResult>;
 }
 
-const LS_KEY = "boomtown.local.v1";
+// Bump this when the persisted state shape changes (e.g. variable plot widths),
+// so incompatible old saves are discarded instead of breaking layout.
+const LS_KEY = "boomtown.local.v2";
 
 /**
  * In-process authoritative server. Wraps a GameDirectory and hands out

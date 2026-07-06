@@ -4,6 +4,7 @@ import { Renderer } from "./render/renderer";
 import { InputController } from "./input/input";
 import { Hud } from "./ui/hud";
 import { Minimap } from "./ui/minimap";
+import { CityLayout } from "./render/cityLayout";
 import { LobbyScreen } from "./ui/lobby";
 import { LocalServer, type GameServer } from "./net/localServer";
 import { RemoteServer } from "./net/remoteServer";
@@ -81,6 +82,8 @@ function enterGame(conn: GameConnection): void {
   gameRoot.classList.remove("hidden");
 
   const camera = new Camera();
+  // Plot widths are fixed for the life of the game — build the layout once.
+  camera.layout = new CityLayout(conn.getState());
   const renderer = new Renderer(canvas, camera);
   let hud: Hud;
 
@@ -91,11 +94,11 @@ function enterGame(conn: GameConnection): void {
   });
 
   const plotCount = conn.getState().config.plotCount;
-  const minimap = new Minimap(minimapEl, conn, camera, () => plotCount);
+  const minimap = new Minimap(minimapEl, conn, camera);
 
   // Size the canvas and center on the middle of the city.
   sizeCanvas(camera);
-  jumpToMyPlots(conn, camera, plotCount, Math.floor(plotCount / 2));
+  jumpToMyPlots(conn, camera, Math.floor(plotCount / 2));
 
   const unsub = conn.onSnapshot(() => hud.update());
   hud.update();
@@ -103,7 +106,7 @@ function enterGame(conn: GameConnection): void {
   // Nav controls.
   const onZoomIn = () => input.zoomBy(1.25);
   const onZoomOut = () => input.zoomBy(1 / 1.25);
-  const onJump = () => jumpToMyPlots(conn, camera, plotCount, Math.floor(plotCount / 2));
+  const onJump = () => jumpToMyPlots(conn, camera, Math.floor(plotCount / 2));
   zoomInBtn.addEventListener("click", onZoomIn);
   zoomOutBtn.addEventListener("click", onZoomOut);
   jumpBtn.addEventListener("click", onJump);
@@ -147,12 +150,7 @@ function leaveGame(): void {
 }
 
 /** Center the camera on the player's first owned plot, or `fallback` if none. */
-function jumpToMyPlots(
-  conn: GameConnection,
-  camera: Camera,
-  plotCount: number,
-  fallback: number,
-): void {
+function jumpToMyPlots(conn: GameConnection, camera: Camera, fallback: number): void {
   const state = conn.getState();
   const me = conn.session.playerId;
   const mine = Object.values(state.plots)
@@ -160,7 +158,7 @@ function jumpToMyPlots(
     .map((p) => p.index)
     .sort((a, b) => a - b);
   camera.centerOnPlot(mine.length ? mine[0] : fallback);
-  camera.clampToWorld(0, plotCount - 1);
+  camera.clampToWorld();
 }
 
 function sizeCanvas(camera: Camera): void {

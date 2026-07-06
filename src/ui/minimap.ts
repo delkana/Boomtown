@@ -1,4 +1,4 @@
-import { CELL_SIZE, MAX_ROWS, PLOT_COLS } from "../game/constants";
+import { CELL_SIZE, MAX_ROWS } from "../game/constants";
 import type { Camera } from "../render/camera";
 import type { GameConnection } from "../net/connection";
 
@@ -16,7 +16,6 @@ export class Minimap {
     private el: HTMLElement,
     private conn: GameConnection,
     private camera: Camera,
-    private clampPlots: () => number,
   ) {
     this.canvas = document.createElement("canvas");
     this.el.appendChild(this.canvas);
@@ -33,11 +32,8 @@ export class Minimap {
     this.el.removeChild(this.canvas);
   }
 
-  private plotCount(): number {
-    return this.conn.getState().config.plotCount;
-  }
   private contentWidth(): number {
-    return this.plotCount() * this.camera.stride;
+    return this.camera.layout?.totalWorldWidth || this.cssW();
   }
   private cssW(): number {
     return this.el.clientWidth;
@@ -61,7 +57,7 @@ export class Minimap {
     const rect = this.canvas.getBoundingClientRect();
     const worldX = (e.clientX - rect.left) / this.mapScale();
     this.camera.centerOnWorldX(worldX);
-    this.camera.clampToWorld(0, this.clampPlots() - 1);
+    this.camera.clampToWorld();
   }
 
   render(): void {
@@ -83,7 +79,6 @@ export class Minimap {
     const scale = this.mapScale();
     const groundY = h - 4;
     const usableH = h - 8;
-    const plotW = PLOT_COLS * CELL_SIZE * scale;
 
     // Ground line.
     ctx.fillStyle = "rgba(255,255,255,0.12)";
@@ -91,7 +86,8 @@ export class Minimap {
 
     for (const key of Object.keys(state.plots)) {
       const plot = state.plots[Number(key)];
-      const x = plot.index * this.camera.stride * scale;
+      const x = this.camera.plotLeftWorldX(plot.index) * scale;
+      const plotW = plot.cols * CELL_SIZE * scale;
       const owner = plot.ownerId ? state.players[plot.ownerId] : undefined;
       const maxRow = plot.units.reduce((m, u) => Math.max(m, u.row + 1), 0);
 

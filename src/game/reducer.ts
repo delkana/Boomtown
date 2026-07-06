@@ -1,6 +1,7 @@
 import type { Command } from "./commands";
 import type { GameState, Plot, Unit, UnitKind } from "./types";
-import { CLAIM_COST, MAX_ROWS, PLOT_COLS, UNIT_DEFS } from "./constants";
+import { MAX_ROWS, UNIT_DEFS } from "./constants";
+import { claimCost } from "./economy";
 
 /**
  * The reducer applies a single command to the authoritative state.
@@ -46,10 +47,12 @@ function claimPlot(
   if (!plot) return fail("No such plot");
   if (plot.ownerId === cmd.playerId) return fail("You already own this plot");
   if (plot.ownerId) return fail("Plot already claimed by another player");
-  if (player.money < CLAIM_COST) return fail("Not enough money to claim");
+
+  const cost = claimCost(state, cmd.playerId, cmd.plotIndex);
+  if (player.money < cost) return fail("Not enough money to claim");
 
   plot.ownerId = cmd.playerId;
-  player.money -= CLAIM_COST;
+  player.money -= cost;
   return ok();
 }
 
@@ -70,7 +73,7 @@ function placeUnit(
 
   // Bounds.
   if (cmd.row < 0 || cmd.row >= MAX_ROWS) return fail("Out of vertical bounds");
-  if (cmd.col < 0 || cmd.col + def.width > PLOT_COLS)
+  if (cmd.col < 0 || cmd.col + def.width > plot.cols)
     return fail("Doesn't fit horizontally");
 
   // Placement rules.

@@ -235,21 +235,26 @@ function seedOwner(
 ): void {
   const player = game.addPlayer(name, colorHex);
   plotIndices.forEach((plotIndex, i) => {
-    game.seedPlot(player.id, plotIndex, sampleTower(floorsList[i] ?? 5));
+    const cols = game.state.plots[plotIndex]?.cols ?? 8;
+    game.seedPlot(player.id, plotIndex, sampleTower(floorsList[i] ?? 5, cols));
   });
 }
 
+/** A valid, supported tower that fits within a plot `cols` wide. */
 function sampleTower(
   floors: number,
+  cols: number,
 ): { kind: UnitKind; col: number; row: number; occupancy?: number }[] {
   const specs: { kind: UnitKind; col: number; row: number; occupancy?: number }[] = [];
   specs.push({ kind: "lobby", col: 0, row: 0 });
   for (let r = 0; r < floors; r++) {
     specs.push({ kind: "elevator", col: 2, row: r });
-    const left: UnitKind = r % 2 === 0 ? "office" : "apartment";
-    const right: UnitKind = r % 2 === 0 ? "apartment" : "office";
-    specs.push({ kind: left, col: 4, row: r, occupancy: 0.6 + (r % 3) * 0.1 });
-    specs.push({ kind: right, col: 6, row: r, occupancy: 0.55 + (r % 2) * 0.15 });
+    // Fill revenue columns starting at col 4, as many 2-wide units as fit.
+    let slot = 0;
+    for (let c = 4; c + 2 <= cols; c += 2, slot++) {
+      const kind: UnitKind = (r + slot) % 2 === 0 ? "office" : "apartment";
+      specs.push({ kind, col: c, row: r, occupancy: 0.55 + ((r + slot) % 3) * 0.12 });
+    }
   }
   return specs;
 }

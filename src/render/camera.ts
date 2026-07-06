@@ -1,4 +1,5 @@
-import { CELL_SIZE, PLOT_COLS, PLOT_GAP_COLS } from "../game/constants";
+import { CELL_SIZE, PLOT_GAP_COLS } from "../game/constants";
+import type { CityLayout } from "./cityLayout";
 
 /**
  * Camera + coordinate transforms for the horizontal city strip.
@@ -7,8 +8,10 @@ import { CELL_SIZE, PLOT_COLS, PLOT_GAP_COLS } from "../game/constants";
  * SCREEN space: standard canvas pixels, y grows downward.
  *
  * The camera pans horizontally (`offsetX`, in world units) and zooms uniformly
- * (`zoom`). The ground line is pinned near the bottom of the viewport. Renderer
- * and input share these transforms so mouse->cell math and drawing agree.
+ * (`zoom`). The ground line is pinned near the bottom of the viewport. Plots
+ * vary in width, so the camera defers all plot placement + hit-testing to a
+ * shared CityLayout. Renderer and input use the same transforms so mouse->cell
+ * math and drawing agree.
  */
 export class Camera {
   /** World-x shown at screen x=0 (in world units, i.e. pre-zoom pixels). */
@@ -17,6 +20,8 @@ export class Camera {
   zoom = 1;
   viewW = 0;
   viewH = 0;
+  /** Variable-width plot layout for this city (set on game enter). */
+  layout: CityLayout | null = null;
 
   /** Pixels from the bottom of the canvas to the ground line (row 0's base). */
   readonly groundMargin = 80;
@@ -28,11 +33,6 @@ export class Camera {
     this.viewH = h;
   }
 
-  /** World-x span of one plot + its trailing gap. */
-  get stride(): number {
-    return (PLOT_COLS + PLOT_GAP_COLS) * CELL_SIZE;
-  }
-
   /** Screen y of the ground line (base of row 0). */
   get groundScreenY(): number {
     return this.viewH - this.groundMargin;
@@ -40,7 +40,7 @@ export class Camera {
 
   /** World-x of a plot's left edge. */
   plotLeftWorldX(plotIndex: number): number {
-    return plotIndex * this.stride;
+    return this.layout?.leftWorldX(plotIndex) ?? 0;
   }
 
   /** Convert a world length to screen pixels at the current zoom. */
@@ -71,16 +71,13 @@ export class Camera {
     screenX: number,
     screenY: number,
   ): { plotIndex: number; col: number; row: number } | null {
-    const worldX = this.screenToWorldX(screenX);
-    const plotIndex = Math.floor(worldX / this.stride);
-    const withinPlotX = worldX - plotIndex * this.stride;
-    const col = Math.floor(withinPlotX / CELL_SIZE);
-    if (col < 0 || col >= PLOT_COLS) return null; // in the gap between plots
+    const loc = this.layout?.locate(this.screenToWorldX(screenX));
+    if (!loc) return null; // in the gap between plots (or no layout yet)
 
     const row = Math.floor((this.groundScreenY - screenY) / (CELL_SIZE * this.zoom));
     if (row < 0) return null; // below ground
 
-    return { plotIndex, col, row };
+    return { plotIndex: loc.plotIndex, col: loc.col, row };
   }
 
   /** Set zoom while keeping the world point under `screenX` fixed on screen. */
@@ -98,16 +95,15 @@ export class Camera {
 
   /** Center on a plot's midpoint. */
   centerOnPlot(plotIndex: number): void {
-    this.centerOnWorldX(this.plotLeftWorldX(plotIndex) + (PLOT_COLS * CELL_SIZE) / 2);
+    this.centerOnWorldX(this.layout?.plotMidWorldX(plotIndex) ?? 0);
   }
 
-  clampToWorld(minPlotIndex: number, maxPlotIndex: number): void {
+  /** Keep the whole city strip within reach (with a little margin). */
+  clampToWorld(): void {
     const margin = CELL_SIZE * 2;
-    const contentLeft = minPlotIndex * this.stride - margin;
-    const contentRight = (maxPlotIndex + 1) * this.stride - PLOT_GAP_COLS * CELL_SIZE + margin;
-    const viewWorld = this.viewW / this.zoom;
-    const min = contentLeft;
-    const max = contentRight - viewWorld;
+    const total = this.layout?.totalWorldWidth ?? this.viewW;
+    const min = -margin;
+    const max = total - PLOT_GAP_COLS * CELL_SIZE + margin - this.viewW / this.zoom;
     if (max < min) {
       // Content narrower than the viewport — center it.
       this.offsetX = (min + max) / 2;

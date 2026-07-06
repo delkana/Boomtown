@@ -42,6 +42,8 @@ export interface Plot {
   id: string;
   /** Index along the city strip, 0-based left to right. */
   index: number;
+  /** Footprint width in grid columns (varies per plot, MIN..MAX_PLOT_COLS). */
+  cols: number;
   /** Themed property name (from the city archetype), e.g. "Redwood Spire". */
   name: string;
   /** Owning player id, or `null` if the plot is unclaimed / for sale. */
