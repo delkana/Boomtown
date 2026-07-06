@@ -34,7 +34,16 @@ export interface GameTime {
 }
 
 export function gameTime(tick: number): GameTime {
-  const totalMinutes = tick * TICK_MINUTES;
+  return gameTimeFromMinutes(tick * TICK_MINUTES);
+}
+
+/**
+ * Build a GameTime from an absolute count of in-game minutes. Lets the HUD show
+ * a smoothly-advancing clock (minute by minute) between the coarse 5-minute
+ * economy ticks — pass `tick * TICK_MINUTES + interpolatedMinutes`.
+ */
+export function gameTimeFromMinutes(totalMinutesRaw: number): GameTime {
+  const totalMinutes = Math.floor(totalMinutesRaw);
   const minute = totalMinutes % 60;
   const hour = Math.floor(totalMinutes / 60) % 24;
   const totalDays = Math.floor(totalMinutes / (60 * 24));

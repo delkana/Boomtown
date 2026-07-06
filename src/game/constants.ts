@@ -127,8 +127,8 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     incomeAtFull: 120,
     fillRate: 0.08,
     color: "#5b8fb0",
-    // Good elevator access + views + quiet; indifferent to foot traffic.
-    prefs: { elevator: 1.0, view: 0.7, noise: 0.6 },
+    // Good elevator access + views; indifferent to noise and foot traffic.
+    prefs: { elevator: 1.0, view: 0.7 },
   },
   medical: {
     kind: "medical",

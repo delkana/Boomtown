@@ -137,6 +137,7 @@ function enterGame(conn: GameConnection): void {
   const loop = new RenderLoop((dt) => {
     input.update(dt);
     renderer.render(conn.getState(), conn.session.playerId, input.hover, input.selectedTool, hud.heatmap, input.girderStyle, dt);
+    hud.tickClock();
     minimap.render();
   });
   loop.start();

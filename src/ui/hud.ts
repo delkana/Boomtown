@@ -5,12 +5,13 @@ import {
   PLOT_COST_MIN,
   SPEED_OPTIONS,
   TICK_MINUTES,
+  TICK_SECONDS,
   UNIT_DEFS,
   type RoomPrefs,
 } from "../game/constants";
 import { archetype } from "../game/archetypes";
-import { FACADES } from "../game/facades";
-import { gameTime } from "../game/clock";
+import { FACADES, facadeById } from "../game/facades";
+import { gameTimeFromMinutes } from "../game/clock";
 import { claimCost } from "../game/economy";
 import {
   elevatorAccess,
@@ -51,6 +52,9 @@ export class Hud {
 
   /** Which heatmap overlay to draw (read by the render loop each frame). */
   heatmap: HeatmapKind = "none";
+  /** Smooth-clock anchor: the authoritative tick and when we last saw it. */
+  private clockAnchorTick = -1;
+  private clockAnchorMs = 0;
 
   constructor(
     private conn: GameConnection,
@@ -116,9 +120,14 @@ export class Hud {
     const net = gross - def.upkeep;
     const appeal = Math.round(roomSatisfaction(plot, unit) * 100);
     const prefs = prefsLabel(def.prefs);
+    // Facade/windows come from the girder this room is built on.
+    const girder = plot.girders.find((g) => g.col === unit.col && g.row === unit.row);
+    const facade = facadeById(girder?.style);
+    const facadeVal = unit.row < 0 ? `${facade.name} · no windows` : facade.name;
 
     this.inspectorEl.innerHTML = `
       <div class="insp-title">${def.label} · Floor ${unit.row}${info.pinned ? ' <span class="pin">📌</span>' : ""}</div>
+      <div class="insp-row"><span>Facade</span><span>${facadeVal}</span></div>
       <div class="insp-row"><span>Elevator</span><span>${elevStr}</span></div>
       <div class="insp-row"><span>View</span><span>${Math.round(view / n)}</span></div>
       <div class="insp-row"><span>Noise</span><span>${Math.round(noise / n)}</span></div>
@@ -240,6 +249,22 @@ export class Hud {
     this.onSelect(this.getSelected() === tool ? null : tool);
   }
 
+  /**
+   * Advance just the clock, interpolating game-minutes smoothly between the
+   * coarse 5-minute economy ticks. Called every animation frame.
+   */
+  tickClock(): void {
+    this.renderClock(this.conn.getState());
+  }
+
+  private renderClock(state: ReturnType<GameConnection["getState"]>): void {
+    const speed = state.speed || 1;
+    const elapsedSec = (performance.now() - this.clockAnchorMs) / 1000;
+    const gameMinPerSec = (TICK_MINUTES / TICK_SECONDS) * speed;
+    const progress = Math.min(TICK_MINUTES, Math.max(0, elapsedSec * gameMinPerSec));
+    this.clockEl.textContent = gameTimeFromMinutes(state.tick * TICK_MINUTES + progress).label;
+  }
+
   /** Refresh readouts. Called on each snapshot and on selection change. */
   update(): void {
     const state = this.conn.getState();
@@ -247,8 +272,12 @@ export class Hud {
     const player = state.players[me];
     if (!player) return;
 
-    // In-game clock + active speed button.
-    this.clockEl.textContent = gameTime(state.tick).label;
+    // Re-anchor the smooth clock whenever the authoritative tick advances.
+    if (state.tick !== this.clockAnchorTick) {
+      this.clockAnchorTick = state.tick;
+      this.clockAnchorMs = performance.now();
+    }
+    this.renderClock(state);
     const speed = state.speed || 1;
     for (const el of Array.from(this.speedEl.children) as HTMLElement[]) {
       el.classList.toggle("active", Number(el.dataset.speed) === speed);

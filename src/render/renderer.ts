@@ -75,14 +75,12 @@ const GIRDER_COLOR = "#5c6470";
 const GIRDER_HILITE = "#7a828f";
 
 export class Renderer {
+  private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
+  /** Offscreen copy of just the sky + backdrop, blitted through window "holes". */
+  private bgCanvas: HTMLCanvasElement;
+  private bgCtx: CanvasRenderingContext2D;
   private popups: Popup[] = [];
-  /** Current sky colours (top + horizon) — used to fill transparent windows. */
-  private skyTop: number[] = [120, 150, 190];
-  private skyBottom: number[] = [90, 120, 160];
-  /** Current backdrop layer ids — drawn (small) through room windows too. */
-  private bgNear = "none";
-  private bgFar = "clear";
   /** Smoothly-animated car positions (per car id), advanced every frame. */
   private carAnim = new Map<string, { pos: number; dir: number }>();
 
@@ -90,9 +88,14 @@ export class Renderer {
     canvas: HTMLCanvasElement,
     private camera: Camera,
   ) {
+    this.canvas = canvas;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("2D canvas context unavailable");
     this.ctx = ctx;
+    this.bgCanvas = document.createElement("canvas");
+    const bg = this.bgCanvas.getContext("2d");
+    if (!bg) throw new Error("2D canvas context unavailable");
+    this.bgCtx = bg;
   }
 
   /**
@@ -146,8 +149,6 @@ export class Renderer {
     const groundY = camera.groundScreenY; // follows vertical pan (offsetY)
 
     // Cars move continuously (independent of the economy tick), scaled by speed.
-    this.bgNear = state.config.backgroundNear ?? "none";
-    this.bgFar = state.config.backgroundFar ?? "clear";
     this.advanceCarAnim(state, (dtMs / 1000) * (state.speed || 1));
 
     // Latitude + season drive the sky (day/night lengths shift through the year).
@@ -156,17 +157,22 @@ export class Renderer {
     const top = mix([9, 12, 24], [40, 92, 150], day);
     let bottom = mix([22, 30, 48], [120, 158, 196], day);
     bottom = mix(bottom, [205, 115, 72], twilight * 0.55); // warm horizon at dawn/dusk
-    // Stash for the transparent room windows (they show this same live sky).
-    this.skyTop = top;
-    this.skyBottom = bottom;
-    const sky = ctx.createLinearGradient(0, 0, 0, groundY);
-    sky.addColorStop(0, rgb(top));
-    sky.addColorStop(1, rgb(bottom));
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, w, h);
 
-    // Backdrop behind the buildings (far horizon layer, then the nearer layer).
-    this.drawBackdrop(state.config.backgroundFar ?? "clear", state.config.backgroundNear ?? "none", groundY, day);
+    // Paint the sky + both backdrop layers onto an OFFSCREEN canvas, then blit it
+    // as the main background. Room windows re-blit slices of the SAME canvas, so
+    // looking out a window shows the real world behind the tower at that spot
+    // (higher floors → more sky) rather than a repeated fake scene.
+    this.paintBackdrop(
+      w,
+      h,
+      groundY,
+      top,
+      bottom,
+      day,
+      state.config.backgroundFar ?? "clear",
+      state.config.backgroundNear ?? "none",
+    );
+    ctx.drawImage(this.bgCanvas, 0, 0, w, h);
 
     // Ground + underground earth: a brown that darkens with depth, all the way
     // down to (and past) the reserved subway level so no sky shows below.
@@ -248,6 +254,42 @@ export class Renderer {
       }
     }
     for (const id of [...this.carAnim.keys()]) if (!live.has(id)) this.carAnim.delete(id);
+  }
+
+  /**
+   * Render the sky + both backdrop layers into the offscreen bg canvas (sized to
+   * match the main canvas). This is the "world behind the towers" that both the
+   * main background and every window's cut-out hole are blitted from.
+   */
+  private paintBackdrop(
+    w: number,
+    h: number,
+    groundY: number,
+    top: number[],
+    bottom: number[],
+    day: number,
+    far: string,
+    near: string,
+  ): void {
+    const dpr = this.canvas.width / Math.max(1, this.camera.viewW);
+    const bw = Math.round(w * dpr);
+    const bh = Math.round(h * dpr);
+    if (this.bgCanvas.width !== bw || this.bgCanvas.height !== bh) {
+      this.bgCanvas.width = bw;
+      this.bgCanvas.height = bh;
+    }
+    const bg = this.bgCtx;
+    bg.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const sky = bg.createLinearGradient(0, 0, 0, groundY);
+    sky.addColorStop(0, rgb(top));
+    sky.addColorStop(1, rgb(bottom));
+    bg.fillStyle = sky;
+    bg.fillRect(0, 0, w, h);
+    // Route the backdrop drawing (which uses this.ctx) to the offscreen ctx.
+    const saved = this.ctx;
+    this.ctx = bg;
+    this.drawBackdrop(far, near, groundY, day);
+    this.ctx = saved;
   }
 
   /**
@@ -529,29 +571,15 @@ export class Renderer {
       const y = camera.rowTopScreenY(unit.row);
       const wpx = unit.width * cell;
 
-      // Every room type except infrastructure (lobby / elevator) is drawn as an
-      // empty perspective interior; the rest keep a flat colored cell. The
-      // room's facade/windows come from the girder it's built on.
-      const hasInterior = unit.kind !== "lobby";
-      if (hasInterior) {
-        const g = (plot.girders ?? []).find((gg) => gg.col === unit.col && gg.row === unit.row);
-        this.drawRoomInterior(unit.kind, x + 1, y + 1, wpx - 2, cell - 2, facadeById(g?.style), unit.row < 0);
-      } else {
-        ctx.fillStyle = def.color;
-        ctx.fillRect(x + 1, y + 1, wpx - 2, cell - 2);
-      }
+      // Every room (including the lobby) is drawn as an empty perspective
+      // interior; only elevators are separate (continuous shafts). The facade
+      // and windows come from the girder the room is built on.
+      const g = (plot.girders ?? []).find((gg) => gg.col === unit.col && gg.row === unit.row);
+      this.drawRoomInterior(unit.kind, x + 1, y + 1, wpx - 2, cell - 2, facadeById(g?.style), unit.row < 0);
 
       // Owner-color band along the top edge so ownership reads at a glance.
       ctx.fillStyle = ownerColor;
       ctx.fillRect(x + 1, y + 1, wpx - 2, bandH);
-
-      // Occupancy shading for revenue units (flat-drawn rooms only).
-      if (def.incomeAtFull > 0 && !hasInterior) {
-        ctx.fillStyle = "rgba(255,220,120,0.4)";
-        const barH = Math.max(3, cell * 0.16);
-        const litW = (wpx - 6) * unit.occupancy;
-        ctx.fillRect(x + 3, y + cell - barH - 2, litW, barH);
-      }
 
       if (showLabels) {
         ctx.fillStyle = "rgba(0,0,0,0.5)";
@@ -618,12 +646,41 @@ export class Renderer {
   ): void {
     const { ctx } = this;
     const w = cell;
-    ctx.fillStyle = "#2f343c"; // dark shaft channel
-    ctx.fillRect(x + 1, yTop + 1, w - 2, height - 2);
-    ctx.fillStyle = "#575d66"; // guide rails
-    ctx.fillRect(x + 3, yTop + 2, 2, height - 4);
-    ctx.fillRect(x + w - 5, yTop + 2, 2, height - 4);
-    // Owner-color band along the very top of the run.
+    // A shaft drawn in perspective: a receding tunnel behind the front opening,
+    // so it reads 3D like the rooms. Cars ride in the near (front) plane.
+    const TL: Pt = { x: x + 1, y: yTop + 1 };
+    const TR: Pt = { x: x + w - 1, y: yTop + 1 };
+    const BR: Pt = { x: x + w - 1, y: yTop + height - 1 };
+    const BL: Pt = { x: x + 1, y: yTop + height - 1 };
+    const vp: Pt = { x: x + w / 2, y: yTop + height / 2 };
+    const depth = 0.34;
+    const to = (p: Pt): Pt => ({ x: p.x + (vp.x - p.x) * depth, y: p.y + (vp.y - p.y) * depth });
+    const bTL = to(TL), bTR = to(TR), bBR = to(BR), bBL = to(BL);
+    const poly = (pts: Pt[], fill: string): void => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+    };
+    poly([TL, TR, bTR, bTL], "#3a4048"); // top of the tunnel
+    poly([BL, BR, bBR, bBL], "#22262c"); // bottom
+    poly([TL, bTL, bBL, BL], "#1f2329"); // left wall (shadow)
+    poly([TR, bTR, bBR, BR], "#2b3037"); // right wall
+    poly([bTL, bTR, bBR, bBL], "#14181d"); // deep back wall
+    // Guide rails running down the back wall.
+    ctx.strokeStyle = "#5a626c";
+    ctx.lineWidth = Math.max(1, w * 0.05);
+    for (const f of [0.3, 0.7]) {
+      const a = { x: bTL.x + (bTR.x - bTL.x) * f, y: bTL.y + (bTR.y - bTL.y) * f };
+      const b = { x: bBL.x + (bBR.x - bBL.x) * f, y: bBL.y + (bBR.y - bBL.y) * f };
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    // Owner-color band along the very top front of the run.
     ctx.fillStyle = ownerColor;
     ctx.fillRect(x + 1, yTop + 1, w - 2, bandH);
   }
@@ -662,6 +719,8 @@ export class Renderer {
     underground: boolean,
   ): void {
     switch (kind) {
+      case "lobby":
+        return this.drawLobbyInterior(x, y, w, h, facade, underground);
       case "office":
         return this.drawOfficeInterior(x, y, w, h, facade, underground);
       case "medical":
@@ -737,7 +796,7 @@ export class Renderer {
     vMull: number[],
     hMull: number[],
   ): void {
-    const { ctx } = this;
+    const { ctx, camera } = this;
     const pts = [s.wall(f0, g0), s.wall(f1, g0), s.wall(f1, g1), s.wall(f0, g1)];
     const path = (): void => {
       ctx.beginPath();
@@ -745,24 +804,15 @@ export class Renderer {
       for (const p of pts) ctx.lineTo(p.x, p.y);
       ctx.closePath();
     };
-    // Sky (live day/night gradient).
-    const topMid = s.lp(pts[0], pts[1], 0.5);
-    const botMid = s.lp(pts[3], pts[2], 0.5);
-    const grad = ctx.createLinearGradient(topMid.x, topMid.y, botMid.x, botMid.y);
-    grad.addColorStop(0, rgb(this.skyTop));
-    grad.addColorStop(1, rgb(this.skyBottom));
+    // "Cut a hole": blit the real sky + backdrop that sits BEHIND the building at
+    // this exact spot (from the offscreen bg canvas), clipped to the window. So a
+    // ground-floor window shows the horizon and a high floor shows open sky — no
+    // repeated per-floor scene.
+    ctx.save();
     path();
-    ctx.fillStyle = grad;
-    ctx.fill();
-    // The world outside — both backdrop layers, clipped to the glass. Skipped
-    // when the window is too small to be worth the polygons.
-    if (s.w >= 46) {
-      ctx.save();
-      path();
-      ctx.clip();
-      this.windowBackdrop(s, f0, f1, g0, g1);
-      ctx.restore();
-    }
+    ctx.clip();
+    ctx.drawImage(this.bgCanvas, 0, 0, camera.viewW, camera.viewH);
+    ctx.restore();
     // Tinted glass darkens the whole view behind it.
     if (tint > 0) {
       path();
@@ -789,54 +839,6 @@ export class Renderer {
       ctx.lineTo(b.x, b.y);
     }
     ctx.stroke();
-  }
-
-  /**
-   * Draw a small view of the city's two backdrop layers inside a window (far
-   * horizon silhouette, then a nearer one), so looking out shows the same world
-   * as the main backdrop. Colours blend with the live sky, so it darkens at
-   * night too. Coordinates are given in window-local fractions (0..1).
-   */
-  private windowBackdrop(s: RoomShell, f0: number, f1: number, g0: number, g1: number): void {
-    const { ctx } = this;
-    const pt = (ff: number, gg: number): Pt => s.wall(f0 + (f1 - f0) * ff, g0 + (g1 - g0) * gg);
-    const poly = (coords: Pt[]): void => {
-      ctx.beginPath();
-      ctx.moveTo(coords[0].x, coords[0].y);
-      for (let i = 1; i < coords.length; i++) ctx.lineTo(coords[i].x, coords[i].y);
-      ctx.closePath();
-      ctx.fill();
-    };
-    const gh = 0.62; // horizon within the window
-
-    // Far layer.
-    if (this.bgFar === "mountains") {
-      ctx.fillStyle = rgb(mix(this.skyBottom, [90, 98, 118], 0.55));
-      poly([pt(0, gh), pt(0.28, gh - 0.26), pt(0.5, gh - 0.05), pt(0.76, gh - 0.32), pt(1, gh - 0.02), pt(1, 1), pt(0, 1)]);
-    } else if (this.bgFar === "hills") {
-      ctx.fillStyle = rgb(mix(this.skyBottom, [72, 94, 80], 0.5));
-      poly([pt(0, gh), pt(0.3, gh - 0.1), pt(0.6, gh - 0.03), pt(1, gh - 0.12), pt(1, 1), pt(0, 1)]);
-    } else if (this.bgFar === "ocean") {
-      ctx.fillStyle = rgb(mix(this.skyBottom, [40, 84, 122], 0.6));
-      poly([pt(0, gh), pt(1, gh), pt(1, 1), pt(0, 1)]);
-    }
-
-    // Near layer (darker, closer).
-    ctx.fillStyle = rgb(mix(this.skyBottom, [18, 24, 34], 0.78));
-    const nh = gh + 0.06;
-    if (this.bgNear === "skyline") {
-      for (const [a, hh] of [[0.04, 0.3], [0.2, 0.52], [0.38, 0.22], [0.54, 0.46], [0.72, 0.32], [0.88, 0.5]] as const)
-        poly([pt(a, nh - hh), pt(a + 0.11, nh - hh), pt(a + 0.11, 1), pt(a, 1)]);
-    } else if (this.bgNear === "firs") {
-      for (const a of [0.14, 0.38, 0.62, 0.86])
-        poly([pt(a - 0.09, nh), pt(a, nh - 0.42), pt(a + 0.09, nh), pt(a + 0.03, 1), pt(a - 0.03, 1)]);
-    } else if (this.bgNear === "palms") {
-      for (const a of [0.28, 0.72])
-        poly([pt(a - 0.09, nh - 0.26), pt(a, nh - 0.42), pt(a + 0.09, nh - 0.26), pt(a + 0.03, 1), pt(a - 0.03, 1)]);
-    } else if (this.bgNear === "oldtown") {
-      for (const a of [0.06, 0.32, 0.58, 0.84])
-        poly([pt(a, nh - 0.16), pt(a + 0.08, nh - 0.3), pt(a + 0.16, nh - 0.16), pt(a + 0.16, 1), pt(a, 1)]);
-    }
   }
 
   /** A steel X-brace drawn across a window region (glass X-brace facade). */
@@ -979,6 +981,34 @@ export class Renderer {
       ctx.arc(at.x, at.y, Math.max(1.2, s.w * 0.028), 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  /**
+   * Grand lobby: a marble perspective hall that fully embraces the building's
+   * facade — the glass/window front, a set of entrance doors set into it, and a
+   * reception desk. Row 0, so the facade windows look out to the street.
+   */
+  private drawLobbyInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean): void {
+    const base = [201, 169, 79];
+    const s = this.roomShell(x, y, w, h, base, {
+      floor: rgb(mix(base, [236, 230, 212], 0.55)), // polished marble
+      ceiling: rgb(mix(base, [248, 244, 232], 0.55)),
+    });
+    this.drawFacade(s, facade, ug);
+    // Entrance doors set into the facade (a taller, darker glazed bay, centre).
+    this.wallBand(s, 0.42, 0.58, 0.34, 1, "rgba(26,32,40,0.5)");
+    const { ctx } = this;
+    ctx.strokeStyle = rgb(mix(hexRgb(facade.frame), [0, 0, 0], 0.2));
+    ctx.lineWidth = Math.max(0.6, w * 0.012);
+    const a = s.wall(0.5, 0.34), b = s.wall(0.5, 1);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    // Reception desk to one side + a marble planter on the other.
+    this.wallBand(s, 0.08, 0.32, 0.68, 0.9, "rgba(74,54,32,0.92)");
+    this.wallBand(s, 0.78, 0.92, 0.66, 0.9, "rgba(70,110,70,0.7)");
+    this.ceilingPanels(s, [0.28, 0.72]);
   }
 
   /** Empty open-plan office: bare carpet, the facade window wall, ceiling lights. */
