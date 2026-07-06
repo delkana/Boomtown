@@ -22,7 +22,7 @@ import { claimCost, girderCost, undergroundMultiplier } from "../game/economy";
 import { featureLabel } from "../game/features";
 import { facadeById, type Facade } from "../game/facades";
 import { heatT, type HeatmapKind } from "../game/heatmaps";
-import { skyState } from "../game/clock";
+import { skyState, dayOfWeek } from "../game/clock";
 import { Camera } from "./camera";
 
 /**
@@ -85,8 +85,9 @@ export class Renderer {
   private popups: Popup[] = [];
   /** Smoothly-animated car positions (per car id), advanced every frame. */
   private carAnim = new Map<string, { pos: number; dir: number }>();
-  /** Current in-game hour (0..24), used to switch room lights on/off. */
+  /** Current in-game hour (0..24) + weekday (0=Mon), for room lights. */
   private hourF = 12;
+  private dayIndex = 0;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -155,6 +156,7 @@ export class Renderer {
     // Cars move continuously (independent of the economy tick), scaled by speed.
     this.advanceCarAnim(state, (dtMs / 1000) * (state.speed || 1));
     this.hourF = ((state.tick * TICK_MINUTES) / 60) % 24; // for room lights
+    this.dayIndex = dayOfWeek(state.tick);
 
     // Latitude + season drive the sky (day/night lengths shift through the year).
     const { day, twilight } = skyState(state.tick, state.config.latitude ?? 0);
@@ -581,8 +583,9 @@ export class Renderer {
       // and windows come from the girder the room is built on. The lights are on
       // only when the lobby (always) or a tenant's business hours say so.
       const g = (plot.girders ?? []).find((gg) => gg.col === unit.col && gg.row === unit.row);
-      const lit = unit.kind === "lobby" ? true : !!(unit.tenant && tenantLit(unit.tenant, this.hourF));
-      this.drawRoomInterior(unit.kind, x + 1, y + 1, wpx - 2, cell - 2, facadeById(g?.style), unit.row < 0, lit);
+      const occupied = !!unit.tenant;
+      const lit = unit.kind === "lobby" ? true : occupied && tenantLit(unit.tenant!, this.hourF, this.dayIndex);
+      this.drawRoomInterior(unit.kind, x + 1, y + 1, wpx - 2, cell - 2, facadeById(g?.style), unit.row < 0, lit, occupied);
 
       // Owner-color band along the top edge so ownership reads at a glance.
       ctx.fillStyle = ownerColor;
@@ -730,22 +733,23 @@ export class Renderer {
     facade: Facade,
     underground: boolean,
     lit: boolean,
+    occupied: boolean,
   ): void {
     switch (kind) {
       case "lobby":
         return this.drawLobbyInterior(x, y, w, h, facade, underground, lit);
       case "office":
-        return this.drawOfficeInterior(x, y, w, h, facade, underground, lit);
+        return this.drawOfficeInterior(x, y, w, h, facade, underground, lit, occupied);
       case "medical":
-        return this.drawMedicalInterior(x, y, w, h, facade, underground, lit);
+        return this.drawMedicalInterior(x, y, w, h, facade, underground, lit, occupied);
       case "apartment":
-        return this.drawApartmentInterior(x, y, w, h, facade, underground, lit);
+        return this.drawApartmentInterior(x, y, w, h, facade, underground, lit, occupied);
       case "store":
-        return this.drawStoreInterior(x, y, w, h, facade, underground, lit);
+        return this.drawStoreInterior(x, y, w, h, facade, underground, lit, occupied);
       case "restaurant":
-        return this.drawRestaurantInterior(x, y, w, h, facade, underground, lit);
+        return this.drawRestaurantInterior(x, y, w, h, facade, underground, lit, occupied);
       case "hotel":
-        return this.drawHotelInterior(x, y, w, h, facade, underground, lit);
+        return this.drawHotelInterior(x, y, w, h, facade, underground, lit, occupied);
       default:
         this.ctx.fillStyle = UNIT_DEFS[kind].color;
         this.ctx.fillRect(x, y, w, h);
@@ -960,6 +964,27 @@ export class Renderer {
     ctx.stroke();
   }
 
+  // --- furniture (drawn on the floor when a room is occupied) ----------------
+
+  /** Dim a hex colour toward night when the lights are off. */
+  private dimC(hex: string, lit: boolean): string {
+    return lit ? hex : rgb(mix(hexRgb(hex), [10, 12, 18], 0.72));
+  }
+
+  /** A flat item footprint on the floor plane (a rug, a desk/table top, a bed). */
+  private floorRect(s: RoomShell, f0: number, f1: number, g0: number, g1: number, color: string): void {
+    s.quad([s.floor(f0, g0), s.floor(f1, g0), s.floor(f1, g1), s.floor(f0, g1)], color);
+  }
+
+  /** A small object standing up from a floor point (a monitor, lamp, chair, pillow). */
+  private standUp(s: RoomShell, f: number, g: number, halfWFrac: number, hFrac: number, color: string): void {
+    const p = s.floor(f, g);
+    const hw = halfWFrac * s.w;
+    const hh = hFrac * s.w;
+    this.ctx.fillStyle = color;
+    this.ctx.fillRect(p.x - hw, p.y - hh, hw * 2, hh);
+  }
+
   /** Recessed rectangular ceiling light panels at the given centre fractions. */
   private ceilingPanels(s: RoomShell, cfs: number[]): void {
     for (const cf of cfs) {
@@ -1028,61 +1053,112 @@ export class Renderer {
     if (lit) this.ceilingPanels(s, [0.28, 0.72]);
   }
 
-  /** Empty open-plan office: bare carpet, the facade window wall, ceiling lights. */
-  private drawOfficeInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean): void {
+  /** Office: bare shell when vacant; desks + glowing monitors when leased. */
+  private drawOfficeInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean, occupied: boolean): void {
     const s = this.roomShell(x, y, w, h, [91, 143, 176], {}, lit);
     this.drawFacade(s, facade, ug);
+    if (occupied) {
+      for (const g of [0.44, 0.74])
+        for (const f of [0.26, 0.52, 0.78]) {
+          this.floorRect(s, f - 0.1, f + 0.1, g - 0.05, g + 0.05, this.dimC("#3b414b", lit)); // desk
+          this.standUp(s, f, g - 0.03, 0.035, 0.1, lit ? "#7fd4ff" : this.dimC("#26303a", lit)); // monitor
+          this.standUp(s, f, g + 0.07, 0.03, 0.05, this.dimC("#2f353d", lit)); // chair back
+        }
+    }
     if (lit) this.ceilingPanels(s, [0.32, 0.68]);
   }
 
-  /** Empty clinic: pale floor, a green cross low on the wall, ceiling panels. */
-  private drawMedicalInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean): void {
+  /** Clinic: green cross always; an exam bed + cabinet when leased. */
+  private drawMedicalInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean, occupied: boolean): void {
     const base = [75, 181, 166];
     const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [222, 230, 228], 0.6)) }, lit);
     this.drawFacade(s, facade, ug);
     this.wallBand(s, 0.44, 0.56, 0.62, 0.92, "rgba(40,160,96,0.92)"); // cross (vertical)
     this.wallBand(s, 0.36, 0.64, 0.7, 0.8, "rgba(40,160,96,0.92)"); // cross (horizontal)
+    if (occupied) {
+      this.floorRect(s, 0.3, 0.72, 0.5, 0.78, this.dimC("#e6ecef", lit)); // exam bed
+      this.standUp(s, 0.34, 0.5, 0.03, 0.05, this.dimC("#cfd6da", lit)); // pillow
+      this.floorRect(s, 0.08, 0.24, 0.55, 0.75, this.dimC("#5a6a72", lit)); // cart
+      this.standUp(s, 0.86, 0.5, 0.035, 0.13, this.dimC("#aeb6bc", lit)); // cabinet
+    }
     if (lit) this.ceilingPanels(s, [0.3, 0.7]);
   }
 
-  /** Empty flat: wood floor, the facade window, a built-in kitchenette below. */
-  private drawApartmentInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean): void {
+  /** Flat: built-in kitchenette; a sofa, bed and lamp when leased. */
+  private drawApartmentInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean, occupied: boolean): void {
     const base = [123, 171, 110];
     const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix([120, 82, 48], [58, 36, 18], 0.4)) }, lit);
     this.drawFacade(s, facade, ug);
     this.wallBand(s, 0.08, 0.7, 0.72, 0.82, "rgba(58,42,30,0.92)"); // counter
     this.wallBand(s, 0.5, 0.66, 0.62, 0.72, "rgba(150,150,155,0.55)"); // stove/appliance
     this.wallBand(s, 0.74, 0.9, 0.58, 0.92, "rgba(210,214,218,0.5)"); // fridge
+    if (occupied) {
+      this.floorRect(s, 0.08, 0.42, 0.5, 0.82, this.dimC("#4a5a6a", lit)); // sofa
+      this.standUp(s, 0.25, 0.5, 0.17, 0.06, this.dimC("#3a4655", lit)); // sofa back
+      this.floorRect(s, 0.5, 0.9, 0.48, 0.86, this.dimC("#6a5240", lit)); // bed
+      this.standUp(s, 0.56, 0.48, 0.06, 0.05, this.dimC("#d8d0c0", lit)); // pillow
+      this.standUp(s, 0.46, 0.52, 0.02, 0.15, lit ? "#ffe6a6" : this.dimC("#3a3222", lit)); // lamp
+    }
     if (lit) this.trackLights(s, [0.5]);
   }
 
-  /** Empty retail unit: polished floor, empty low shelving, track lights. */
-  private drawStoreInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean): void {
+  /** Retail: empty shelving; stocked aisles + counter (and a shutter when shut) when leased. */
+  private drawStoreInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean, occupied: boolean): void {
     const base = [208, 138, 79];
     const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [236, 226, 212], 0.62)) }, lit);
     this.drawFacade(s, facade, ug);
     this.wallLines(s, 0.1, 0.9, [0.62, 0.74, 0.86], "rgba(70,50,32,0.5)"); // shelves
     this.wallVLines(s, [0.3, 0.5, 0.7], 0.6, 0.9, "rgba(70,50,32,0.4)");
+    if (occupied) {
+      for (const f of [0.24, 0.44, 0.64]) this.floorRect(s, f - 0.05, f + 0.05, 0.42, 0.86, this.dimC("#7a5636", lit)); // aisles
+      this.floorRect(s, 0.78, 0.94, 0.5, 0.82, this.dimC("#5a4326", lit)); // checkout counter
+      if (lit) {
+        const prod = ["#e0653f", "#e0b23f", "#5fae5f", "#4a86e0", "#c94ad1"];
+        let i = 0;
+        for (const gg of [0.65, 0.77, 0.89]) for (const f of [0.2, 0.35, 0.5, 0.65, 0.8]) this.wallBand(s, f - 0.04, f + 0.04, gg - 0.04, gg - 0.005, prod[i++ % prod.length]);
+      } else {
+        this.wallBand(s, 0.03, 0.97, 0.05, 0.6, "rgba(58,62,68,0.94)"); // shutter down when closed
+      }
+    }
     if (lit) this.trackLights(s, [0.25, 0.5, 0.75]);
   }
 
-  /** Empty dining room: wood floor, a low back bar, hanging pendant lamps. */
-  private drawRestaurantInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean): void {
+  /** Dining room: back bar; dressed tables when open, chairs stacked when closed. */
+  private drawRestaurantInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean, occupied: boolean): void {
     const base = [200, 90, 106];
     const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix([110, 66, 40], [54, 32, 18], 0.4)) }, lit);
     this.drawFacade(s, facade, ug);
     this.wallBand(s, 0.08, 0.92, 0.72, 0.86, "rgba(48,30,26,0.95)"); // bar counter
     this.wallLines(s, 0.12, 0.88, [0.6, 0.68], "rgba(200,170,120,0.5)"); // bottle shelves
+    if (occupied) {
+      for (const [f, g] of [[0.28, 0.5], [0.62, 0.5], [0.28, 0.82], [0.62, 0.82]] as const) {
+        this.floorRect(s, f - 0.08, f + 0.08, g - 0.05, g + 0.05, this.dimC(lit ? "#d8d2c4" : "#4a4640", lit)); // table
+        if (lit) {
+          this.standUp(s, f - 0.11, g, 0.02, 0.05, this.dimC("#5a3f28", lit)); // chairs
+          this.standUp(s, f + 0.11, g, 0.02, 0.05, this.dimC("#5a3f28", lit));
+          this.standUp(s, f, g, 0.012, 0.03, "#ffcf9a"); // candle glow
+        } else {
+          this.standUp(s, f, g, 0.05, 0.07, this.dimC("#3a2f22", lit)); // chairs stacked on the table
+        }
+      }
+    }
     if (lit) this.pendantLights(s, [0.28, 0.5, 0.72]);
   }
 
-  /** Empty hotel room: carpet, the facade window, an empty headboard + bed base. */
-  private drawHotelInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean): void {
+  /** Hotel room: headboard; a made bed, nightstand and lamp when leased. */
+  private drawHotelInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean, occupied: boolean): void {
     const base = [106, 127, 192];
     const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [42, 36, 54], 0.55)) }, lit);
     this.drawFacade(s, facade, ug);
     this.wallBand(s, 0.2, 0.8, 0.62, 0.72, "rgba(120,96,70,0.9)"); // headboard
-    this.wallBand(s, 0.16, 0.84, 0.8, 0.92, "rgba(200,200,210,0.5)"); // bed linens hint
+    if (occupied) {
+      this.floorRect(s, 0.22, 0.78, 0.5, 0.86, this.dimC("#c9c2d0", lit)); // made bed
+      this.standUp(s, 0.36, 0.5, 0.09, 0.05, this.dimC("#e2dce8", lit)); // pillows
+      this.standUp(s, 0.84, 0.55, 0.03, 0.07, this.dimC("#8a7355", lit)); // nightstand
+      this.standUp(s, 0.84, 0.55, 0.014, 0.12, lit ? "#ffe6a6" : this.dimC("#33302a", lit)); // lamp
+    } else {
+      this.wallBand(s, 0.16, 0.84, 0.8, 0.92, "rgba(200,200,210,0.5)"); // bare bed base
+    }
   }
 
   /** Small price tag centered at (cx, baselineY) — used for the live girder cost. */

@@ -1,5 +1,4 @@
 import {
-  BUILD_ORDER,
   ELEVATOR_CAR_COST,
   GIRDER_BASE_COST,
   PLOT_COST_MIN,
@@ -21,7 +20,8 @@ import {
   roomSatisfaction,
   type HeatmapKind,
 } from "../game/heatmaps";
-import { headcountLabel, hasTrades } from "../game/tenants";
+import { headcountLabel, hasTrades, tenantOpen, daysLabel } from "../game/tenants";
+import { dayOfWeek } from "../game/clock";
 import { projectedDailyNet } from "../game/tick";
 import type { GameConnection } from "../net/connection";
 import type { InspectRef } from "../input/input";
@@ -45,8 +45,11 @@ export class Hud {
   private statsEl = must("stats");
   private playersEl = must("players");
   private toolbarEl = must("toolbar");
+  private toolSubmenuEl = must("tool-submenu");
   private claimBtnEl = must("claim-btn");
   private girderStylesEl = must("girder-styles");
+  /** Which toolbar category's sub-menu is currently open. */
+  private openCategory: string | null = null;
   private overlayEl = must("overlay");
   private inspectorEl = must("inspector");
   private hintEl = must("hint");
@@ -127,14 +130,16 @@ export class Hud {
     // Tenant + daily P&L.
     const tenant = unit.tenant ?? null;
     const hourF = ((state.tick * TICK_MINUTES) / 60) % 24;
+    const day = dayOfWeek(state.tick);
     const dailyNet = (tenant ? tenant.dailyRent : 0) - def.upkeep;
     let tenantHtml = "";
     if (tenant) {
-      const open = hourF >= tenant.openHour && hourF < tenant.closeHour;
+      const open = tenantOpen(tenant, hourF, day);
       tenantHtml = `
         <div class="insp-tenant">${escapeHtml(tenant.name)}</div>
         <div class="insp-sub">${escapeHtml(tenant.trade)} · <span class="${open ? "pos" : "neg"}">${open ? "Open" : "Closed"}</span></div>
         <div class="insp-row"><span>Hours</span><span>${hr(tenant.openHour)}–${hr(tenant.closeHour)}</span></div>
+        <div class="insp-row"><span>Days</span><span>${daysLabel(tenant.openDays)}</span></div>
         <div class="insp-row"><span>${headcountLabel(unit.kind)}</span><span>${tenant.employees}</span></div>
         <div class="insp-row"><span>Rent / day</span><span class="pos">+$${tenant.dailyRent.toLocaleString()}</span></div>`;
     } else if (hasTrades(unit.kind)) {
@@ -209,45 +214,20 @@ export class Hud {
     this.claimBtnEl.addEventListener("click", () => this.toggle("claim"));
     this.claimBtnEl.title = `Claim an available plot (C) — from $${PLOT_COST_MIN.toLocaleString()}`;
 
-    // Girder (structural support) — built before any room.
-    const girder = document.createElement("button");
-    girder.className = "tool";
-    girder.dataset.tool = "girder";
-    girder.innerHTML = `
-      <span class="swatch" style="background:${GIRDER_SWATCH}"></span>
-      <span class="tool-label">Girder</span>
-      <span class="tool-cost">from $${GIRDER_BASE_COST}</span>
-      <span class="tool-key">G</span>`;
-    girder.addEventListener("click", () => this.toggle("girder"));
-    this.toolbarEl.appendChild(girder);
-
-    for (const kind of BUILD_ORDER) {
-      const def = UNIT_DEFS[kind];
+    // Category buttons each open a sub-menu of their tools.
+    for (const cat of TOOL_CATEGORIES) {
       const btn = document.createElement("button");
-      btn.className = "tool";
-      btn.dataset.tool = kind;
-      btn.innerHTML = `
-        <span class="swatch" style="background:${def.color}"></span>
-        <span class="tool-label">${def.label}</span>
-        <span class="tool-cost">$${def.cost.toLocaleString()}</span>
-        <span class="tool-key">${def.hotkey}</span>`;
-      btn.addEventListener("click", () => this.toggle(kind));
+      btn.className = "tool cat";
+      btn.dataset.cat = cat.id;
+      btn.innerHTML = `<span class="cat-icon">${cat.icon}</span><span class="tool-label">${cat.label}</span>`;
+      btn.addEventListener("click", () => {
+        this.openCategory = this.openCategory === cat.id ? null : cat.id;
+        this.update();
+      });
       this.toolbarEl.appendChild(btn);
     }
 
-    // Elevator car — placed inside a shaft (after the shaft is built).
-    const car = document.createElement("button");
-    car.className = "tool";
-    car.dataset.tool = "elevatorCar";
-    car.innerHTML = `
-      <span class="swatch" style="background:#aab0b8"></span>
-      <span class="tool-label">Elevator Car</span>
-      <span class="tool-cost">$${ELEVATOR_CAR_COST.toLocaleString()}</span>
-      <span class="tool-key">9</span>`;
-    car.addEventListener("click", () => this.toggle("elevatorCar"));
-    this.toolbarEl.appendChild(car);
-
-    // Destroy tool last.
+    // Destroy is always one click away.
     const destroy = document.createElement("button");
     destroy.className = "tool";
     destroy.dataset.tool = "destroy";
@@ -258,6 +238,27 @@ export class Hud {
       <span class="tool-key">X</span>`;
     destroy.addEventListener("click", () => this.toggle("destroy"));
     this.toolbarEl.appendChild(destroy);
+  }
+
+  /** Rebuild the tool sub-menu for the open category (hidden if none). */
+  private renderToolSubmenu(): void {
+    const cat = TOOL_CATEGORIES.find((c) => c.id === this.openCategory);
+    this.toolSubmenuEl.classList.toggle("hidden", !cat);
+    this.toolSubmenuEl.innerHTML = "";
+    if (!cat) return;
+    for (const tool of cat.tools) {
+      const m = toolMeta(tool);
+      const btn = document.createElement("button");
+      btn.className = "tool";
+      btn.dataset.tool = tool;
+      btn.innerHTML = `
+        <span class="swatch" style="background:${m.swatch}">${m.mark ?? ""}</span>
+        <span class="tool-label">${m.label}</span>
+        <span class="tool-cost">${m.cost}</span>
+        <span class="tool-key">${m.key}</span>`;
+      btn.addEventListener("click", () => this.toggle(tool as Exclude<Tool, null>));
+      this.toolSubmenuEl.appendChild(btn);
+    }
   }
 
   private toggle(tool: Exclude<Tool, null>): void {
@@ -344,21 +345,25 @@ export class Hud {
       }
     }
 
-    // Toolbar selected/affordability states.
+    // Toolbar: keep the selected tool's category open, then render its sub-menu.
+    const sel0 = this.getSelected();
+    const selCat = categoryOf(sel0);
+    if (selCat) this.openCategory = selCat;
+    this.renderToolSubmenu();
+
+    // Category buttons highlight when open / holding the selected tool; Destroy too.
     for (const el of Array.from(this.toolbarEl.children) as HTMLElement[]) {
-      const tool = el.dataset.tool as Exclude<Tool, null>;
-      const cost =
-        tool === "girder"
-          ? GIRDER_BASE_COST
-          : tool === "elevatorCar"
-            ? ELEVATOR_CAR_COST
-            : tool === "destroy"
-              ? 0 // destroying never costs money
-              : tool === "claim"
-                ? cheapestClaim // (claim now lives in the nav cluster, but stay total)
-                : UNIT_DEFS[tool].cost;
-      el.classList.toggle("selected", this.getSelected() === tool);
-      el.classList.toggle("unaffordable", player.money < cost);
+      if (el.dataset.cat) {
+        el.classList.toggle("selected", this.openCategory === el.dataset.cat);
+      } else if (el.dataset.tool === "destroy") {
+        el.classList.toggle("selected", sel0 === "destroy");
+      }
+    }
+    // Sub-menu tool buttons: selected + affordability.
+    for (const el of Array.from(this.toolSubmenuEl.children) as HTMLElement[]) {
+      const tool = el.dataset.tool ?? "";
+      el.classList.toggle("selected", sel0 === tool);
+      el.classList.toggle("unaffordable", player.money < toolCost(tool));
     }
 
     // Hint line.
@@ -417,6 +422,38 @@ export class Hud {
         )
         .join("");
   }
+}
+
+/** Toolbar categories — each opens a sub-menu of its tools. */
+const TOOL_CATEGORIES: { id: string; label: string; icon: string; tools: string[] }[] = [
+  { id: "construction", label: "Construction", icon: "🏗", tools: ["girder", "lobby", "elevator", "elevatorCar"] },
+  { id: "offices", label: "Offices", icon: "🏢", tools: ["office", "medical"] },
+  { id: "apartments", label: "Apartments", icon: "🏠", tools: ["apartment"] },
+  { id: "hotels", label: "Hotels", icon: "🛎", tools: ["hotel"] },
+  { id: "retail", label: "Retail", icon: "🛍", tools: ["store", "restaurant"] },
+];
+
+/** The category id that contains a tool, or null. */
+function categoryOf(tool: Tool): string | null {
+  if (!tool) return null;
+  return TOOL_CATEGORIES.find((c) => c.tools.includes(tool))?.id ?? null;
+}
+
+/** Display metadata (swatch/label/cost/hotkey) for a tool button. */
+function toolMeta(tool: string): { swatch: string; label: string; cost: string; key: string; mark?: string } {
+  if (tool === "girder") return { swatch: GIRDER_SWATCH, label: "Girder", cost: `from $${GIRDER_BASE_COST}`, key: "G" };
+  if (tool === "elevatorCar")
+    return { swatch: "#aab0b8", label: "Elevator Car", cost: `$${ELEVATOR_CAR_COST.toLocaleString()}`, key: "9" };
+  const def = UNIT_DEFS[tool as keyof typeof UNIT_DEFS];
+  return { swatch: def.color, label: def.label, cost: `$${def.cost.toLocaleString()}`, key: def.hotkey };
+}
+
+/** Cost used for affordability greying of a tool button. */
+function toolCost(tool: string): number {
+  if (tool === "girder") return GIRDER_BASE_COST;
+  if (tool === "elevatorCar") return ELEVATOR_CAR_COST;
+  const def = UNIT_DEFS[tool as keyof typeof UNIT_DEFS];
+  return def ? def.cost : 0;
 }
 
 /** Format an hour (0..24) as "9am" / "5pm" / "12am". */

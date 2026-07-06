@@ -245,18 +245,37 @@ export class GameDirectory {
         { kind: "river", name: "San Gabriel River" },
       ],
     );
-    this.seedCity("neo-kyoto", "Neo-Kyoto", "japan", { near: "skyline", far: "mountains", latitude: 35 }, 16, 6, null, [
-      { name: "Zaibatsu Prime", color: "#c94ad1", floors: [6] },
-      { name: "Mirai Systems", color: "#e0503f", floors: [8, 4] },
-    ]);
-    this.seedCity("kosmograd", "Kosmograd", "ussr", { near: "firs", far: "mountains", latitude: 56 }, 20, 8, null, [
-      { name: "Red October Combine", color: "#e0503f", floors: [9, 5, 7] },
-    ]);
-    this.seedCity("la-defense", "La Défense", "europa", { near: "oldtown", far: "hills", latitude: 49 }, 20, 8, null, [
-      { name: "Rheinturm Group", color: "#f4c94b", floors: [10, 6] },
-      { name: "Concorde Holdings", color: "#4a86e0", floors: [7] },
-      { name: "Pan-Europa Dynamics", color: "#3fb96b", floors: [8] },
-    ]);
+    this.seedCity(
+      "neo-kyoto", "Neo-Kyoto", "japan", { near: "skyline", far: "mountains", latitude: 35 }, 16, 6, null,
+      [
+        { name: "Zaibatsu Prime", color: "#c94ad1", floors: [6] },
+        { name: "Mirai Systems", color: "#e0503f", floors: [8, 4] },
+      ],
+      [
+        { kind: "river", name: "Kamo River" },
+        { kind: "park", name: "Maruyama Park" },
+      ],
+    );
+    this.seedCity(
+      "kosmograd", "Kosmograd", "ussr", { near: "firs", far: "mountains", latitude: 56 }, 20, 8, null,
+      [{ name: "Red October Combine", color: "#e0503f", floors: [9, 5, 7] }],
+      [
+        { kind: "river", name: "Moskva Canal" },
+        { kind: "park", name: "Gorky Park" },
+      ],
+    );
+    this.seedCity(
+      "la-defense", "La Défense", "europa", { near: "oldtown", far: "hills", latitude: 49 }, 20, 8, null,
+      [
+        { name: "Rheinturm Group", color: "#f4c94b", floors: [10, 6] },
+        { name: "Concorde Holdings", color: "#4a86e0", floors: [7] },
+        { name: "Pan-Europa Dynamics", color: "#3fb96b", floors: [8] },
+      ],
+      [
+        { kind: "river", name: "Seine Crossing" },
+        { kind: "park", name: "Jardin des Tuileries" },
+      ],
+    );
   }
 
   /** Create a demo city and seed its owners onto BUILDABLE (non-feature) plots. */

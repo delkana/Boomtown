@@ -12,7 +12,24 @@ interface Trade {
   /** Business open/close hours; lights follow these (± an hour). */
   open: number;
   close: number;
+  /** Weekdays open (0=Mon … 6=Sun); omitted = the kind's default. */
+  days?: number[];
 }
+
+const WEEKDAYS = [0, 1, 2, 3, 4]; // Mon–Fri
+const MON_SAT = [0, 1, 2, 3, 4, 5];
+const ALL_WEEK = [0, 1, 2, 3, 4, 5, 6];
+const NOT_MONDAY = [1, 2, 3, 4, 5, 6];
+
+/** Default operating days by kind (offices/clinics close on weekends). */
+const DEFAULT_DAYS: Partial<Record<UnitKind, number[]>> = {
+  office: WEEKDAYS,
+  medical: WEEKDAYS,
+  store: ALL_WEEK,
+  restaurant: ALL_WEEK,
+  apartment: ALL_WEEK,
+  hotel: ALL_WEEK,
+};
 
 /** Trade pools per revenue kind (business types + their hours). */
 const TRADES: Partial<Record<UnitKind, Trade[]>> = {
@@ -29,7 +46,8 @@ const TRADES: Partial<Record<UnitKind, Trade[]>> = {
   ],
   medical: [
     { label: "Family Practice", open: 8, close: 17 },
-    { label: "Dental Clinic", open: 8, close: 16 },
+    { label: "Dental Clinic", open: 8, close: 16, days: MON_SAT },
+    { label: "Urgent Care", open: 8, close: 20, days: ALL_WEEK },
     { label: "Optometry Clinic", open: 9, close: 17 },
     { label: "Physical Therapy", open: 7, close: 19 },
     { label: "Pediatrics Clinic", open: 8, close: 17 },
@@ -50,8 +68,8 @@ const TRADES: Partial<Record<UnitKind, Trade[]>> = {
     { label: "Diner", open: 7, close: 22 },
     { label: "Grill House", open: 12, close: 23 },
     { label: "Ramen Bar", open: 11, close: 24 },
-    { label: "Trattoria", open: 12, close: 23 },
-    { label: "Steakhouse", open: 16, close: 24 },
+    { label: "Trattoria", open: 12, close: 23, days: NOT_MONDAY },
+    { label: "Steakhouse", open: 16, close: 24, days: NOT_MONDAY },
     { label: "Cafe", open: 7, close: 19 },
   ],
   // Residential — lit late afternoon into the night.
@@ -120,15 +138,49 @@ export function generateTenant(kind: UnitKind, seed: string, appeal: number, wid
   const employees = Math.max(1, Math.round(per * width * (0.7 + ((h >>> 5) % 50) / 100)));
   const base = RENT_BASE[kind] ?? 1000;
   const dailyRent = Math.round(base * (0.5 + Math.max(0, Math.min(1, appeal))) * (0.9 + ((h >>> 9) % 25) / 100));
-  return { name: buildName(kind, t.label, h), trade: t.label, openHour: t.open, closeHour: t.close, employees, dailyRent };
+  const openDays = t.days ?? DEFAULT_DAYS[kind] ?? ALL_WEEK;
+  return {
+    name: buildName(kind, t.label, h),
+    trade: t.label,
+    openHour: t.open,
+    closeHour: t.close,
+    openDays,
+    employees,
+    dailyRent,
+  };
+}
+
+/** Whether the business operates on the given weekday (0=Mon … 6=Sun). */
+export function tenantOpenDay(tenant: Tenant, dayIndex: number): boolean {
+  return (tenant.openDays ?? ALL_WEEK).includes(dayIndex);
 }
 
 /**
- * Whether a tenant's lights are on at the given (fractional) hour: from an hour
- * before opening to an hour after closing.
+ * Whether a tenant is currently open for business: an operating day AND within
+ * hours.
  */
-export function tenantLit(tenant: Tenant, hourF: number): boolean {
-  return hourF >= tenant.openHour - 1 && hourF < tenant.closeHour + 1;
+export function tenantOpen(tenant: Tenant, hourF: number, dayIndex: number): boolean {
+  return tenantOpenDay(tenant, dayIndex) && hourF >= tenant.openHour && hourF < tenant.closeHour;
+}
+
+/**
+ * Whether a tenant's lights are on: only on operating days, from an hour before
+ * opening to an hour after closing.
+ */
+export function tenantLit(tenant: Tenant, hourF: number, dayIndex: number): boolean {
+  return tenantOpenDay(tenant, dayIndex) && hourF >= tenant.openHour - 1 && hourF < tenant.closeHour + 1;
+}
+
+const DAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/** Short label for a set of operating days, e.g. "Mon–Fri" or "Every day". */
+export function daysLabel(openDays: number[]): string {
+  const d = [...new Set(openDays)].sort((a, b) => a - b);
+  if (d.length >= 7) return "Every day";
+  if (d.length === 0) return "—";
+  const contiguous = d.every((v, i) => i === 0 || v === d[i - 1] + 1);
+  if (contiguous && d.length > 1) return `${DAY_ABBR[d[0]]}–${DAY_ABBR[d[d.length - 1]]}`;
+  return d.map((i) => DAY_ABBR[i]).join(", ");
 }
 
 /** What to call the headcount in the UI for this kind. */

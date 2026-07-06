@@ -628,12 +628,21 @@ describe("tenants", () => {
   });
 
   it("lights are on from an hour before opening to an hour after closing", () => {
-    const t = { name: "x", trade: "y", openHour: 9, closeHour: 17, employees: 5, dailyRent: 100 };
-    expect(tenantLit(t, 8)).toBe(true); // 1h before open
-    expect(tenantLit(t, 13)).toBe(true); // midday
-    expect(tenantLit(t, 17.5)).toBe(true); // within 1h after close
-    expect(tenantLit(t, 19)).toBe(false); // well after close
-    expect(tenantLit(t, 6)).toBe(false); // early morning
+    const t = { name: "x", trade: "y", openHour: 9, closeHour: 17, openDays: [0, 1, 2, 3, 4, 5, 6], employees: 5, dailyRent: 100 };
+    expect(tenantLit(t, 8, 0)).toBe(true); // 1h before open
+    expect(tenantLit(t, 13, 0)).toBe(true); // midday
+    expect(tenantLit(t, 17.5, 0)).toBe(true); // within 1h after close
+    expect(tenantLit(t, 19, 0)).toBe(false); // well after close
+    expect(tenantLit(t, 6, 0)).toBe(false); // early morning
+  });
+
+  it("a weekday-only business is dark on the weekend", () => {
+    const t = { name: "x", trade: "Law", openHour: 9, closeHour: 17, openDays: [0, 1, 2, 3, 4], employees: 5, dailyRent: 100 };
+    expect(tenantLit(t, 13, 2)).toBe(true); // Wednesday
+    expect(tenantLit(t, 13, 5)).toBe(false); // Saturday
+    expect(tenantLit(t, 13, 6)).toBe(false); // Sunday
+    // Offices default to Mon–Fri.
+    expect(generateTenant("office", "seed:x", 0.7, 2)!.openDays).toEqual([0, 1, 2, 3, 4]);
   });
 });
 

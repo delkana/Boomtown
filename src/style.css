@@ -839,9 +839,32 @@ button.primary.big {
   border-color: rgba(255, 210, 122, 0.4);
 }
 
-/* Girder facade sub-menu — a strip above the hint while the girder tool is on. */
-#girder-styles {
+/* Tool sub-menu — the open category's tools, just above the hint. */
+#tool-submenu {
   bottom: 150px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  max-width: 94vw;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+/* Category buttons in the main toolbar. */
+.tool.cat {
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+}
+.tool.cat .cat-icon {
+  font-size: 18px;
+  margin-bottom: 3px;
+}
+
+/* Girder facade sub-menu — a strip above the tool sub-menu while girder is on. */
+#girder-styles {
+  bottom: 202px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;

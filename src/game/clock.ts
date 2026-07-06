@@ -37,6 +37,12 @@ export function gameTime(tick: number): GameTime {
   return gameTimeFromMinutes(tick * TICK_MINUTES);
 }
 
+/** Day of week for a tick: 0 = Monday … 6 = Sunday (matches DAY_NAMES). */
+export function dayOfWeek(tick: number): number {
+  const totalDays = Math.floor((tick * TICK_MINUTES) / (60 * 24));
+  return ((totalDays % DAYS_PER_WEEK) + DAYS_PER_WEEK) % DAYS_PER_WEEK;
+}
+
 /**
  * Build a GameTime from an absolute count of in-game minutes. Lets the HUD show
  * a smoothly-advancing clock (minute by minute) between the coarse 5-minute

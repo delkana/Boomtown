@@ -69,6 +69,8 @@ export interface Tenant {
   /** Business open hour (0..23) and close hour (1..24). Lights follow these. */
   openHour: number;
   closeHour: number;
+  /** Weekdays the business operates: 0 = Monday … 6 = Sunday. */
+  openDays: number[];
   /** How many people work / live here. */
   employees: number;
   /** Rent paid to the plot owner each day at midnight. */

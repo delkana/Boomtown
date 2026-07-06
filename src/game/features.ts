@@ -40,13 +40,13 @@ const FEATURE_NAMES: Record<FeatureKind, string[]> = {
     "Kessler River", "Vale River", "Marrow River", "Rushwater River", "Silverbrook River",
     "Ashford Crossing", "Blackwater Canal", "Mill Canal", "Harbor Canal", "Ironbridge Crossing",
     "Greenwater Canal", "Old Ferry Crossing", "Slate Creek", "Highwater Canal", "Kingsferry Crossing",
-    "Copperbrook Canal",
+    "Copperbrook Canal", "Kamo River", "Moskva Canal", "Seine Crossing",
   ],
   park: [
     "Central Park", "Greenwood Park", "Liberty Gardens", "Meridian Commons", "Elm Park",
     "Concord Green", "Riverside Park", "Victory Gardens", "Cedar Commons", "Lantern Park",
     "Union Green", "Willow Gardens", "Founders Park", "Maple Commons", "Sunset Green",
-    "Heritage Park",
+    "Heritage Park", "Maruyama Park", "Gorky Park", "Jardin des Tuileries",
   ],
   highway: [
     "Route 9 Overpass", "The Interchange", "Skyway 7", "Transit Viaduct", "Grand Overpass",
