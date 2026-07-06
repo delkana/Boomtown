@@ -1,6 +1,19 @@
-import { CELL_SIZE, MAX_DEPTH, MAX_ROWS, SUBWAY_ROW, UNIT_DEFS } from "../game/constants";
+import {
+  CELL_SIZE,
+  ELEVATOR_CAR_COST,
+  MAX_DEPTH,
+  MAX_ROWS,
+  SUBWAY_ROW,
+  UNIT_DEFS,
+} from "../game/constants";
 import type { GameState, Plot } from "../game/types";
 import { unitAt, hasGirder, girderSupported } from "../game/reducer";
+import {
+  elevatorRuns,
+  runContaining,
+  carsInRun,
+  MAX_CARS_PER_SHAFT,
+} from "../game/elevator";
 import { claimCost, girderCost, undergroundMultiplier } from "../game/economy";
 import { featureLabel } from "../game/features";
 import { heatT, type HeatmapKind } from "../game/heatmaps";
@@ -19,8 +32,8 @@ export interface HoverState {
   row: number;
 }
 
-/** What the player currently has selected: a build unit, girder, claim, destroy, or nothing. */
-export type Tool = keyof typeof UNIT_DEFS | "claim" | "girder" | "destroy" | null;
+/** What the player currently has selected: a build unit, girder, elevator car, claim, destroy, or nothing. */
+export type Tool = keyof typeof UNIT_DEFS | "claim" | "girder" | "elevatorCar" | "destroy" | null;
 
 /** A brief floating "-$X" / "+$X" label at the cursor after a money change. */
 interface Popup {
@@ -463,12 +476,18 @@ export class Renderer {
       }
     }
 
-    // Elevators: contiguous vertical runs render as one continuous shaft.
+    // Elevator shafts (the structure): a continuous rail channel per run.
     for (const run of elevatorRuns(plot)) {
       const x = camera.worldToScreenX(leftWorld + run.col * CELL_SIZE);
       const yTop = camera.rowTopScreenY(run.to);
       const yBottom = camera.rowTopScreenY(run.from) + cell;
-      this.drawElevatorShaft(x, yTop, cell, yBottom - yTop, run.to > run.from, ownerColor, bandH);
+      this.drawElevatorShaft(x, yTop, cell, yBottom - yTop, ownerColor, bandH);
+    }
+    // Elevator cars ride the shafts at their live (fractional) positions.
+    for (const car of plot.cars ?? []) {
+      const x = camera.worldToScreenX(leftWorld + car.col * CELL_SIZE);
+      const y = camera.groundScreenY - (car.position + 1) * cell;
+      this.drawElevatorCar(x, y, cell);
     }
 
     // Nameplate under the plot: themed property name, then owner / status.
@@ -497,40 +516,47 @@ export class Renderer {
   }
 
   /**
-   * Draw an elevator run. A single tile looks like a plain elevator; two or more
-   * stacked tiles render as one continuous shaft (rails + a car), not separate
-   * boxes.
+   * Draw an elevator shaft's structure: a dark rail channel with two guide
+   * rails. Cars (drawn separately) ride inside it. An empty shaft reads as
+   * "needs a car".
    */
   private drawElevatorShaft(
     x: number,
     yTop: number,
     cell: number,
     height: number,
-    continuous: boolean,
     ownerColor: string,
     bandH: number,
   ): void {
     const { ctx } = this;
     const w = cell;
-    if (!continuous) {
-      // Single elevator — the classic tile look.
-      ctx.fillStyle = UNIT_DEFS.elevator.color;
-      ctx.fillRect(x + 1, yTop + 1, w - 2, cell - 2);
-    } else {
-      // Continuous shaft: dark channel, two guide rails, and one car.
-      ctx.fillStyle = "#3a3f47";
-      ctx.fillRect(x + 1, yTop + 1, w - 2, height - 2);
-      ctx.fillStyle = "#8a8f98";
-      ctx.fillRect(x + 3, yTop + 2, 2, height - 4);
-      ctx.fillRect(x + w - 5, yTop + 2, 2, height - 4);
-      // Car parked at the bottom of the shaft.
-      const carH = Math.min(cell * 0.85, height - 6);
-      ctx.fillStyle = "#aab0b8";
-      ctx.fillRect(x + 6, yTop + height - carH - 3, w - 12, carH);
-    }
+    ctx.fillStyle = "#2f343c"; // dark shaft channel
+    ctx.fillRect(x + 1, yTop + 1, w - 2, height - 2);
+    ctx.fillStyle = "#575d66"; // guide rails
+    ctx.fillRect(x + 3, yTop + 2, 2, height - 4);
+    ctx.fillRect(x + w - 5, yTop + 2, 2, height - 4);
     // Owner-color band along the very top of the run.
     ctx.fillStyle = ownerColor;
     ctx.fillRect(x + 1, yTop + 1, w - 2, bandH);
+  }
+
+  /** Draw one elevator car (a metallic cabin) at a screen position in its shaft. */
+  private drawElevatorCar(x: number, y: number, cell: number): void {
+    const { ctx } = this;
+    const inset = Math.max(2, cell * 0.14);
+    const cx = x + inset;
+    const cy = y + 2;
+    const cw = cell - inset * 2;
+    const chH = cell - 4;
+    ctx.fillStyle = "#aab0b8"; // cabin body
+    ctx.fillRect(cx, cy, cw, chH);
+    ctx.fillStyle = "#c9ced4"; // top highlight
+    ctx.fillRect(cx, cy, cw, Math.max(1, chH * 0.16));
+    ctx.fillStyle = "#41474f"; // door seam down the middle
+    ctx.fillRect(cx + cw / 2 - 1, cy + 2, 2, chH - 4);
+    ctx.strokeStyle = "#6b7280";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(cx + 0.5, cy + 0.5, cw - 1, chH - 1);
   }
 
   /** Small price tag centered at (cx, baselineY) — used for the live girder cost. */
@@ -715,6 +741,29 @@ export class Renderer {
       return;
     }
 
+    // Elevator-car tool: must drop inside a shaft that isn't already full.
+    if (tool === "elevatorCar") {
+      if (plot.ownerId !== localId) return;
+      const run = runContaining(plot, hover.col, hover.row);
+      const blocked = !run || carsInRun(plot, run).length >= MAX_CARS_PER_SHAFT;
+      const gx = camera.worldToScreenX(leftWorld + hover.col * CELL_SIZE);
+      const gy = camera.rowTopScreenY(hover.row);
+      if (blocked) {
+        ctx.fillStyle = "rgba(200,70,70,0.30)";
+        ctx.fillRect(gx + 1, gy + 1, cell - 2, cell - 2);
+        ctx.strokeStyle = "#c84646";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(gx + 1, gy + 1, cell - 2, cell - 2);
+      } else {
+        this.drawElevatorCar(gx, gy, cell);
+        ctx.strokeStyle = "#78dc78";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(gx + 1, gy + 1, cell - 2, cell - 2);
+        this.drawPriceTag(`$${ELEVATOR_CAR_COST.toLocaleString()}`, gx + cell / 2, gy - 2);
+      }
+      return;
+    }
+
     // Destroy tool: highlight the room (or bare girder) that would be removed.
     if (tool === "destroy") {
       if (plot.ownerId !== localId) return;
@@ -762,34 +811,6 @@ export class Renderer {
       this.drawPriceTag(`$${price.toLocaleString()}`, x + wpx / 2, y - 2);
     }
   }
-}
-
-/** Group a plot's elevators into contiguous vertical runs per column. */
-function elevatorRuns(plot: Plot): { col: number; from: number; to: number }[] {
-  const byCol = new Map<number, number[]>();
-  for (const u of plot.units) {
-    if (u.kind !== "elevator") continue;
-    const rows = byCol.get(u.col) ?? [];
-    rows.push(u.row);
-    byCol.set(u.col, rows);
-  }
-  const runs: { col: number; from: number; to: number }[] = [];
-  for (const [col, rows] of byCol) {
-    rows.sort((a, b) => a - b);
-    let from = rows[0];
-    let prev = rows[0];
-    for (let i = 1; i < rows.length; i++) {
-      if (rows[i] === prev + 1) {
-        prev = rows[i];
-      } else {
-        runs.push({ col, from, to: prev });
-        from = rows[i];
-        prev = rows[i];
-      }
-    }
-    runs.push({ col, from, to: prev });
-  }
-  return runs;
 }
 
 /** Linear blend of two rgb triples. */

@@ -1,8 +1,9 @@
 import type { Command } from "./commands";
 import type { GameState, Plot, Unit, UnitKind } from "./types";
-import { MAX_DEPTH, MAX_ROWS, SPEED_OPTIONS, UNIT_DEFS } from "./constants";
+import { ELEVATOR_CAR_COST, MAX_DEPTH, MAX_ROWS, SPEED_OPTIONS, UNIT_DEFS } from "./constants";
 import { claimCost, girderCost, undergroundMultiplier } from "./economy";
 import { featureLabel } from "./features";
+import { MAX_CARS_PER_SHAFT, carsInRun, nearestCar, runContaining } from "./elevator";
 
 /**
  * The reducer applies a single command to the authoritative state.
@@ -37,6 +38,10 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
       return placeUnit(state, cmd);
     case "SELL_UNIT":
       return sellUnit(state, cmd);
+    case "PLACE_ELEVATOR_CAR":
+      return placeElevatorCar(state, cmd);
+    case "SELL_ELEVATOR_CAR":
+      return sellElevatorCar(state, cmd);
     default: {
       const _never: never = cmd;
       return { ok: false, error: `Unknown command ${(_never as Command).type}` };
@@ -220,6 +225,43 @@ function sellUnit(
   plot.units.splice(idx, 1);
   // Refund half of what was paid (underground rooms cost more).
   player.money += Math.floor(def.cost * undergroundMultiplier(unit.row) * 0.5);
+  return ok();
+}
+
+function placeElevatorCar(
+  state: GameState,
+  cmd: Extract<Command, { type: "PLACE_ELEVATOR_CAR" }>,
+): CommandResult {
+  const owned = ownedBuildablePlot(state, cmd.playerId, cmd.plotIndex);
+  if (!owned.ok) return fail(owned.error);
+  const plot = owned.plot;
+  const player = state.players[cmd.playerId];
+
+  const run = runContaining(plot, cmd.col, cmd.row);
+  if (!run) return fail("Elevator cars go inside an elevator shaft");
+  if (carsInRun(plot, run).length >= MAX_CARS_PER_SHAFT)
+    return fail(`A shaft holds at most ${MAX_CARS_PER_SHAFT} cars`);
+  if (player.money < ELEVATOR_CAR_COST) return fail("Not enough money");
+
+  if (!plot.cars) plot.cars = [];
+  plot.cars.push({ id: `car${state.nextUnitSeq++}`, col: cmd.col, position: cmd.row, dir: 1 });
+  player.money -= ELEVATOR_CAR_COST;
+  return ok();
+}
+
+function sellElevatorCar(
+  state: GameState,
+  cmd: Extract<Command, { type: "SELL_ELEVATOR_CAR" }>,
+): CommandResult {
+  const player = state.players[cmd.playerId];
+  if (!player) return fail("No such player");
+  const plot = state.plots[cmd.plotIndex];
+  if (!plot || plot.ownerId !== cmd.playerId) return fail("Not your plot");
+
+  const car = nearestCar(plot, cmd.col, cmd.row);
+  if (!car) return fail("No elevator car here");
+  plot.cars = (plot.cars ?? []).filter((c) => c.id !== car.id);
+  player.money += Math.floor(ELEVATOR_CAR_COST * 0.5);
   return ok();
 }
 

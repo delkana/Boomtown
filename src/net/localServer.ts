@@ -30,7 +30,7 @@ export interface GameServer {
 
 // Bump this when the persisted state shape changes (e.g. variable plot widths),
 // so incompatible old saves are discarded instead of breaking layout.
-const LS_KEY = "boomtown.local.v5";
+const LS_KEY = "boomtown.local.v6";
 
 /**
  * In-process authoritative server. Wraps a GameDirectory and hands out

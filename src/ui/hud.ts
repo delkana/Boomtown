@@ -1,5 +1,6 @@
 import {
   BUILD_ORDER,
+  ELEVATOR_CAR_COST,
   GIRDER_BASE_COST,
   PLOT_COST_MIN,
   SPEED_OPTIONS,
@@ -188,6 +189,18 @@ export class Hud {
       this.toolbarEl.appendChild(btn);
     }
 
+    // Elevator car — placed inside a shaft (after the shaft is built).
+    const car = document.createElement("button");
+    car.className = "tool";
+    car.dataset.tool = "elevatorCar";
+    car.innerHTML = `
+      <span class="swatch" style="background:#aab0b8"></span>
+      <span class="tool-label">Elevator Car</span>
+      <span class="tool-cost">$${ELEVATOR_CAR_COST.toLocaleString()}</span>
+      <span class="tool-key">9</span>`;
+    car.addEventListener("click", () => this.toggle("elevatorCar"));
+    this.toolbarEl.appendChild(car);
+
     // Destroy tool last.
     const destroy = document.createElement("button");
     destroy.className = "tool";
@@ -263,11 +276,13 @@ export class Hud {
       const cost =
         tool === "girder"
           ? GIRDER_BASE_COST
-          : tool === "destroy"
-            ? 0 // destroying never costs money
-            : tool === "claim"
-              ? cheapestClaim // (claim now lives in the nav cluster, but stay total)
-              : UNIT_DEFS[tool].cost;
+          : tool === "elevatorCar"
+            ? ELEVATOR_CAR_COST
+            : tool === "destroy"
+              ? 0 // destroying never costs money
+              : tool === "claim"
+                ? cheapestClaim // (claim now lives in the nav cluster, but stay total)
+                : UNIT_DEFS[tool].cost;
       el.classList.toggle("selected", this.getSelected() === tool);
       el.classList.toggle("unaffordable", player.money < cost);
     }
@@ -282,7 +297,10 @@ export class Hud {
       this.hintEl.textContent = `Claim mode — click an "Available" plot to buy it, then frame it.`;
       this.hintEl.className = "panel";
     } else if (sel === "girder") {
-      this.hintEl.textContent = `Girder mode — the price for the hovered floor shows at your cursor ($${GIRDER_BASE_COST} +$5/floor). Rooms need girders under them.`;
+      this.hintEl.textContent = `Girder mode — click, or click-and-drag to paint a run ($${GIRDER_BASE_COST} +$5/floor). Rooms need girders under them.`;
+      this.hintEl.className = "panel";
+    } else if (sel === "elevatorCar") {
+      this.hintEl.textContent = `Elevator car ($${ELEVATOR_CAR_COST.toLocaleString()}) — click inside a shaft to add a car (up to 8 per shaft). A shaft with no car serves no floors.`;
       this.hintEl.className = "panel";
     } else if (sel === "destroy") {
       this.hintEl.textContent = `Destroy mode — click a room to demolish it (50% back), or a bare girder. Can't split an elevator shaft.`;
@@ -291,7 +309,7 @@ export class Hud {
       this.hintEl.textContent = `Placing ${UNIT_DEFS[sel].label} — needs girders underneath. Click a framed cell. Right-click sells. Esc deselects.`;
       this.hintEl.className = "panel";
     } else {
-      this.hintEl.textContent = `Girders first (G), then rooms (1–4). C to claim land. Drag or arrow keys to pan.`;
+      this.hintEl.textContent = `Girders first (G, drag to paint), then rooms (1–7), a shaft (8) + its cars (9). C to claim. Drag or arrows to pan.`;
       this.hintEl.className = "panel";
     }
   }

@@ -1,6 +1,7 @@
 import type { GameState, Plot } from "./types";
 import { UNIT_DEFS } from "./constants";
 import { roomSatisfaction } from "./heatmaps";
+import { advanceCars, servicedRows } from "./elevator";
 
 /**
  * advanceTick: the economy step. Pure and deterministic — server-ownable.
@@ -25,7 +26,8 @@ export function advanceTick(state: GameState): void {
     if (!owner) continue;
 
     const hasLobby = plot.units.some((u) => u.kind === "lobby");
-    const elevatorRows = elevatorReach(plot);
+    // A floor is only reachable if its shaft has a car running in it.
+    const elevatorRows = servicedRows(plot);
 
     let net = 0;
     for (const unit of plot.units) {
@@ -47,26 +49,16 @@ export function advanceTick(state: GameState): void {
     }
 
     owner.money += net;
-  }
-}
 
-/**
- * Set of floor rows reachable by an elevator. An elevator cell services its own
- * floor; a floor is reachable if any elevator cell exists on it. (Elevators are
- * expected to be stacked into a shaft from the ground up.)
- */
-function elevatorReach(plot: Plot): Set<number> {
-  const rows = new Set<number>();
-  for (const u of plot.units) {
-    if (u.kind === "elevator") rows.add(u.row);
+    // Move the plot's elevator cars along their shafts for the next tick.
+    advanceCars(plot);
   }
-  return rows;
 }
 
 /** Total per-tick net cashflow for a plot (for the stats readout). */
 export function projectedNet(plot: Plot): number {
   const hasLobby = plot.units.some((u) => u.kind === "lobby");
-  const elevatorRows = new Set(plot.units.filter((u) => u.kind === "elevator").map((u) => u.row));
+  const elevatorRows = servicedRows(plot);
   let net = 0;
   for (const unit of plot.units) {
     const def = UNIT_DEFS[unit.kind];

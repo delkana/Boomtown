@@ -65,6 +65,7 @@ export function createGameState(id: string, config: GameConfig): GameState {
         ownerId: null,
         girders: [],
         units: [],
+        cars: [],
       };
     } else {
       plots[i] = {
@@ -76,6 +77,7 @@ export function createGameState(id: string, config: GameConfig): GameState {
         ownerId: null,
         girders: [],
         units: [],
+        cars: [],
       };
     }
   }

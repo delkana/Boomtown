@@ -8,6 +8,7 @@ import { elevatorAccess, viewRating, noiseRating, footTraffic, roomSatisfaction 
 import { GIRDER_BASE_COST, MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
 import { claimCost, girderCost, plotBaseCost, undergroundMultiplier } from "../src/game/economy";
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
+import { servicedRows, elevatorRuns, MAX_CARS_PER_SHAFT } from "../src/game/elevator";
 import type { GameState } from "../src/game/types";
 
 /** Indices of the first `n` buildable (non-feature) plots. */
@@ -374,6 +375,7 @@ describe("advanceTick economy", () => {
     frame(s, "p1", 0, [[0, 0], [1, 0], [2, 0], [4, 0], [5, 0]]);
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 0 });
+    applyCommand(s, { type: "PLACE_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 });
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "office", col: 4, row: 0 });
     return s;
   }
@@ -425,13 +427,22 @@ describe("advanceTick economy", () => {
 });
 
 describe("room types & preferences", () => {
-  it("defines the new room widths (store 3, restaurant 4, hotel 1)", () => {
+  it("defines the new room widths (store 3, restaurant 4, hotel 1, medical 3)", () => {
     expect(UNIT_DEFS.store.width).toBe(3);
     expect(UNIT_DEFS.restaurant.width).toBe(4);
     expect(UNIT_DEFS.hotel.width).toBe(1);
-    for (const k of ["store", "restaurant", "hotel"] as const) {
+    expect(UNIT_DEFS.medical.width).toBe(3);
+    for (const k of ["store", "restaurant", "hotel", "medical"] as const) {
       expect(UNIT_DEFS[k].incomeAtFull).toBeGreaterThan(0); // they earn revenue
     }
+  });
+
+  it("a medical office cares about access/view/quiet but not foot traffic", () => {
+    const p = UNIT_DEFS.medical.prefs!;
+    expect(p.elevator).toBeGreaterThan(0);
+    expect(p.view).toBeGreaterThan(0);
+    expect(p.noise).toBeGreaterThan(0);
+    expect(p.foot ?? 0).toBe(0);
   });
 
   it("places a 3-wide store and a 4-wide restaurant over girders", () => {
@@ -475,6 +486,82 @@ describe("room types & preferences", () => {
     const nextToLobby = { id: "a", kind: "apartment" as const, col: 2, row: 0, width: 2, occupancy: 0 };
     // An apartment jammed onto the noisy ground floor should be well under ideal.
     expect(roomSatisfaction(plot, nextToLobby)).toBeLessThan(0.7);
+  });
+});
+
+describe("elevator cars", () => {
+  /** Owned plot with a lobby and an elevator shaft up to `top`, no cars yet. */
+  function shaftTower(top = 3): GameState {
+    const s = freshGame();
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0], [4, 0], [5, 0]]);
+    frame(s, "p1", 0, [[2, top]]); // girders up the shaft column
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    for (let r = 0; r <= top; r++)
+      applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: r });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "office", col: 4, row: 0 });
+    return s;
+  }
+
+  it("a shaft with no car services no floor", () => {
+    const s = shaftTower();
+    expect(servicedRows(s.plots[0]).size).toBe(0);
+    const office = s.plots[0].units.find((u) => u.kind === "office")!;
+    for (let i = 0; i < 30; i++) advanceTick(s);
+    expect(office.occupancy).toBe(0); // never fills without a car
+  });
+
+  it("adding a car services the shaft's floors", () => {
+    const s = shaftTower(3);
+    const r = applyCommand(s, { type: "PLACE_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 });
+    expect(r.ok).toBe(true);
+    expect(s.plots[0].cars).toHaveLength(1);
+    const rows = servicedRows(s.plots[0]);
+    for (let f = 0; f <= 3; f++) expect(rows.has(f)).toBe(true);
+    const office = s.plots[0].units.find((u) => u.kind === "office")!;
+    for (let i = 0; i < 30; i++) advanceTick(s);
+    expect(office.occupancy).toBeGreaterThan(0);
+  });
+
+  it("rejects a car placed outside any shaft", () => {
+    const s = shaftTower();
+    const r = applyCommand(s, { type: "PLACE_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 4, row: 0 });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/shaft/i);
+  });
+
+  it(`caps a shaft at ${MAX_CARS_PER_SHAFT} cars`, () => {
+    const s = shaftTower(3);
+    for (let i = 0; i < MAX_CARS_PER_SHAFT; i++)
+      expect(applyCommand(s, { type: "PLACE_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 }).ok).toBe(true);
+    const overflow = applyCommand(s, { type: "PLACE_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 });
+    expect(overflow.ok).toBe(false);
+    expect(s.plots[0].cars).toHaveLength(MAX_CARS_PER_SHAFT);
+  });
+
+  it("cars travel up and down the shaft over ticks", () => {
+    const s = shaftTower(4);
+    applyCommand(s, { type: "PLACE_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 });
+    const car = s.plots[0].cars[0];
+    expect(car.position).toBe(0);
+    advanceTick(s);
+    expect(car.position).toBeGreaterThan(0); // moved up off the ground
+    const run = elevatorRuns(s.plots[0])[0];
+    for (let i = 0; i < 200; i++) advanceTick(s); // patrols within bounds forever
+    expect(car.position).toBeGreaterThanOrEqual(run.from);
+    expect(car.position).toBeLessThanOrEqual(run.to);
+  });
+
+  it("selling the car unservices the floors and refunds", () => {
+    const s = shaftTower(2);
+    applyCommand(s, { type: "PLACE_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 });
+    const before = s.players["p1"].money;
+    const r = applyCommand(s, { type: "SELL_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 });
+    expect(r.ok).toBe(true);
+    expect(s.plots[0].cars).toHaveLength(0);
+    expect(s.players["p1"].money).toBeGreaterThan(before);
+    expect(servicedRows(s.plots[0]).size).toBe(0);
   });
 });
 

@@ -2,6 +2,7 @@ import { applyCommand, type CommandResult } from "../game/reducer";
 import { advanceTick } from "../game/tick";
 import { createGameState, serialize } from "../game/state";
 import { STARTING_MONEY, TICK_SECONDS, UNIT_DEFS } from "../game/constants";
+import { elevatorRuns } from "../game/elevator";
 import type { Command } from "../game/commands";
 import type { GameConfig, GameState, Player, UnitKind } from "../game/types";
 import type { GameSummary } from "./protocol";
@@ -118,6 +119,16 @@ export class AuthoritativeGame {
           plot.girders.push({ col: c, row: s.row });
         }
       }
+    }
+    // Give each seeded shaft a car so the tower is actually serviced.
+    if (!plot.cars) plot.cars = [];
+    for (const run of elevatorRuns(plot)) {
+      plot.cars.push({
+        id: `car${this.state.nextUnitSeq++}`,
+        col: run.col,
+        position: run.from,
+        dir: 1,
+      });
     }
   }
 

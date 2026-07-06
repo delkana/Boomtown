@@ -29,6 +29,11 @@ export class InputController {
   private dragStartOffset = 0;
   private dragStartOffsetY = 0;
   private movedWhileDragging = false;
+  /** Girder drag-paint: while the girder tool is held down, drag lays girders. */
+  private painting = false;
+  private lastPaintKey: string | null = null;
+  private lastPaintPt: { x: number; y: number } | null = null;
+  private paintStartMoney = 0;
   private keys = new Set<string>();
   /** A room clicked to "pin" its inspector panel open. */
   private pinned: { plotIndex: number; unitId: string } | null = null;
@@ -146,22 +151,37 @@ export class InputController {
 
   private onPointerDown = (e: PointerEvent): void => {
     const { x, y } = this.localPointer(e);
+    try {
+      this.canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* synthetic or inactive pointer */
+    }
+
+    // Girder tool: click-and-drag paints girders instead of panning the view.
+    if (this.selectedTool === "girder") {
+      this.painting = true;
+      this.lastPaintKey = null;
+      this.lastPaintPt = { x, y };
+      this.paintStartMoney = this.conn.getState().players[this.conn.session.playerId]?.money ?? 0;
+      this.paintGirderAt(x, y);
+      return;
+    }
+
     this.dragging = true;
     this.movedWhileDragging = false;
     this.dragStartX = x;
     this.dragStartY = y;
     this.dragStartOffset = this.camera.offsetX;
     this.dragStartOffsetY = this.camera.offsetY;
-    try {
-      this.canvas.setPointerCapture(e.pointerId);
-    } catch {
-      /* synthetic or inactive pointer */
-    }
   };
 
   private onPointerMove = (e: PointerEvent): void => {
     const { x, y } = this.localPointer(e);
     this.hover = this.camera.screenToCell(x, y);
+    if (this.painting) {
+      this.paintGirderLine(x, y);
+      return;
+    }
     if (this.dragging) {
       const dx = x - this.dragStartX;
       const dy = y - this.dragStartY;
@@ -176,13 +196,22 @@ export class InputController {
 
   private onPointerUp = (e: PointerEvent): void => {
     const { x, y } = this.localPointer(e);
-    const wasDrag = this.movedWhileDragging;
-    this.dragging = false;
     try {
       this.canvas.releasePointerCapture(e.pointerId);
     } catch {
       /* pointer may already be released */
     }
+
+    // Finish a girder paint stroke: flash the total spent once, at the cursor.
+    if (this.painting) {
+      this.painting = false;
+      const after = this.conn.getState().players[this.conn.session.playerId]?.money ?? 0;
+      if (after !== this.paintStartMoney) this.moneyFx(x, y, after - this.paintStartMoney);
+      return;
+    }
+
+    const wasDrag = this.movedWhileDragging;
+    this.dragging = false;
     if (wasDrag) return;
 
     // Inspect mode (no tool): click toggles the pinned room inspector.
@@ -218,6 +247,8 @@ export class InputController {
         this.conn.dispatch({ type: "CLAIM_PLOT", playerId, plotIndex: cell.plotIndex });
       } else if (tool === "girder") {
         this.conn.dispatch({ type: "PLACE_GIRDER", playerId, plotIndex: cell.plotIndex, col: cell.col, row: cell.row });
+      } else if (tool === "elevatorCar") {
+        this.conn.dispatch({ type: "PLACE_ELEVATOR_CAR", playerId, plotIndex: cell.plotIndex, col: cell.col, row: cell.row });
       } else if (tool) {
         this.conn.dispatch({
           type: "PLACE_UNIT",
@@ -231,6 +262,39 @@ export class InputController {
     });
   };
 
+  /** Place a girder at a screen point (used by the drag-paint stroke). */
+  private paintGirderAt(x: number, y: number): void {
+    const cell = this.camera.screenToCell(x, y);
+    if (!cell) return;
+    const key = `${cell.plotIndex}:${cell.col}:${cell.row}`;
+    if (key === this.lastPaintKey) return; // same cell as last time — skip
+    this.lastPaintKey = key;
+    const plot = this.conn.getState().plots[cell.plotIndex];
+    if (!plot || plot.ownerId !== this.conn.session.playerId) return;
+    this.conn.dispatch({
+      type: "PLACE_GIRDER",
+      playerId: this.conn.session.playerId,
+      plotIndex: cell.plotIndex,
+      col: cell.col,
+      row: cell.row,
+    });
+  }
+
+  /**
+   * Paint girders along the line from the last painted point to (x,y), sampling
+   * finely so a fast drag doesn't leave gaps between cells.
+   */
+  private paintGirderLine(x: number, y: number): void {
+    const from = this.lastPaintPt ?? { x, y };
+    const step = Math.max(4, this.camera.scale(48) / 2);
+    const dist = Math.hypot(x - from.x, y - from.y);
+    const n = Math.max(1, Math.ceil(dist / step));
+    for (let i = 1; i <= n; i++) {
+      this.paintGirderAt(from.x + ((x - from.x) * i) / n, from.y + ((y - from.y) * i) / n);
+    }
+    this.lastPaintPt = { x, y };
+  }
+
   /** Right-click also destroys the room / bare girder under the cursor. */
   private onContextMenu = (e: MouseEvent): void => {
     e.preventDefault();
@@ -240,15 +304,22 @@ export class InputController {
     this.tryDestroy(cell.plotIndex, cell.col, cell.row, x, y);
   };
 
-  /** Demolish the room at a cell, or a bare girder if no room is there. */
+  /**
+   * Demolish, in priority order: an elevator car in this shaft (so you clear
+   * cars before dismantling the shaft), then the room here, then a bare girder.
+   */
   private tryDestroy(plotIndex: number, col: number, row: number, screenX: number, screenY: number): void {
     const state = this.conn.getState();
     const plot = state.plots[plotIndex];
     const playerId = this.conn.session.playerId;
     if (!plot || plot.ownerId !== playerId) return;
     const unit = plot.units.find((u) => u.row === row && col >= u.col && col < u.col + u.width);
+    const carHere =
+      unit?.kind === "elevator" && (plot.cars ?? []).some((c) => c.col === col);
     this.withMoneyFx(screenX, screenY, () => {
-      if (unit) {
+      if (carHere) {
+        this.conn.dispatch({ type: "SELL_ELEVATOR_CAR", playerId, plotIndex, col, row });
+      } else if (unit) {
         this.conn.dispatch({ type: "SELL_UNIT", playerId, plotIndex, unitId: unit.id });
       } else if ((plot.girders ?? []).some((g) => g.col === col && g.row === row)) {
         this.conn.dispatch({ type: "SELL_GIRDER", playerId, plotIndex, col, row });
@@ -270,11 +341,13 @@ export class InputController {
     const map: Record<string, Tool> = {
       "1": "lobby",
       "2": "office",
-      "3": "apartment",
-      "4": "store",
-      "5": "restaurant",
-      "6": "hotel",
-      "7": "elevator",
+      "3": "medical",
+      "4": "apartment",
+      "5": "store",
+      "6": "restaurant",
+      "7": "hotel",
+      "8": "elevator",
+      "9": "elevatorCar",
       g: "girder",
       G: "girder",
       c: "claim",

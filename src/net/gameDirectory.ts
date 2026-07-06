@@ -5,6 +5,7 @@ import {
   MIN_PLOTS,
 } from "../game/constants";
 import { isArchetype } from "../game/archetypes";
+import { elevatorRuns } from "../game/elevator";
 import {
   isNearBackground,
   isFarBackground,
@@ -181,10 +182,20 @@ export class GameDirectory {
         cfg.backgroundFar = cfg.backgroundFar || far;
       }
       if (typeof cfg.latitude !== "number") cfg.latitude = 40;
+      let carSeq = g.state.nextUnitSeq;
       for (const key of Object.keys(g.state.plots)) {
         const plot = g.state.plots[Number(key)];
         if (!plot.girders) plot.girders = [];
+        // Backfill elevator cars: give each existing shaft one so towers built
+        // before cars existed keep working.
+        if (!plot.cars) {
+          plot.cars = [];
+          for (const run of elevatorRuns(plot)) {
+            plot.cars.push({ id: `car${carSeq++}`, col: run.col, position: run.from, dir: 1 });
+          }
+        }
       }
+      g.state.nextUnitSeq = carSeq;
       const game = new AuthoritativeGame(g.state, g.password);
       this.games.set(g.state.id, game);
       this.tokens.set(g.state.id, new Map(g.tokens));

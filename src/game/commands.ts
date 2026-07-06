@@ -60,6 +60,22 @@ export type Command =
       playerId: string;
       plotIndex: number;
       unitId: string;
+    }
+  | {
+      type: "PLACE_ELEVATOR_CAR";
+      playerId: string;
+      plotIndex: number;
+      /** A cell inside the target shaft (which column + floor to drop the car). */
+      col: number;
+      row: number;
+    }
+  | {
+      type: "SELL_ELEVATOR_CAR";
+      playerId: string;
+      plotIndex: number;
+      /** A cell in the shaft; the car nearest this floor is removed. */
+      col: number;
+      row: number;
     };
 
 /** A function that accepts commands. Local dispatcher today; socket send later. */

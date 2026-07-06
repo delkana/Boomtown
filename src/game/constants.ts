@@ -130,10 +130,24 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     // Good elevator access + views + quiet; indifferent to foot traffic.
     prefs: { elevator: 1.0, view: 0.7, noise: 0.6 },
   },
+  medical: {
+    kind: "medical",
+    label: "Medical Office",
+    hotkey: "3",
+    width: 3,
+    cost: 5000,
+    upkeep: 14,
+    incomeAtFull: 200,
+    fillRate: 0.07,
+    color: "#4bb5a6",
+    // Clinics want easy access, a calm setting, and a pleasant outlook; foot
+    // traffic doesn't matter (patients come by appointment).
+    prefs: { elevator: 1.0, view: 0.6, noise: 0.8 },
+  },
   apartment: {
     kind: "apartment",
     label: "Apartment",
-    hotkey: "3",
+    hotkey: "4",
     width: 2,
     cost: 2500,
     upkeep: 8,
@@ -146,7 +160,7 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
   store: {
     kind: "store",
     label: "Store",
-    hotkey: "4",
+    hotkey: "5",
     width: 3,
     cost: 4500,
     upkeep: 12,
@@ -159,7 +173,7 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
   restaurant: {
     kind: "restaurant",
     label: "Restaurant",
-    hotkey: "5",
+    hotkey: "6",
     width: 4,
     cost: 6500,
     upkeep: 18,
@@ -172,7 +186,7 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
   hotel: {
     kind: "hotel",
     label: "Hotel Room",
-    hotkey: "6",
+    hotkey: "7",
     width: 1,
     cost: 1800,
     upkeep: 6,
@@ -184,8 +198,8 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
   },
   elevator: {
     kind: "elevator",
-    label: "Elevator",
-    hotkey: "7",
+    label: "Elevator Shaft",
+    hotkey: "8",
     width: 1,
     cost: 1500,
     upkeep: 4,
@@ -199,12 +213,20 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
 export const BUILD_ORDER: UnitKind[] = [
   "lobby",
   "office",
+  "medical",
   "apartment",
   "store",
   "restaurant",
   "hotel",
   "elevator",
 ];
+
+/**
+ * Cost to install one elevator car in a shaft. Cars are what actually move
+ * passengers (a shaft with no car can't service any floor); a shaft holds up to
+ * MAX_CARS_PER_SHAFT of them (see src/game/elevator.ts).
+ */
+export const ELEVATOR_CAR_COST = 800;
 
 /** A selectable player color for the lobby. */
 export interface ColorOption {

@@ -20,6 +20,7 @@ import type { FeatureKind } from "./features";
 export type UnitKind =
   | "lobby"
   | "office"
+  | "medical"
   | "apartment"
   | "store"
   | "restaurant"
@@ -30,6 +31,23 @@ export type UnitKind =
 export interface Girder {
   col: number;
   row: number;
+}
+
+/**
+ * A moving elevator car inside a shaft (a vertical run of "elevator" units in
+ * one column). A shaft is a "bank"; up to MAX_CARS_PER_SHAFT cars can share it.
+ * Cars are what actually carry people — a shaft with no car services no floor.
+ * `position` is the car's current (fractional) floor as it travels; today they
+ * patrol, and will answer passenger calls once people exist. See elevator.ts.
+ */
+export interface ElevatorCar {
+  id: string;
+  /** Column of the shaft this car runs in. */
+  col: number;
+  /** Current floor as a fractional row (interpolates while moving). */
+  position: number;
+  /** Current travel direction: +1 up, −1 down. */
+  dir: number;
 }
 
 /** A single placed unit on a plot's tower grid. */
@@ -74,6 +92,8 @@ export interface Plot {
    */
   girders: Girder[];
   units: Unit[];
+  /** Elevator cars travelling this plot's shafts (see ElevatorCar). */
+  cars: ElevatorCar[];
 }
 
 /** Per-player wallet + identity within a single game. */
