@@ -20,7 +20,8 @@ const CAR_CAPACITY = 16;
 const ENTRANCE_X = 0.7; // where people enter/leave, near the ground-floor lobby
 const ARRIVE_EPS = 0.04;
 const DOOR_TIME = 0.45; // seconds for the cabin doors to slide fully open/closed
-const DWELL_TIME = 1.1; // seconds a car holds at a floor with its doors open
+const DWELL_TIME = 1.4; // seconds a car holds at a floor with its doors open
+const REACT_MAX = 0.4; // people take up to this long to react + step on/off
 const MILL_PERIOD = 7; // seconds between a worker picking a new spot to stand
 
 type PState =
@@ -49,6 +50,7 @@ interface Person {
   departHour: number;
   spread: number; // small per-person offset so they don't perfectly overlap
   millPhase: number;
+  react: number; // small delay before boarding/alighting, so crowds stagger
   color: string;
   // dynamic
   x: number;
@@ -66,10 +68,12 @@ interface Car {
   mode: "move" | "load";
   doorT: number; // 0 shut … 1 fully open
   dwell: number; // seconds left holding at this floor
+  openElapsed: number; // seconds the doors have been open (for staggered transfer)
 }
 
 /** What the renderer needs to draw + hit-test a person. */
 export interface PersonView {
+  id: string;
   x: number;
   floor: number;
   color: string;
@@ -112,7 +116,7 @@ export class PeopleSim {
     const out: PersonView[] = [];
     for (const p of this.people.values()) {
       if (p.plotIndex === plotIndex && p.st !== "away") {
-        out.push({ x: p.x, floor: p.floor, color: p.color, worker: p.worker });
+        out.push({ id: p.id, x: p.x, floor: p.floor, color: p.color, worker: p.worker });
       }
     }
     return out;
@@ -138,6 +142,7 @@ export class PeopleSim {
             mode: "move",
             doorT: 0,
             dwell: 0,
+            openElapsed: 0,
           });
         }
       }
@@ -184,6 +189,7 @@ export class PeopleSim {
       departHour: 17,
       spread: ((h % 100) / 100 - 0.5) * 0.4,
       millPhase: (h % 1000) / 1000 * MILL_PERIOD,
+      react: ((h >>> 11) % 100) / 100 * REACT_MAX,
       color: WORKER_COLORS[(h >>> 3) % WORKER_COLORS.length],
       x: ENTRANCE_X,
       floor: 0,
@@ -229,7 +235,10 @@ export class PeopleSim {
         cs.dwell -= dt;
         if (cs.dwell > 0) {
           cs.doorT = Math.min(1, cs.doorT + dt / DOOR_TIME);
-          if (cs.doorT >= 0.9) this.transfer(plot, car, cs);
+          if (cs.doorT >= 0.9) {
+            cs.openElapsed += dt;
+            this.transfer(plot, car, cs); // people step on/off staggered by their react time
+          }
         } else {
           cs.doorT = Math.max(0, cs.doorT - dt / DOOR_TIME);
           if (cs.doorT <= 0.02) cs.mode = "move";
@@ -256,6 +265,7 @@ export class PeopleSim {
       if (stopped && f >= run.from && f <= run.to && this.hasWork(plot, car, cs, f)) {
         cs.mode = "load";
         cs.dwell = DWELL_TIME;
+        cs.openElapsed = 0;
         cs.vel = 0;
       }
     }
@@ -272,7 +282,12 @@ export class PeopleSim {
     return false;
   }
 
-  /** Drop passengers whose floor this is, then board waiters (up to capacity). */
+  /**
+   * Drop passengers whose floor this is, then board waiters (up to capacity).
+   * Each person only steps once the doors have been open past their personal
+   * `react` delay, so a crowd files on/off over ~half a second rather than all
+   * moving on the same frame like a hive mind.
+   */
   private transfer(plot: Plot, car: { id: string; col: number }, cs: Car): void {
     const f = Math.round(cs.pos);
     for (const id of [...cs.passengers]) {
@@ -281,7 +296,7 @@ export class PeopleSim {
         this.alight(cs, id);
         continue;
       }
-      if (this.destOf(id) === f) {
+      if (this.destOf(id) === f && cs.openElapsed >= p.react) {
         this.alight(cs, id);
         p.car = null;
         if (p.st === "ride") {
@@ -296,7 +311,7 @@ export class PeopleSim {
     for (const p of this.people.values()) {
       if (cs.passengers.length >= CAR_CAPACITY) break;
       if (p.plotIndex !== plot.index || p.shaftCol !== car.col) continue;
-      if ((p.st === "waitUp" || p.st === "waitDown") && Math.round(p.floor) === f) {
+      if ((p.st === "waitUp" || p.st === "waitDown") && Math.round(p.floor) === f && cs.openElapsed >= p.react) {
         p.car = car.id;
         p.st = p.st === "waitUp" ? "ride" : "rideDown";
         cs.passengers.push(p.id);

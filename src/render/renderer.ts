@@ -40,6 +40,12 @@ export interface HoverState {
 /** What the player currently has selected: a build unit, girder, elevator car, claim, destroy, or nothing. */
 export type Tool = keyof typeof UNIT_DEFS | "claim" | "girder" | "elevatorCar" | "destroy" | null;
 
+/** A person hit by the cursor: their stable id + who they are. */
+export interface PersonHit {
+  id: string;
+  worker: Worker;
+}
+
 /** A brief floating "-$X" / "+$X" label at the cursor after a money change. */
 interface Popup {
   x: number;
@@ -90,7 +96,10 @@ export class Renderer {
   /** Visual-only sim of people commuting + elevator cars answering their calls. */
   private people = new PeopleSim();
   /** Per-frame person hit boxes (screen space), for hover tooltips. */
-  private personHits: { x0: number; y0: number; x1: number; y1: number; worker: Worker }[] = [];
+  private personHits: { x0: number; y0: number; x1: number; y1: number; id: string; worker: Worker }[] = [];
+  /** The clicked/tracked person (drawn with a marker), and their last screen spot. */
+  private trackedId: string | null = null;
+  private trackedScreen: { x: number; y: number; worker: Worker | null } | null = null;
   /** Current in-game hour (0..24) + weekday (0=Mon), for room lights. */
   private hourF = 12;
   private dayIndex = 0;
@@ -153,7 +162,9 @@ export class Renderer {
     heatmap: HeatmapKind,
     girderStyle = "steel",
     dtMs = 0,
+    trackedId: string | null = null,
   ): void {
+    this.trackedId = trackedId;
     const { ctx, camera } = this;
     const w = camera.viewW;
     const h = camera.viewH;
@@ -165,6 +176,7 @@ export class Renderer {
     // visual-only sim independent of the economy tick, scaled by game speed.
     this.people.update(state, this.hourF, this.dayIndex, (dtMs / 1000) * (state.speed || 1));
     this.personHits.length = 0; // rebuilt as people are drawn this frame
+    this.trackedScreen = null;
 
     // Latitude + season drive the sky (day/night lengths shift through the year).
     const { day, twilight } = skyState(state.tick, state.config.latitude ?? 0);
@@ -592,7 +604,7 @@ export class Renderer {
     }
 
     // People (office workers) commuting through the plot. Record a hit box for
-    // each so hovering a person can show who they are.
+    // each so hovering a person can show who they are, and mark the tracked one.
     for (const p of this.people.peopleIn(plot.index)) {
       const px = camera.worldToScreenX(leftWorld + p.x * CELL_SIZE);
       const py = camera.groundScreenY - p.floor * cell; // standing on the floor line
@@ -603,8 +615,13 @@ export class Renderer {
           y0: py - cell * 0.42,
           x1: px + cell * 0.16,
           y1: py + cell * 0.06,
+          id: p.id,
           worker: p.worker,
         });
+      }
+      if (p.id === this.trackedId) {
+        this.drawTrackMarker(px, py, cell);
+        this.trackedScreen = { x: px, y: py, worker: p.worker };
       }
     }
 
@@ -749,13 +766,41 @@ export class Renderer {
     ctx.strokeRect(ix + 0.5, iy + 0.5, iw - 1, ih - 1);
   }
 
-  /** The person under a screen point (topmost drawn), or null — for hover tooltips. */
-  personAt(screenX: number, screenY: number): Worker | null {
+  /** The person under a screen point (topmost drawn), or null — for hover/click. */
+  personAt(screenX: number, screenY: number): PersonHit | null {
     for (let i = this.personHits.length - 1; i >= 0; i--) {
       const h = this.personHits[i];
-      if (screenX >= h.x0 && screenX <= h.x1 && screenY >= h.y0 && screenY <= h.y1) return h.worker;
+      if (screenX >= h.x0 && screenX <= h.x1 && screenY >= h.y0 && screenY <= h.y1) {
+        return { id: h.id, worker: h.worker };
+      }
     }
     return null;
+  }
+
+  /** Where the tracked person was drawn this frame (null if off-screen/gone). */
+  getTrackedScreen(): { x: number; y: number; worker: Worker | null } | null {
+    return this.trackedScreen;
+  }
+
+  /** A downward triangle hovering over the tracked person's head. */
+  private drawTrackMarker(px: number, py: number, cell: number): void {
+    const { ctx } = this;
+    const s = Math.max(4, cell * 0.22);
+    const tipY = py - cell * 0.52; // just above the head, pointing down
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.5)";
+    ctx.shadowBlur = Math.max(2, cell * 0.08);
+    ctx.beginPath();
+    ctx.moveTo(px - s, tipY - s * 1.25);
+    ctx.lineTo(px + s, tipY - s * 1.25);
+    ctx.lineTo(px, tipY);
+    ctx.closePath();
+    ctx.fillStyle = "#ffd24a";
+    ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = "#1a1e24";
+    ctx.lineWidth = Math.max(1, cell * 0.03);
+    ctx.stroke();
   }
 
   /** A little person standing on the floor line at (px, py) — feet at py. */

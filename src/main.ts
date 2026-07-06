@@ -90,21 +90,37 @@ function enterGame(conn: GameConnection): void {
   let hud: Hud;
 
   const personTipEl = document.getElementById("person-tip")!;
-  const showPersonTip = (w: Worker | null, sx: number, sy: number): void => {
+  const showPersonTip = (w: Worker | null, sx: number, sy: number, locked: boolean): void => {
     if (!w) {
       personTipEl.classList.add("hidden");
       return;
     }
     const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    // People without a job here (residents/guests) show just a name.
     const detail =
       w.dailySalary > 0
         ? `<div class="tip-role">${esc(w.title)}</div>
            <div class="tip-line">$${w.dailySalary.toLocaleString()}/day · ${daysLabel(w.days)} · ${shiftLabel(w)}</div>`
-        : `<div class="tip-role">${esc(w.title)}</div>`;
+        : "";
     personTipEl.innerHTML = `<div class="tip-name">${esc(w.name)}</div>${detail}`;
-    personTipEl.style.left = `${sx + 16}px`;
-    personTipEl.style.top = `${sy + 16}px`;
+    personTipEl.classList.toggle("locked", locked);
+    personTipEl.style.left = `${sx}px`;
+    personTipEl.style.top = `${sy}px`;
     personTipEl.classList.remove("hidden");
+  };
+  // A tracked (clicked) person's panel takes priority over a transient hover.
+  let hoverInfo: { worker: Worker | null; x: number; y: number } = { worker: null, x: 0, y: 0 };
+  const updatePersonTip = (): void => {
+    const tracked = input.trackedPerson();
+    if (tracked) {
+      const ts = renderer.getTrackedScreen();
+      if (ts) showPersonTip(ts.worker, ts.x + 14, ts.y - 34, true);
+      else personTipEl.classList.add("hidden");
+    } else if (hoverInfo.worker) {
+      showPersonTip(hoverInfo.worker, hoverInfo.x + 16, hoverInfo.y + 16, false);
+    } else {
+      personTipEl.classList.add("hidden");
+    }
   };
 
   const input = new InputController(
@@ -115,7 +131,9 @@ function enterGame(conn: GameConnection): void {
     (sx, sy, delta) => renderer.addMoneyPopup(sx, sy, delta),
     () => hud.renderInspect(),
     (sx, sy) => renderer.personAt(sx, sy),
-    showPersonTip,
+    (worker, sx, sy) => {
+      hoverInfo = { worker, x: sx, y: sy };
+    },
   );
   hud = new Hud(
     conn,
@@ -163,7 +181,8 @@ function enterGame(conn: GameConnection): void {
 
   const loop = new RenderLoop((dt) => {
     input.update(dt);
-    renderer.render(conn.getState(), conn.session.playerId, input.hover, input.selectedTool, hud.heatmap, input.girderStyle, dt);
+    renderer.render(conn.getState(), conn.session.playerId, input.hover, input.selectedTool, hud.heatmap, input.girderStyle, dt, input.trackedPerson());
+    updatePersonTip();
     hud.tickClock();
     minimap.render();
   });
@@ -187,6 +206,7 @@ function enterGame(conn: GameConnection): void {
         hud.heatmap,
         input.girderStyle,
         dtMs,
+        input.trackedPerson(),
       ),
   };
 }

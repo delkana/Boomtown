@@ -1,5 +1,5 @@
 import type { GameConnection } from "../net/connection";
-import type { Tool } from "../render/renderer";
+import type { Tool, PersonHit } from "../render/renderer";
 import type { Camera } from "../render/camera";
 import type { HoverState } from "../render/renderer";
 import type { Worker } from "../game/types";
@@ -42,6 +42,8 @@ export class InputController {
   private pinned: { plotIndex: number; unitId: string } | null = null;
   /** An elevator shaft clicked to open its settings panel. */
   private pinnedShaft: { plotIndex: number; col: number } | null = null;
+  /** A person clicked to lock/track their info panel (by stable id). */
+  private pinnedPerson: string | null = null;
   private lastInspectKey: string | null = null;
 
   constructor(
@@ -53,12 +55,17 @@ export class InputController {
     private moneyFx: (screenX: number, screenY: number, delta: number) => void,
     /** Called when the inspected room (hover or pin) changes. */
     private onInspect: () => void,
-    /** Hit-test the person under a screen point (for hover tooltips). */
-    private personAt: (screenX: number, screenY: number) => Worker | null,
+    /** Hit-test the person under a screen point (for hover + click). */
+    private personAt: (screenX: number, screenY: number) => PersonHit | null,
     /** Called on move with the hovered person (or null) at the cursor. */
     private onPersonHover: (worker: Worker | null, screenX: number, screenY: number) => void,
   ) {
     this.attach();
+  }
+
+  /** The person clicked to lock/track their info panel, or null. */
+  trackedPerson(): string | null {
+    return this.pinnedPerson;
   }
 
   /**
@@ -217,7 +224,8 @@ export class InputController {
       this.clampCamera();
       this.onPersonHover(null, 0, 0);
     } else {
-      this.onPersonHover(this.personAt(x, y), x, y);
+      const ph = this.personAt(x, y);
+      this.onPersonHover(ph ? ph.worker : null, x, y);
       this.notifyInspectIfChanged();
     }
   };
@@ -242,8 +250,18 @@ export class InputController {
     this.dragging = false;
     if (wasDrag) return;
 
-    // Inspect mode (no tool): click toggles a room inspector or a shaft panel.
+    // Inspect mode (no tool): click toggles a person track, room inspector, or shaft panel.
     if (!this.selectedTool) {
+      const ph = this.personAt(x, y);
+      if (ph) {
+        // Lock/track this person (click again to release). Clears other pins.
+        this.pinnedPerson = this.pinnedPerson === ph.id ? null : ph.id;
+        this.pinned = null;
+        this.pinnedShaft = null;
+        this.notifyInspectIfChanged();
+        return;
+      }
+      this.pinnedPerson = null; // clicking elsewhere stops tracking
       const cell = this.camera.screenToCell(x, y);
       const plot = cell ? this.conn.getState().plots[cell.plotIndex] : undefined;
       const onShaft =
@@ -399,9 +417,10 @@ export class InputController {
     };
     if (map[e.key]) this.setSelected(map[e.key]);
     if (e.key === "Escape") {
-      if (this.pinned || this.pinnedShaft) {
+      if (this.pinned || this.pinnedShaft || this.pinnedPerson) {
         this.pinned = null;
         this.pinnedShaft = null;
+        this.pinnedPerson = null;
         this.notifyInspectIfChanged();
       }
       this.setSelected(null);

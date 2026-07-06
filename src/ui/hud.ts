@@ -145,11 +145,12 @@ export class Hud {
       const roster = tenant.workers ?? [];
       const rosterRows = roster
         .map((w) => {
+          // People without a job here (residents/guests) show just a name.
           const meta =
             w.dailySalary > 0
               ? `<div class="roster-meta">${escapeHtml(w.title)} · $${w.dailySalary.toLocaleString()}/day</div>
                  <div class="roster-meta">${daysLabel(w.days)} · ${shiftLabel(w)}</div>`
-              : `<div class="roster-meta">${escapeHtml(w.title)}</div>`;
+              : "";
           return `<div class="roster-row"><div class="roster-name">${escapeHtml(w.name)}</div>${meta}</div>`;
         })
         .join("");

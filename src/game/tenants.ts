@@ -210,9 +210,9 @@ const LEAD: Record<string, Role> = {
   american: { title: "Head Chef", salary: 440 },
   sushi: { title: "Head Sushi Chef", salary: 560 },
   cafe: { title: "Café Manager", salary: 340 },
-  // dwellings
-  residential: { title: "Resident", salary: 0 },
-  hotel: { title: "Guest", salary: 0 },
+  // dwellings — occupants don't have a job here, so no title/salary (see UI).
+  residential: { title: "", salary: 0 },
+  hotel: { title: "", salary: 0 },
 };
 
 /** Subset-specific staff roles for offices (the visible, simulated workers). */
@@ -233,8 +233,8 @@ const STAFF: Partial<Record<UnitKind, Role[]>> = {
   medical: [{ title: "Nurse", salary: 380 }, { title: "Medical Assistant", salary: 300 }, { title: "Receptionist", salary: 240 }, { title: "Technician", salary: 320 }],
   store: [{ title: "Sales Associate", salary: 220 }, { title: "Cashier", salary: 200 }, { title: "Stock Clerk", salary: 200 }],
   restaurant: [{ title: "Server", salary: 200 }, { title: "Line Cook", salary: 240 }, { title: "Host", salary: 190 }, { title: "Bartender", salary: 230 }, { title: "Dishwasher", salary: 180 }],
-  apartment: [{ title: "Resident", salary: 0 }],
-  hotel: [{ title: "Guest", salary: 0 }],
+  apartment: [{ title: "", salary: 0 }],
+  hotel: [{ title: "", salary: 0 }],
 };
 
 /** The staff role list for a business (subset-specific for offices). */
