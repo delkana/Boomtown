@@ -58,6 +58,7 @@ interface Person {
   deskX: number; // their spot in the room (fractional col)
   officeRow: number;
   shaftCol: number; // elevator column they use (−1 if their office is on the ground)
+  doorSide: "left" | "right"; // which side the shaft's cabin doors are on (where to queue)
   openDays: number[];
   arriveHour: number;
   departHour: number;
@@ -219,6 +220,7 @@ export class PeopleSim {
           p.deskX = unit.col + margin + ((i + 0.5) / count) * (unit.width - 2 * margin);
           p.officeRow = unit.row;
           p.shaftCol = shaftCol ?? -1;
+          p.doorSide = (plot.cars ?? []).find((c) => c.col === shaftCol)?.doorSide ?? "right";
           if (!isHotel) this.applySchedule(p);
           this.people.set(id, p);
         }
@@ -245,6 +247,7 @@ export class PeopleSim {
       deskX: 0,
       officeRow: 0,
       shaftCol: -1,
+      doorSide: "right",
       openDays: [],
       arriveHour: 8,
       departHour: 17,
@@ -539,6 +542,8 @@ export class PeopleSim {
       leaving = !active; // head out whenever off the clock (robust across midnight)
     }
     const ground = p.officeRow === 0;
+    // Queue on whichever side the cabin doors open (right by default).
+    const liftX = p.shaftCol + (p.doorSide === "left" ? 0.25 : 0.75) + p.spread * 0.5;
     const walk = (target: number, speed = WALK_SPEED): boolean => {
       const d = target - p.x;
       if (Math.abs(d) < ARRIVE_EPS) {
@@ -560,10 +565,11 @@ export class PeopleSim {
         }
         break;
       case "toLift":
-        if (walk(p.shaftCol + p.spread)) p.st = "waitUp";
+        if (walk(liftX)) p.st = "waitUp";
         break;
       case "waitUp":
-        p.floor = 0; // boarding handled by the car when its doors open
+        p.floor = 0;
+        p.x = liftX; // wait on the door side; boarding handled when doors open
         break;
       case "ride": {
         const car = p.car ? this.cars.get(p.car) : undefined;
@@ -592,10 +598,11 @@ export class PeopleSim {
         break;
       case "leaveToLift":
         p.floor = p.officeRow;
-        if (walk(p.shaftCol + p.spread)) p.st = "waitDown";
+        if (walk(liftX)) p.st = "waitDown";
         break;
       case "waitDown":
-        break; // boarding handled by the car
+        p.x = liftX; // wait on the door side; boarding handled when doors open
+        break;
       case "rideDown": {
         const car = p.car ? this.cars.get(p.car) : undefined;
         if (!car) {

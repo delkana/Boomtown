@@ -20,15 +20,15 @@ export const MAX_CARS_PER_SHAFT = 8;
  * motion is continuous (animated every frame, scaled by game speed) rather than
  * stepped per economy tick — see `stepCar`.
  */
-export const CAR_SPEED = 1.1;
+export const CAR_SPEED = 1.5;
 
 /**
  * How fast a car changes speed, in floors/sec². Cars ramp up to CAR_SPEED and
  * ease back to a stop rather than snapping to full speed — a real elevator feel.
- * At this rate the accel/decel each take ~0.7s and the braking distance near a
- * stop is ~0.4 floors.
+ * At this rate the accel/decel each take ~0.75s and the braking distance near a
+ * stop is ~0.55 floors.
  */
-export const CAR_ACCEL = 1.6;
+export const CAR_ACCEL = 2.0;
 
 export interface ElevatorRun {
   col: number;
