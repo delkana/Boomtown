@@ -2,6 +2,7 @@ import type { GameState, Plot, Worker } from "../game/types";
 import { elevatorRuns, carsInRun, stepCar } from "../game/elevator";
 import { hashString } from "../game/hash";
 import { personName } from "../game/names";
+import { isVisitorKind, visitSchedule, type Visit } from "../game/visitors";
 
 /**
  * PeopleSim — a client-side, visual-only simulation of the people moving through
@@ -24,6 +25,10 @@ const DOOR_TIME = 0.45; // seconds for the cabin doors to slide fully open/close
 const DWELL_TIME = 1.4; // seconds a car holds at a floor with its doors open
 const REACT_MAX = 0.4; // people take up to this long to react + step on/off
 const MILL_PERIOD = 7; // seconds between a worker picking a new spot to stand
+const MAX_VISITORS_RENDERED = 12; // cap concurrent walking customers per business (chart count is uncapped)
+const VISITOR_EXIT_BUFFER = 0.4; // keep a customer around this many hours past departure so they finish walking out
+/** What a customer is called when you hover them, by business kind. */
+const VISITOR_TITLE: Record<string, string> = { store: "Shopper", restaurant: "Diner", medical: "Patient" };
 
 // Hotel timings (in-game hours). Check-in mid-afternoon, guests drift in over
 // the next few hours, sleep overnight, and check out by late morning.
@@ -113,6 +118,8 @@ export class PeopleSim {
   private litRooms = new Set<string>(); // roomIds with an awake person in them (rebuilt each frame)
   private t = 0; // accumulated sim seconds (drives milling)
   private archetype = "pacifica"; // city archetype (for hotel guest names)
+  /** Cached daily visit schedule per room (regenerated when the day or tenant changes). */
+  private visitCache = new Map<string, { day: number; sig: string; sched: Visit[] }>();
 
   /**
    * Advance the simulation. `hourF` 0..24, `dayIndex` 0=Mon, `absHour` is the
@@ -121,7 +128,7 @@ export class PeopleSim {
    */
   update(state: GameState, hourF: number, dayIndex: number, absHour: number, dtSec: number): void {
     this.archetype = state.config.archetype ?? "pacifica";
-    this.reconcile(state);
+    this.reconcile(state, absHour);
     const dt = Math.min(dtSec, 0.1); // clamp long frame gaps
     this.t += dt;
 
@@ -179,9 +186,12 @@ export class PeopleSim {
 
   // --- reconcile desired workers + cars with the current state ---------------
 
-  private reconcile(state: GameState): void {
+  private reconcile(state: GameState, absHour: number): void {
     const desired = new Set<string>();
     const liveCars = new Set<string>();
+    const visitorRooms = new Set<string>(); // rooms that still have a visit schedule this pass
+    const dayNumber = Math.floor(absHour / 24);
+    const hourOfDay = absHour - dayNumber * 24;
 
     for (const key of Object.keys(state.plots)) {
       const plot = state.plots[Number(key)];
@@ -233,11 +243,72 @@ export class PeopleSim {
           if (!isHotel) this.applySchedule(p);
           this.people.set(id, p);
         }
+        // In addition to staff, spawn the customers currently visiting this
+        // business (shoppers / diners / patients) from the shared visit schedule.
+        if (isVisitorKind(unit.kind)) {
+          visitorRooms.add(roomId);
+          this.addVisitors(desired, plot, unit, roomId, shaftCol ?? -1, dayNumber, hourOfDay);
+        }
       }
     }
 
     for (const id of [...this.people.keys()]) if (!desired.has(id)) this.people.delete(id);
     for (const id of [...this.cars.keys()]) if (!liveCars.has(id)) this.cars.delete(id);
+    // Forget cached visit schedules for businesses that no longer exist.
+    for (const roomId of [...this.visitCache.keys()]) if (!visitorRooms.has(roomId)) this.visitCache.delete(roomId);
+  }
+
+  /**
+   * Add the customers currently inside a store/restaurant/clinic, drawn from the
+   * same deterministic day schedule the server counts. Only visits in progress
+   * (plus a short exit buffer) become people, and the concurrent count is capped
+   * for performance — the charted daily total is never capped.
+   */
+  private addVisitors(
+    desired: Set<string>,
+    plot: Plot,
+    unit: Plot["units"][number],
+    roomId: string,
+    shaftCol: number,
+    dayNumber: number,
+    hourOfDay: number,
+  ): void {
+    const tenant = unit.tenant;
+    if (!tenant) return;
+    const sig = `${tenant.subset}:${tenant.appeal}:${tenant.openHour}:${tenant.closeHour}`;
+    let cached = this.visitCache.get(roomId);
+    if (!cached || cached.day !== dayNumber || cached.sig !== sig) {
+      cached = { day: dayNumber, sig, sched: visitSchedule(unit.kind, tenant, unit.id, dayNumber) };
+      this.visitCache.set(roomId, cached);
+    }
+    const weekday = ((dayNumber % 7) + 7) % 7;
+    const margin = Math.min(0.25, unit.width * 0.14);
+    const title = VISITOR_TITLE[unit.kind] ?? "Visitor";
+    let shown = 0;
+    for (const v of cached.sched) {
+      if (hourOfDay < v.arrive || hourOfDay >= v.depart + VISITOR_EXIT_BUFFER) continue; // not here now
+      if (shown >= MAX_VISITORS_RENDERED) break;
+      shown++;
+      const id = `${roomId}:v${dayNumber}:${v.index}`;
+      desired.add(id);
+      const p = this.people.get(id) ?? this.createPerson(id, plot.index);
+      const h = hashString(id);
+      p.isResident = false;
+      p.isHotel = false;
+      p.roomId = roomId;
+      p.appeal = tenant.appeal ?? 0.5;
+      p.worker = { name: personName(this.archetype, h), title, dailySalary: 0, days: [weekday], startHour: v.arrive, endHour: v.depart, lunchHour: -1 };
+      p.roomLeft = unit.col;
+      p.roomW = unit.width;
+      p.deskX = unit.col + margin + ((h % 1000) / 1000) * (unit.width - 2 * margin);
+      p.officeRow = unit.row;
+      p.shaftCol = shaftCol;
+      p.doorSide = (plot.cars ?? []).find((c) => c.col === shaftCol)?.doorSide ?? "right";
+      p.openDays = [weekday];
+      p.arriveHour = v.arrive;
+      p.departHour = v.depart;
+      this.people.set(id, p);
+    }
   }
 
   private createPerson(id: string, plotIndex: number): Person {
