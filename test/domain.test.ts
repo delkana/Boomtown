@@ -6,6 +6,7 @@ import { propertyNameFor, archetype } from "../src/game/archetypes";
 import { gameTime, daylightHours, skyState } from "../src/game/clock";
 import { elevatorAccess, viewRating, noiseRating, footTraffic, roomSatisfaction } from "../src/game/heatmaps";
 import { buildingStars } from "../src/game/ratings";
+import { runMedicalDay, patientGroupsForStars } from "../src/game/medical";
 import { ELEVATOR_CAR_COST, GIRDER_BASE_COST, MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
 import { claimCost, girderCost, plotBaseCost, undergroundMultiplier } from "../src/game/economy";
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
@@ -490,6 +491,35 @@ describe("room types & preferences", () => {
       maxClean = Math.max(maxClean, office.cleanliness!);
     }
     expect(maxClean).toBe(100); // janitors restored it to spotless overnight
+  });
+
+  it("patient group counts scale with a building's star rating", () => {
+    expect(patientGroupsForStars(0)).toBe(10);
+    expect(patientGroupsForStars(0.5)).toBe(20);
+    expect(patientGroupsForStars(2.5)).toBe(100);
+    expect(patientGroupsForStars(3)).toBe(125);
+    expect(patientGroupsForStars(5)).toBe(250);
+  });
+
+  it("walk-in patients pay $500 each to the clinic they're seen at, capped by capacity", () => {
+    const s = freshGame();
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0], [2, 0], [4, 0], [5, 0], [6, 0]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "medical", col: 4, row: 0 }); // 3-wide
+    const clinic = s.plots[0].units.find((u) => u.kind === "medical")!;
+    for (let i = 0; i < 2000; i++) advanceTick(s); // lease the clinic
+    expect(clinic.tenant).toBeTruthy();
+
+    const before = s.players["p1"].money;
+    const appts = runMedicalDay(s, 100);
+    const n = appts.get(clinic.id) ?? 0;
+    expect(n).toBeGreaterThan(0); // some patients wanted this clinic's specialty
+    const capacity = Math.max(4, Math.round((clinic.tenant!.closeHour - clinic.tenant!.openHour) * 2));
+    expect(n).toBeLessThanOrEqual(capacity); // never more than the clinic can see
+    expect(s.players["p1"].money - before).toBe(n * 500); // $500 per appointment
   });
 
   it("a vending machine is a single-brand tenant with a weekly route driver", () => {

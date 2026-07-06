@@ -13,6 +13,7 @@ import { servicedRows } from "./elevator";
 import { generateTenant, hasTrades, tenantOpen } from "./tenants";
 import { hashString } from "./hash";
 import { isVisitorKind, visitCount } from "./visitors";
+import { runMedicalDay } from "./medical";
 
 const FIVE_AM_TICK = (5 * 60) / TICK_MINUTES; // janitors finish the offices overnight
 const ELEVEN_AM_TICK = (11 * 60) / TICK_MINUTES; // hotel checkout / housekeeping
@@ -40,6 +41,11 @@ export function advanceTick(state: GameState): void {
   const day = Math.floor(state.tick / TICKS_PER_DAY);
   const hourF = (tod * TICK_MINUTES) / 60;
   const weekday = ((day % 7) + 7) % 7;
+  const dayEnded = day - 1; // the day that just closed out (for the midnight settlement)
+
+  // Settle the day's walk-in medical demand once, up front: credits clinic owners
+  // $500 per patient seen and tells us each clinic's appointment count for its chart.
+  const medicalAppts = isMidnight ? runMedicalDay(state, dayEnded) : null;
 
   for (const key of Object.keys(state.plots)) {
     const plot = state.plots[Number(key)];
@@ -103,14 +109,15 @@ export function advanceTick(state: GameState): void {
     // visitor counts for stores/restaurants/clinics so the inspector can chart them.
     if (isMidnight) {
       owner.money += projectedDailyNet(plot);
-      const dayEnded = state.tick / TICKS_PER_DAY - 1; // the day that just closed out
       for (const unit of plot.units) {
         if (!isVisitorKind(unit.kind) || !unit.tenant) continue;
         const t = unit.tenant;
         const hist = (t.visitors ??= []);
-        // The same schedule the client renders as walking customers — so the
-        // charted count equals the real number of visits that day.
-        hist.push(visitCount(unit.kind, t, unit.id, dayEnded));
+        // Clinics chart the real walk-in appointments they handled; shops and
+        // restaurants chart the same visit schedule the client renders.
+        const count =
+          unit.kind === "medical" ? (medicalAppts?.get(unit.id) ?? 0) : visitCount(unit.kind, t, unit.id, dayEnded);
+        hist.push(count);
         if (hist.length > VISITOR_HISTORY_DAYS) hist.splice(0, hist.length - VISITOR_HISTORY_DAYS);
       }
     }
