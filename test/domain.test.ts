@@ -7,6 +7,7 @@ import { gameTime, daylightHours, skyState } from "../src/game/clock";
 import { elevatorAccess, viewRating, noiseRating, footTraffic, roomSatisfaction } from "../src/game/heatmaps";
 import { buildingStars } from "../src/game/ratings";
 import { runMedicalDay, patientGroupsForStars } from "../src/game/medical";
+import { roomDisplayName, hotelNameFor } from "../src/game/naming";
 import { ELEVATOR_CAR_COST, GIRDER_BASE_COST, MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
 import { claimCost, girderCost, plotBaseCost, undergroundMultiplier } from "../src/game/economy";
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
@@ -491,6 +492,53 @@ describe("room types & preferences", () => {
       maxClean = Math.max(maxClean, office.cleanliness!);
     }
     expect(maxClean).toBe(100); // janitors restored it to spotless overnight
+  });
+
+  it("hotel rooms need a unique Hotel Front Desk, and rooms are numbered off it", () => {
+    const s = freshGame();
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    // A hotel room can't go in before a front desk exists.
+    expect(applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "hotel", col: 7, row: 0 }).ok).toBe(false);
+    // Build the 4-wide front desk (cols 3–6).
+    expect(applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "frontdesk", col: 3, row: 0 }).ok).toBe(true);
+    // Only one front desk per building.
+    const dupe = applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "frontdesk", col: 3, row: 0 });
+    expect(dupe.ok).toBe(false);
+    expect(dupe.error).toMatch(/one/i);
+    // Now a hotel room is allowed, and it's named off the desk's hotel brand.
+    expect(applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "hotel", col: 7, row: 0 }).ok).toBe(true);
+    const plot = s.plots[0];
+    const brand = hotelNameFor(plot.id);
+    const desk = plot.units.find((u) => u.kind === "frontdesk")!;
+    const room = plot.units.find((u) => u.kind === "hotel")!;
+    expect(roomDisplayName(plot, desk)).toBe(brand);
+    expect(roomDisplayName(plot, room)).toBe(`${brand} room #01`); // floor 0, first room
+  });
+
+  it("stores get dirty as they trade; a storeroom keeps them tidy", () => {
+    const s = freshGame();
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0], [2, 0], [4, 0], [5, 0], [6, 0], [8, 0]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "store", col: 4, row: 0 }); // 3-wide
+    const store = s.plots[0].units.find((u) => u.kind === "store")!;
+    for (let i = 0; i < 1600; i++) advanceTick(s); // lease + trade
+    expect(store.tenant).toBeTruthy();
+    expect(store.cleanliness!).toBeLessThan(100); // messy from shoppers
+
+    // Add a storeroom; now a clerk keeps the store tidied to ≥90 during open hours.
+    expect(applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "storeroom", col: 8, row: 0 }).ok).toBe(true);
+    let maxC = 0;
+    for (let i = 0; i < 288; i++) {
+      advanceTick(s);
+      maxC = Math.max(maxC, store.cleanliness!);
+    }
+    expect(maxC).toBeGreaterThanOrEqual(90);
   });
 
   it("patient group counts scale with a building's star rating", () => {

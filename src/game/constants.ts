@@ -64,6 +64,10 @@ export const CLEAN_THRESHOLD = 80;
 export const HOTEL_CHECKOUT_DIRT = 50;
 /** Cleanliness an office/clinic loses per hour it's open + worked. */
 export const OFFICE_DIRT_PER_HOUR = 1;
+/** Cleanliness a store loses per open hour of shopping (mess from purchases). */
+export const STORE_DIRT_PER_HOUR = 2;
+/** A store with a storeroom is kept tidied to at least this cleanliness. */
+export const STORE_TIDY_FLOOR = 90;
 
 /** Lobby limits. */
 export const MAX_PLAYERS_LIMIT = 20;
@@ -216,6 +220,33 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     // A quiet room with a view, good access, away from the bustle.
     prefs: { elevator: 0.9, view: 0.8, noise: 0.9, foot: -0.6 },
   },
+  frontdesk: {
+    kind: "frontdesk",
+    label: "Hotel Front Desk",
+    hotkey: "",
+    width: 4,
+    cost: 3200,
+    upkeep: 640, // round-the-clock desk staff
+    incomeAtFull: 0,
+    fillRate: 0,
+    color: "#8a6db0",
+    service: true,
+    windowless: true,
+    unique: true, // one front desk per building
+  },
+  storeroom: {
+    kind: "storeroom",
+    label: "Storeroom",
+    hotkey: "",
+    width: 1,
+    cost: 700,
+    upkeep: 90,
+    incomeAtFull: 0,
+    fillRate: 0,
+    color: "#7d6a52",
+    service: true,
+    windowless: true,
+  },
   housekeeping: {
     kind: "housekeeping",
     label: "Housekeeping",
@@ -276,8 +307,10 @@ export const BUILD_ORDER: UnitKind[] = [
   "janitor",
   "apartment",
   "store",
+  "storeroom",
   "restaurant",
   "vending",
+  "frontdesk",
   "hotel",
   "housekeeping",
   "elevator",

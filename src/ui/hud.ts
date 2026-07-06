@@ -22,6 +22,7 @@ import {
 } from "../game/heatmaps";
 import { headcountLabel, hasTrades, tenantOpen, daysLabel, shiftLabel, lunchLabel, workScheduleLabel } from "../game/tenants";
 import { buildingStars, starString } from "../game/ratings";
+import { roomDisplayName } from "../game/naming";
 import { elevatorRuns, runContaining } from "../game/elevator";
 import { dayOfWeek } from "../game/clock";
 import { projectedDailyNet } from "../game/tick";
@@ -168,7 +169,7 @@ export class Hud {
       const wages = roster.reduce((sum, w) => sum + w.dailySalary, 0);
       const bizNet = tenant.dailyRent - wages;
       tenantHtml = `
-        <div class="insp-tenant">${escapeHtml(tenant.name)}</div>
+        <div class="insp-tenant">${escapeHtml(roomDisplayName(plot, unit) ?? tenant.name)}</div>
         <div class="insp-sub">${escapeHtml(tenant.trade)} · <span class="${open ? "pos" : "neg"}">${open ? "Open" : "Closed"}</span></div>
         <div class="insp-row"><span>Hours</span><span>${hr(tenant.openHour)}–${hr(tenant.closeHour)}</span></div>
         <div class="insp-row"><span>Days</span><span>${daysLabel(tenant.openDays)}</span></div>
@@ -177,6 +178,10 @@ export class Hud {
         <div class="insp-row"><span>Rent / day</span><span class="pos">+$${tenant.dailyRent.toLocaleString()}</span></div>
         <div class="insp-row"><span>Wages / day</span><span class="neg">-$${wages.toLocaleString()}</span></div>
         <div class="insp-row"><span>Business net / day</span><span class="${bizNet >= 0 ? "pos" : "neg"}">${bizNet < 0 ? "-" : "+"}$${Math.abs(bizNet).toLocaleString()}</span></div>`;
+    } else if (unit.kind === "frontdesk") {
+      tenantHtml = `
+        <div class="insp-tenant">${escapeHtml(roomDisplayName(plot, unit) ?? "Hotel Front Desk")}</div>
+        <div class="insp-sub">Front desk · staffed around the clock</div>`;
     } else if (hasTrades(unit.kind)) {
       tenantHtml = `<div class="insp-sub">Vacant · seeking a tenant (${appeal}% appeal)</div>`;
     }
@@ -192,7 +197,7 @@ export class Hud {
       <div class="insp-row"><span>Noise</span><span>${Math.round(noise / n)}</span></div>
       <div class="insp-row"><span>Foot traffic</span><span>${Math.round(foot / n)}</span></div>
       ${revenue ? `<div class="insp-row"><span>Appeal</span><span>${appeal}%</span></div>` : ""}
-      ${unit.kind === "office" || unit.kind === "medical" || unit.kind === "hotel" ? `<div class="insp-row"><span>Cleanliness</span><span>${Math.round(unit.cleanliness ?? 100)}%</span></div>` : ""}
+      ${unit.kind === "office" || unit.kind === "medical" || unit.kind === "hotel" || unit.kind === "store" ? `<div class="insp-row"><span>Cleanliness</span><span>${Math.round(unit.cleanliness ?? 100)}%</span></div>` : ""}
       ${prefs ? `<div class="insp-prefs">Prefers ${prefs}</div>` : ""}
       <div class="insp-row"><span>Upkeep / day</span><span class="neg">-$${def.upkeep.toLocaleString()}</span></div>
       <div class="insp-row net"><span>Net / day</span><span class="${dailyNet >= 0 ? "pos" : "neg"}">${dailyNet < 0 ? "-" : "+"}$${Math.abs(dailyNet).toLocaleString()}</span></div>
@@ -529,8 +534,8 @@ const TOOL_CATEGORIES: { id: string; label: string; icon: string; tools: string[
   { id: "construction", label: "Construction", icon: "🏗", tools: ["girder", "lobby", "elevator", "elevatorCar"] },
   { id: "offices", label: "Offices", icon: "🏢", tools: ["office", "medical", "janitor"] },
   { id: "apartments", label: "Apartments", icon: "🏠", tools: ["apartment"] },
-  { id: "hotels", label: "Hotels", icon: "🛎", tools: ["hotel", "housekeeping"] },
-  { id: "retail", label: "Retail", icon: "🛍", tools: ["store"] },
+  { id: "hotels", label: "Hotels", icon: "🛎", tools: ["frontdesk", "hotel", "housekeeping"] },
+  { id: "retail", label: "Retail", icon: "🛍", tools: ["store", "storeroom"] },
   { id: "food", label: "Food", icon: "🍽", tools: ["restaurant", "vending"] },
 ];
 

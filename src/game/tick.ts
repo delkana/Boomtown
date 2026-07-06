@@ -3,6 +3,8 @@ import {
   CLEANLINESS_MAX,
   HOTEL_CHECKOUT_DIRT,
   OFFICE_DIRT_PER_HOUR,
+  STORE_DIRT_PER_HOUR,
+  STORE_TIDY_FLOOR,
   TICKS_PER_DAY,
   TICK_MINUTES,
   UNIT_DEFS,
@@ -56,6 +58,7 @@ export function advanceTick(state: GameState): void {
     const hasLobby = plot.units.some((u) => u.kind === "lobby");
     const hasJanitor = plot.units.some((u) => u.kind === "janitor");
     const hasHousekeeping = plot.units.some((u) => u.kind === "housekeeping");
+    const hasStoreroom = plot.units.some((u) => u.kind === "storeroom");
     const elevatorRows = servicedRows(plot);
 
     // Tenants move in and out.
@@ -90,6 +93,12 @@ export function advanceTick(state: GameState): void {
         tenantOpen(unit.tenant, hourF, weekday)
       ) {
         unit.cleanliness = Math.max(0, unit.cleanliness - (OFFICE_DIRT_PER_HOUR * TICK_MINUTES) / 60);
+      }
+      // Stores get messy from purchases while open; a storeroom lets a clerk keep
+      // it tidied to at least STORE_TIDY_FLOOR.
+      if (unit.tenant && unit.kind === "store" && tenantOpen(unit.tenant, hourF, weekday)) {
+        unit.cleanliness = Math.max(0, unit.cleanliness - (STORE_DIRT_PER_HOUR * TICK_MINUTES) / 60);
+        if (hasStoreroom) unit.cleanliness = Math.max(unit.cleanliness, STORE_TIDY_FLOOR);
       }
       // Janitors clean the offices overnight (once, at end of their shift) if a
       // janitor's closet exists in the tower.

@@ -66,7 +66,8 @@ export function viewRating(plot: Plot, col: number, row: number): number {
 export function noiseRating(plot: Plot, col: number, row: number): number {
   let n = Math.max(0, 30 - Math.abs(row) * 6); // ground-floor proximity
   for (const u of plot.units) {
-    const weight = u.kind === "elevator" ? 25 : u.kind === "lobby" ? 20 : u.kind === "office" ? 15 : 0;
+    const weight =
+      u.kind === "frontdesk" ? 30 : u.kind === "elevator" ? 25 : u.kind === "lobby" ? 20 : u.kind === "office" ? 15 : 0;
     if (weight) {
       const dx = Math.max(0, u.col - col, col - (u.col + u.width - 1));
       const d = Math.abs(u.row - row) + dx;
@@ -99,7 +100,15 @@ export function footTraffic(plot: Plot, col: number, row: number): number {
   }
   if (elevDist === Infinity) return 0; // no elevator reaches this room
   const proximity = Math.max(0, 1 - elevDist / 8);
-  return Math.min(100, 15 + roomsOnFloor * 14 * proximity);
+  // A hotel front desk draws a steady stream of guests past it (and just to its
+  // left and right) on whatever floor it's on.
+  let deskBoost = 0;
+  for (const u of plot.units) {
+    if (u.kind !== "frontdesk" || u.row !== row) continue;
+    const dx = Math.max(0, u.col - col, col - (u.col + u.width - 1));
+    if (dx <= 2) deskBoost = Math.max(deskBoost, 55 - dx * 15); // 55 at the desk, easing off 2 tiles out
+  }
+  return Math.min(100, 15 + roomsOnFloor * 14 * proximity + deskBoost);
 }
 
 /**

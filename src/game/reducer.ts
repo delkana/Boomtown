@@ -182,6 +182,10 @@ function placeUnit(
   if (!hasLobby && cmd.kind !== "lobby")
     return fail("Build a Lobby on the ground floor first");
 
+  // Hotel rooms can't go in until the building has a Hotel Front Desk to run them.
+  if (cmd.kind === "hotel" && !plot.units.some((u) => u.kind === "frontdesk"))
+    return fail("Build a Hotel Front Desk first");
+
   // Overlap + support: every footprint cell must be free of other rooms AND
   // already have a girder (you build the structural frame first).
   for (let c = cmd.col; c < cmd.col + def.width; c++) {

@@ -25,8 +25,10 @@ export type UnitKind =
   | "store"
   | "restaurant"
   | "hotel"
+  | "frontdesk"
   | "housekeeping"
   | "janitor"
+  | "storeroom"
   | "vending"
   | "elevator";
 

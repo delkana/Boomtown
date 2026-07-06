@@ -22,6 +22,7 @@ import { claimCost, girderCost, undergroundMultiplier } from "../game/economy";
 import { featureLabel } from "../game/features";
 import { facadeById, type Facade } from "../game/facades";
 import { heatT, type HeatmapKind } from "../game/heatmaps";
+import { roomDisplayName } from "../game/naming";
 import { skyState, dayOfWeek } from "../game/clock";
 import { Camera } from "./camera";
 
@@ -598,7 +599,7 @@ export class Renderer {
         ctx.font = `${Math.min(11, cell * 0.24)}px system-ui, sans-serif`;
         ctx.textBaseline = "top";
         ctx.textAlign = "left";
-        const label = unit.tenant ? unit.tenant.name : def.label;
+        const label = roomDisplayName(plot, unit) ?? def.label;
         ctx.fillText(label, x + 4, y + bandH + 3);
       }
     }
@@ -940,6 +941,10 @@ export class Renderer {
         return this.drawServiceInterior(x, y, w, h, facade, underground, lit, [107, 114, 128], true);
       case "vending":
         return this.drawServiceInterior(x, y, w, h, facade, underground, lit, [181, 72, 74], true);
+      case "frontdesk":
+        return this.drawServiceInterior(x, y, w, h, facade, underground, lit, [138, 109, 176], true);
+      case "storeroom":
+        return this.drawServiceInterior(x, y, w, h, facade, underground, lit, [125, 106, 82], true);
       default:
         this.ctx.fillStyle = UNIT_DEFS[kind].color;
         this.ctx.fillRect(x, y, w, h);
