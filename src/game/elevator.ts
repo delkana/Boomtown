@@ -54,6 +54,32 @@ export function elevatorRuns(plot: Plot): ElevatorRun[] {
   return runs;
 }
 
+/**
+ * The contiguous run bounds a would-be elevator at (col,row) would belong to —
+ * scanning the existing elevator cells above and below it in that column. Used
+ * before a segment is placed to decide whether its shaft already has a car.
+ */
+export function shaftBoundsWith(plot: Plot, col: number, row: number): { from: number; to: number } {
+  const has = (r: number): boolean => plot.units.some((u) => u.kind === "elevator" && u.col === col && u.row === r);
+  let from = row;
+  let to = row;
+  while (has(from - 1)) from--;
+  while (has(to + 1)) to++;
+  return { from, to };
+}
+
+/**
+ * Whether placing an elevator at (col,row) would form a shaft that has no car —
+ * i.e. the placement should come bundled with its first car. True for a brand
+ * new shaft; false when it merely extends a shaft that already has one.
+ */
+export function autoCarNeeded(plot: Plot, col: number, row: number): boolean {
+  const { from, to } = shaftBoundsWith(plot, col, row);
+  return !(plot.cars ?? []).some(
+    (c) => c.col === col && Math.round(c.position) >= from && Math.round(c.position) <= to,
+  );
+}
+
 /** The shaft run in `col` that contains `row`, or null if there's no shaft there. */
 export function runContaining(plot: Plot, col: number, row: number): ElevatorRun | null {
   for (const r of elevatorRuns(plot)) {

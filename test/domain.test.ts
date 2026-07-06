@@ -5,7 +5,7 @@ import { advanceTick, projectedNet } from "../src/game/tick";
 import { propertyNameFor, archetype } from "../src/game/archetypes";
 import { gameTime, daylightHours, skyState } from "../src/game/clock";
 import { elevatorAccess, viewRating, noiseRating, footTraffic, roomSatisfaction } from "../src/game/heatmaps";
-import { GIRDER_BASE_COST, MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
+import { ELEVATOR_CAR_COST, GIRDER_BASE_COST, MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
 import { claimCost, girderCost, plotBaseCost, undergroundMultiplier } from "../src/game/economy";
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
 import { servicedRows, elevatorRuns, MAX_CARS_PER_SHAFT } from "../src/game/elevator";
@@ -374,8 +374,8 @@ describe("advanceTick economy", () => {
     applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
     frame(s, "p1", 0, [[0, 0], [1, 0], [2, 0], [4, 0], [5, 0]]);
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    // The elevator shaft auto-buys its first car, so this floor is serviced.
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 0 });
-    applyCommand(s, { type: "PLACE_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 });
     applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "office", col: 4, row: 0 });
     return s;
   }
@@ -504,24 +504,41 @@ describe("elevator cars", () => {
     return s;
   }
 
-  it("a shaft with no car services no floor", () => {
-    const s = shaftTower();
-    expect(servicedRows(s.plots[0]).size).toBe(0);
-    const office = s.plots[0].units.find((u) => u.kind === "office")!;
-    for (let i = 0; i < 30; i++) advanceTick(s);
-    expect(office.occupancy).toBe(0); // never fills without a car
+  it("a new elevator shaft auto-buys its first car and charges for both", () => {
+    const s = freshGame();
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0], [2, 0]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    const before = s.players["p1"].money;
+    const r = applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 0 });
+    expect(r.ok).toBe(true);
+    expect(s.plots[0].cars).toHaveLength(1); // bundled first car
+    expect(before - s.players["p1"].money).toBe(UNIT_DEFS.elevator.cost + ELEVATOR_CAR_COST);
   });
 
-  it("adding a car services the shaft's floors", () => {
+  it("extending an existing shaft does not add another car", () => {
+    const s = shaftTower(3); // a 4-tall shaft
+    expect(s.plots[0].cars).toHaveLength(1); // still just the one auto car
+  });
+
+  it("the auto car services the shaft's floors", () => {
     const s = shaftTower(3);
-    const r = applyCommand(s, { type: "PLACE_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 });
-    expect(r.ok).toBe(true);
-    expect(s.plots[0].cars).toHaveLength(1);
     const rows = servicedRows(s.plots[0]);
     for (let f = 0; f <= 3; f++) expect(rows.has(f)).toBe(true);
     const office = s.plots[0].units.find((u) => u.kind === "office")!;
     for (let i = 0; i < 30; i++) advanceTick(s);
     expect(office.occupancy).toBeGreaterThan(0);
+  });
+
+  it("a carless shaft (its car sold) services no floor", () => {
+    const s = shaftTower(3);
+    applyCommand(s, { type: "SELL_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 });
+    expect(s.plots[0].cars).toHaveLength(0);
+    expect(servicedRows(s.plots[0]).size).toBe(0);
+    const office = s.plots[0].units.find((u) => u.kind === "office")!;
+    for (let i = 0; i < 30; i++) advanceTick(s);
+    expect(office.occupancy).toBe(0);
   });
 
   it("rejects a car placed outside any shaft", () => {
@@ -531,19 +548,18 @@ describe("elevator cars", () => {
     expect(r.error).toMatch(/shaft/i);
   });
 
-  it(`caps a shaft at ${MAX_CARS_PER_SHAFT} cars`, () => {
-    const s = shaftTower(3);
-    for (let i = 0; i < MAX_CARS_PER_SHAFT; i++)
+  it(`caps a shaft at ${MAX_CARS_PER_SHAFT} cars (incl. the auto car)`, () => {
+    const s = shaftTower(3); // starts with 1 auto car
+    for (let i = 1; i < MAX_CARS_PER_SHAFT; i++)
       expect(applyCommand(s, { type: "PLACE_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 }).ok).toBe(true);
+    expect(s.plots[0].cars).toHaveLength(MAX_CARS_PER_SHAFT);
     const overflow = applyCommand(s, { type: "PLACE_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 });
     expect(overflow.ok).toBe(false);
-    expect(s.plots[0].cars).toHaveLength(MAX_CARS_PER_SHAFT);
   });
 
   it("cars travel up and down the shaft over ticks", () => {
     const s = shaftTower(4);
-    applyCommand(s, { type: "PLACE_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 });
-    const car = s.plots[0].cars[0];
+    const car = s.plots[0].cars[0]; // the auto car, starting at the ground
     expect(car.position).toBe(0);
     advanceTick(s);
     expect(car.position).toBeGreaterThan(0); // moved up off the ground
@@ -555,7 +571,6 @@ describe("elevator cars", () => {
 
   it("selling the car unservices the floors and refunds", () => {
     const s = shaftTower(2);
-    applyCommand(s, { type: "PLACE_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 });
     const before = s.players["p1"].money;
     const r = applyCommand(s, { type: "SELL_ELEVATOR_CAR", playerId: "p1", plotIndex: 0, col: 2, row: 0 });
     expect(r.ok).toBe(true);

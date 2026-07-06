@@ -305,6 +305,9 @@ export class Hud {
     } else if (sel === "destroy") {
       this.hintEl.textContent = `Destroy mode — click a room to demolish it (50% back), or a bare girder. Can't split an elevator shaft.`;
       this.hintEl.className = "panel";
+    } else if (sel === "elevator") {
+      this.hintEl.textContent = `Elevator shaft ($${UNIT_DEFS.elevator.cost.toLocaleString()}) — a new shaft includes its first car (+$${ELEVATOR_CAR_COST.toLocaleString()}); add up to 8. Needs girders underneath.`;
+      this.hintEl.className = "panel";
     } else if (sel) {
       this.hintEl.textContent = `Placing ${UNIT_DEFS[sel].label} — needs girders underneath. Click a framed cell. Right-click sells. Esc deselects.`;
       this.hintEl.className = "panel";

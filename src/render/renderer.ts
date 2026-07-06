@@ -12,6 +12,7 @@ import {
   elevatorRuns,
   runContaining,
   carsInRun,
+  autoCarNeeded,
   MAX_CARS_PER_SHAFT,
 } from "../game/elevator";
 import { claimCost, girderCost, undergroundMultiplier } from "../game/economy";
@@ -1090,7 +1091,9 @@ export class Renderer {
     ctx.lineWidth = 2;
     ctx.strokeRect(x + 1, y + 1, wpx - 2, cell - 2);
     if (!blocked) {
-      const price = Math.round(def.cost * undergroundMultiplier(hover.row));
+      let price = Math.round(def.cost * undergroundMultiplier(hover.row));
+      // A brand-new elevator shaft is priced with its bundled first car.
+      if (tool === "elevator" && autoCarNeeded(plot, hover.col, hover.row)) price += ELEVATOR_CAR_COST;
       this.drawPriceTag(`$${price.toLocaleString()}`, x + wpx / 2, y - 2);
     }
   }

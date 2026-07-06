@@ -3,7 +3,7 @@ import type { GameState, Plot, Unit, UnitKind } from "./types";
 import { ELEVATOR_CAR_COST, MAX_DEPTH, MAX_ROWS, SPEED_OPTIONS, UNIT_DEFS } from "./constants";
 import { claimCost, girderCost, undergroundMultiplier } from "./economy";
 import { featureLabel } from "./features";
-import { MAX_CARS_PER_SHAFT, carsInRun, nearestCar, runContaining } from "./elevator";
+import { MAX_CARS_PER_SHAFT, autoCarNeeded, carsInRun, nearestCar, runContaining } from "./elevator";
 
 /**
  * The reducer applies a single command to the authoritative state.
@@ -182,9 +182,13 @@ function placeUnit(
     if (!hasGirder(plot, c, cmd.row)) return fail("Build structural supports (girders) here first");
   }
 
-  // Affordability — underground rooms cost more per level down.
+  // Affordability — underground rooms cost more per level down. A brand-new
+  // elevator shaft comes bundled with its first car (so it services floors
+  // immediately); extending an existing shaft does not.
   const roomCost = def.cost * undergroundMultiplier(cmd.row);
-  if (player.money < roomCost) return fail("Not enough money");
+  const withCar = cmd.kind === "elevator" && autoCarNeeded(plot, cmd.col, cmd.row);
+  const carCost = withCar ? ELEVATOR_CAR_COST : 0;
+  if (player.money < roomCost + carCost) return fail("Not enough money");
 
   // Commit.
   const unit: Unit = {
@@ -196,7 +200,11 @@ function placeUnit(
     occupancy: 0,
   };
   plot.units.push(unit);
-  player.money -= roomCost;
+  player.money -= roomCost + carCost;
+  if (withCar) {
+    if (!plot.cars) plot.cars = [];
+    plot.cars.push({ id: `car${state.nextUnitSeq++}`, col: cmd.col, position: cmd.row, dir: 1 });
+  }
   return ok();
 }
 
