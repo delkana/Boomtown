@@ -515,8 +515,8 @@ button.primary.big {
   top: 70px;
   left: 50%;
   transform: translateX(-50%);
-  width: min(560px, 60vw);
-  height: 60px;
+  width: min(280px, 30vw);
+  height: 30px;
   padding: 0;
   overflow: hidden;
 }

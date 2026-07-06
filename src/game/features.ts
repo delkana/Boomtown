@@ -9,7 +9,12 @@ import { hashString } from "./hash";
  */
 export type FeatureKind = "river" | "park" | "highway";
 
-export const FEATURE_KINDS: FeatureKind[] = ["river", "park", "highway"];
+/**
+ * Kinds that city generation may roll. "highway" is temporarily disabled (kept
+ * in the type, renderer, and name pools so it can be switched back on by adding
+ * it here) — cities currently get only rivers and parks.
+ */
+export const FEATURE_KINDS: FeatureKind[] = ["river", "park"];
 
 /** Feature plots are a fixed ~6 tiles wide. */
 export const FEATURE_COLS = 6;
