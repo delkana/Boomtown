@@ -666,6 +666,9 @@ describe("tenants", () => {
         expect(w.days).toEqual(t.openDays);
         expect(w.startHour).toBe(t.openHour);
         expect(w.endHour).toBe(t.closeHour);
+        // A 1-hour lunch that sits inside the shift.
+        expect(w.lunchHour).toBeGreaterThanOrEqual(t.openHour + 1);
+        expect(w.lunchHour + 1).toBeLessThanOrEqual(t.closeHour - 1);
       }
     }
   });

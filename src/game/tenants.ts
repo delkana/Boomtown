@@ -265,6 +265,9 @@ function buildWorkers(
     const wh = hashString(`${seed}:w${i}`);
     const role = i === 0 ? lead : staff[wh % staff.length];
     const salary = role.salary === 0 ? 0 : Math.round(role.salary * (0.9 + ((wh >>> 5) % 20) / 100));
+    // Staggered midday lunch: an hour somewhere near the middle of the shift.
+    const mid = Math.floor((open + close) / 2);
+    const lunchHour = salary === 0 ? -1 : Math.max(open + 1, Math.min(close - 2, mid - 1 + ((wh >>> 9) % 3)));
     workers.push({
       name: personName(archetypeId, wh),
       title: role.title,
@@ -272,6 +275,7 @@ function buildWorkers(
       days,
       startHour: open,
       endHour: close,
+      lunchHour,
     });
   }
   return workers;
@@ -367,6 +371,12 @@ export function hourLabel(h: number): string {
 export function shiftLabel(w: Worker): string {
   if (w.dailySalary === 0) return "—";
   return `${hourLabel(w.startHour)}–${hourLabel(w.endHour)}`;
+}
+
+/** A worker's 1-hour lunch as e.g. "12p–1p" ("" if not applicable). */
+export function lunchLabel(w: Worker): string {
+  if (w.lunchHour < 0) return "";
+  return `${hourLabel(w.lunchHour)}–${hourLabel(w.lunchHour + 1)}`;
 }
 
 /** What to call the headcount in the UI for this kind. */

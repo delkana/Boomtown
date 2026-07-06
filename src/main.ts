@@ -9,7 +9,7 @@ import { LobbyScreen } from "./ui/lobby";
 import { LocalServer, type GameServer } from "./net/localServer";
 import { RemoteServer } from "./net/remoteServer";
 import type { GameConnection } from "./net/connection";
-import { daysLabel, shiftLabel } from "./game/tenants";
+import { daysLabel, shiftLabel, lunchLabel } from "./game/tenants";
 import type { Worker } from "./game/types";
 
 /**
@@ -100,7 +100,8 @@ function enterGame(conn: GameConnection): void {
     const detail =
       w.dailySalary > 0
         ? `<div class="tip-role">${esc(w.title)}</div>
-           <div class="tip-line">$${w.dailySalary.toLocaleString()}/day · ${daysLabel(w.days)} · ${shiftLabel(w)}</div>`
+           <div class="tip-line">$${w.dailySalary.toLocaleString()}/day · ${daysLabel(w.days)} · ${shiftLabel(w)}</div>
+           <div class="tip-line">Lunch ${lunchLabel(w)}</div>`
         : "";
     personTipEl.innerHTML = `<div class="tip-name">${esc(w.name)}</div>${detail}`;
     personTipEl.classList.toggle("locked", locked);

@@ -607,7 +607,7 @@ export class Renderer {
     // each so hovering a person can show who they are, and mark the tracked one.
     for (const p of this.people.peopleIn(plot.index)) {
       const px = camera.worldToScreenX(leftWorld + p.x * CELL_SIZE);
-      const py = camera.groundScreenY - p.floor * cell; // standing on the floor line
+      const py = camera.groundScreenY - p.floor * cell - p.yOff * cell; // stand back from the front edge
       this.drawPerson(px, py, cell, p.color);
       if (p.worker && cell >= 8) {
         this.personHits.push({

@@ -20,7 +20,7 @@ import {
   roomSatisfaction,
   type HeatmapKind,
 } from "../game/heatmaps";
-import { headcountLabel, hasTrades, tenantOpen, daysLabel, shiftLabel } from "../game/tenants";
+import { headcountLabel, hasTrades, tenantOpen, daysLabel, shiftLabel, lunchLabel } from "../game/tenants";
 import { elevatorRuns, runContaining } from "../game/elevator";
 import { dayOfWeek } from "../game/clock";
 import { projectedDailyNet } from "../game/tick";
@@ -149,7 +149,7 @@ export class Hud {
           const meta =
             w.dailySalary > 0
               ? `<div class="roster-meta">${escapeHtml(w.title)} · $${w.dailySalary.toLocaleString()}/day</div>
-                 <div class="roster-meta">${daysLabel(w.days)} · ${shiftLabel(w)}</div>`
+                 <div class="roster-meta">${daysLabel(w.days)} · ${shiftLabel(w)} · lunch ${lunchLabel(w)}</div>`
               : "";
           return `<div class="roster-row"><div class="roster-name">${escapeHtml(w.name)}</div>${meta}</div>`;
         })

@@ -77,6 +77,8 @@ export interface Worker {
   /** Shift start/end hours (0..24). */
   startHour: number;
   endHour: number;
+  /** Hour their 1-hour lunch break starts (−1 if not applicable, e.g. residents). */
+  lunchHour: number;
 }
 
 /**

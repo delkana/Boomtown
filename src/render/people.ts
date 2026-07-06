@@ -51,10 +51,12 @@ interface Person {
   spread: number; // small per-person offset so they don't perfectly overlap
   millPhase: number;
   react: number; // small delay before boarding/alighting, so crowds stagger
+  depth: number; // how far back from the front edge they stand while at the office
   color: string;
   // dynamic
   x: number;
   floor: number;
+  yOff: number; // upward render offset in cells (stand back from the bottom edge)
   st: PState;
   car: string | null;
 }
@@ -76,6 +78,7 @@ export interface PersonView {
   id: string;
   x: number;
   floor: number;
+  yOff: number; // upward offset in cells (stand back from the floor's front edge)
   color: string;
   worker: Worker | null;
 }
@@ -116,7 +119,7 @@ export class PeopleSim {
     const out: PersonView[] = [];
     for (const p of this.people.values()) {
       if (p.plotIndex === plotIndex && p.st !== "away") {
-        out.push({ id: p.id, x: p.x, floor: p.floor, color: p.color, worker: p.worker });
+        out.push({ id: p.id, x: p.x, floor: p.floor, yOff: p.yOff, color: p.color, worker: p.worker });
       }
     }
     return out;
@@ -160,7 +163,9 @@ export class PeopleSim {
           p.worker = unit.tenant.workers[i] ?? null;
           p.roomLeft = unit.col;
           p.roomW = unit.width;
-          p.deskX = unit.col + ((i + 0.5) / count) * unit.width;
+          // Desks sit inset from the side walls (not right up against the edges).
+          const margin = Math.min(0.5, unit.width * 0.28);
+          p.deskX = unit.col + margin + ((i + 0.5) / count) * (unit.width - 2 * margin);
           p.officeRow = unit.row;
           p.shaftCol = shaftCol ?? -1;
           this.applySchedule(p);
@@ -190,9 +195,11 @@ export class PeopleSim {
       spread: ((h % 100) / 100 - 0.5) * 0.4,
       millPhase: (h % 1000) / 1000 * MILL_PERIOD,
       react: ((h >>> 11) % 100) / 100 * REACT_MAX,
+      depth: 0.16 + ((h >>> 17) % 100) / 100 * 0.12, // 0.16–0.28 cells back from the front edge
       color: WORKER_COLORS[(h >>> 3) % WORKER_COLORS.length],
       x: ENTRANCE_X,
       floor: 0,
+      yOff: 0,
       st: "away",
       car: null,
     };
@@ -435,6 +442,8 @@ export class PeopleSim {
         if (walk(ENTRANCE_X + p.spread)) p.st = "away";
         break;
     }
+    // While in the office, stand back from the room's front (bottom) edge.
+    p.yOff = p.st === "atRoom" || p.st === "toRoom" || p.st === "leaveToLift" ? p.depth : 0;
   }
 
   /**
@@ -446,7 +455,9 @@ export class PeopleSim {
     const idx = Math.floor((this.t + p.millPhase) / MILL_PERIOD);
     const rh = hashString(`${p.id}:${idx}`);
     if (rh % 100 < 55) return p.deskX + p.spread; // most of the time, at the desk
-    const span = Math.max(0.2, p.roomW - 0.6);
-    return p.roomLeft + 0.3 + ((rh >>> 7) % 1000) / 1000 * span;
+    // Amble only within the central part of the room, well off the side walls.
+    const inset = 0.55;
+    const span = Math.max(0.2, p.roomW - inset * 2);
+    return p.roomLeft + inset + ((rh >>> 7) % 1000) / 1000 * span;
   }
 }
