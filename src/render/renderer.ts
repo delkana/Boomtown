@@ -1,7 +1,7 @@
 import { CELL_SIZE, MAX_ROWS, UNIT_DEFS } from "../game/constants";
 import type { GameState, Plot } from "../game/types";
 import { unitAt, hasGirder, girderSupported } from "../game/reducer";
-import { claimCost } from "../game/economy";
+import { claimCost, girderCost } from "../game/economy";
 import { featureLabel } from "../game/features";
 import { Camera } from "./camera";
 
@@ -17,8 +17,18 @@ export interface HoverState {
   row: number;
 }
 
-/** What the player currently has selected: a build unit, girder, claim, or nothing. */
-export type Tool = keyof typeof UNIT_DEFS | "claim" | "girder" | null;
+/** What the player currently has selected: a build unit, girder, claim, destroy, or nothing. */
+export type Tool = keyof typeof UNIT_DEFS | "claim" | "girder" | "destroy" | null;
+
+/** A brief floating "-$X" / "+$X" label at the cursor after a money change. */
+interface Popup {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  born: number;
+}
+const POPUP_LIFE_MS = 950;
 
 /** Steel-frame color for structural girders. */
 const GIRDER_COLOR = "#5c6470";
@@ -27,6 +37,7 @@ const GIRDER_HILITE = "#7a828f";
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
+  private popups: Popup[] = [];
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -35,6 +46,42 @@ export class Renderer {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("2D canvas context unavailable");
     this.ctx = ctx;
+  }
+
+  /**
+   * Spawn a floating money label at a screen point: red for a spend (negative
+   * delta), green for money returned (positive).
+   */
+  addMoneyPopup(screenX: number, screenY: number, delta: number): void {
+    if (delta === 0) return;
+    this.popups.push({
+      x: screenX,
+      y: screenY,
+      text: `${delta < 0 ? "-" : "+"}$${Math.abs(delta).toLocaleString()}`,
+      color: delta < 0 ? "#e8776f" : "#7bd88f",
+      born: performance.now(),
+    });
+  }
+
+  private drawPopups(): void {
+    if (this.popups.length === 0) return;
+    const now = performance.now();
+    this.popups = this.popups.filter((p) => now - p.born < POPUP_LIFE_MS);
+    const { ctx } = this;
+    ctx.save();
+    ctx.font = "bold 14px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    for (const p of this.popups) {
+      const t = (now - p.born) / POPUP_LIFE_MS;
+      const y = p.y - 8 - t * 28; // drift upward
+      ctx.globalAlpha = 1 - t;
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillText(p.text, p.x + 1, y + 1);
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.text, p.x, y);
+    }
+    ctx.restore();
   }
 
   render(
@@ -66,6 +113,8 @@ export class Renderer {
     }
 
     if (hover) this.drawHoverGhost(state, localPlayerId, hover, tool);
+
+    this.drawPopups();
   }
 
   private drawPlot(state: GameState, plot: Plot, localId: string): void {
@@ -190,6 +239,21 @@ export class Renderer {
     ctx.textAlign = "left";
   }
 
+  /** Small price tag centered at (cx, baselineY) — used for the live girder cost. */
+  private drawPriceTag(text: string, cx: number, baselineY: number): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.font = "bold 11px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    const w = ctx.measureText(text).width + 8;
+    ctx.fillStyle = "rgba(16,22,32,0.85)";
+    ctx.fillRect(cx - w / 2, baselineY - 14, w, 14);
+    ctx.fillStyle = "#dfe7ef";
+    ctx.fillText(text, cx, baselineY - 2);
+    ctx.restore();
+  }
+
   /** Draw a single structural girder (dark steel frame + cross-brace) in a cell. */
   private drawGirder(x: number, y: number, cell: number): void {
     const { ctx } = this;
@@ -221,14 +285,14 @@ export class Renderer {
     const kind = plot.feature!;
 
     if (kind === "park") {
-      // Grass fills the ground band, its top flush with the surrounding ground.
-      const gm = camera.groundMargin;
+      // Grass + path only about one tile deep; the ground shows below it.
+      const depth = Math.min(camera.groundMargin, cell);
       ctx.fillStyle = "#2f6b3a";
-      ctx.fillRect(leftScreen, groundY, plotPxW, gm);
+      ctx.fillRect(leftScreen, groundY, plotPxW, depth);
       ctx.fillStyle = "#3a7d46"; // lighter grass at the surface
       ctx.fillRect(leftScreen, groundY, plotPxW, 3);
       ctx.fillStyle = "#8a6a3a"; // a footpath through the middle
-      ctx.fillRect(leftScreen + plotPxW * 0.45, groundY, plotPxW * 0.1, gm);
+      ctx.fillRect(leftScreen + plotPxW * 0.45, groundY, plotPxW * 0.1, depth);
       // Trees rise ABOVE the ground line.
       for (const f of [0.18, 0.36, 0.62, 0.82]) {
         const tx = leftScreen + plotPxW * f;
@@ -334,7 +398,7 @@ export class Renderer {
       return;
     }
 
-    // Girder tool: a single structural cell.
+    // Girder tool: a single structural cell, with a live price for this floor.
     if (tool === "girder") {
       if (plot.ownerId !== localId) return;
       const gx = camera.worldToScreenX(leftWorld + hover.col * CELL_SIZE);
@@ -349,6 +413,32 @@ export class Renderer {
       ctx.strokeStyle = blocked ? "#c84646" : GIRDER_COLOR;
       ctx.lineWidth = 2;
       ctx.strokeRect(gx + 1, gy + 1, cell - 2, cell - 2);
+      if (!blocked) this.drawPriceTag(`$${girderCost(hover.row)}`, gx + cell / 2, gy - 2);
+      return;
+    }
+
+    // Destroy tool: highlight the room (or bare girder) that would be removed.
+    if (tool === "destroy") {
+      if (plot.ownerId !== localId) return;
+      const u = unitAt(plot, hover.col, hover.row);
+      if (u) {
+        const x = camera.worldToScreenX(leftWorld + u.col * CELL_SIZE);
+        const y = camera.rowTopScreenY(u.row);
+        const w = u.width * cell;
+        ctx.fillStyle = "rgba(220,70,70,0.32)";
+        ctx.fillRect(x + 1, y + 1, w - 2, cell - 2);
+        ctx.strokeStyle = "#e8776f";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 1, y + 1, w - 2, cell - 2);
+      } else if (hasGirder(plot, hover.col, hover.row)) {
+        const gx = camera.worldToScreenX(leftWorld + hover.col * CELL_SIZE);
+        const gy = camera.rowTopScreenY(hover.row);
+        ctx.fillStyle = "rgba(220,70,70,0.28)";
+        ctx.fillRect(gx + 1, gy + 1, cell - 2, cell - 2);
+        ctx.strokeStyle = "#e8776f";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(gx + 1, gy + 1, cell - 2, cell - 2);
+      }
       return;
     }
 

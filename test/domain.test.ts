@@ -292,6 +292,25 @@ describe("SELL_UNIT", () => {
   });
 });
 
+describe("destroy rules", () => {
+  it("can't split an elevator shaft — must remove from the top down", () => {
+    const s = freshGame();
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0], [2, 1]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 1 });
+    const bottom = s.plots[0].units.find((u) => u.kind === "elevator" && u.row === 0)!;
+    const top = s.plots[0].units.find((u) => u.kind === "elevator" && u.row === 1)!;
+
+    expect(applyCommand(s, { type: "SELL_UNIT", playerId: "p1", plotIndex: 0, unitId: bottom.id }).ok).toBe(false);
+    expect(applyCommand(s, { type: "SELL_UNIT", playerId: "p1", plotIndex: 0, unitId: top.id }).ok).toBe(true);
+    // With the top gone, the bottom can be removed.
+    expect(applyCommand(s, { type: "SELL_UNIT", playerId: "p1", plotIndex: 0, unitId: bottom.id }).ok).toBe(true);
+  });
+});
+
 describe("advanceTick economy", () => {
   function servicedTower(): GameState {
     const s = freshGame();

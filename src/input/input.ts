@@ -27,6 +27,8 @@ export class InputController {
     private camera: Camera,
     private conn: GameConnection,
     private onSelectChange: (tool: Tool) => void,
+    /** Called after a money-changing action, at the cursor, with the delta. */
+    private moneyFx: (screenX: number, screenY: number, delta: number) => void,
   ) {
     this.attach();
   }
@@ -96,7 +98,11 @@ export class InputController {
     this.movedWhileDragging = false;
     this.dragStartX = x;
     this.dragStartOffset = this.camera.offsetX;
-    this.canvas.setPointerCapture(e.pointerId);
+    try {
+      this.canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* synthetic or inactive pointer */
+    }
   };
 
   private onPointerMove = (e: PointerEvent): void => {
@@ -126,57 +132,64 @@ export class InputController {
     const state = this.conn.getState();
     if (!state.plots[cell.plotIndex]) return; // clicked the gap between plots
 
-    const playerId = this.conn.session.playerId;
-    if (this.selectedTool === "claim") {
-      this.conn.dispatch({ type: "CLAIM_PLOT", playerId, plotIndex: cell.plotIndex });
-    } else if (this.selectedTool === "girder") {
-      this.conn.dispatch({
-        type: "PLACE_GIRDER",
-        playerId,
-        plotIndex: cell.plotIndex,
-        col: cell.col,
-        row: cell.row,
-      });
-    } else {
-      this.conn.dispatch({
-        type: "PLACE_UNIT",
-        playerId,
-        plotIndex: cell.plotIndex,
-        kind: this.selectedTool,
-        col: cell.col,
-        row: cell.row,
-      });
+    if (this.selectedTool === "destroy") {
+      this.tryDestroy(cell.plotIndex, cell.col, cell.row, x, y);
+      return;
     }
+
+    const playerId = this.conn.session.playerId;
+    const tool = this.selectedTool;
+    this.withMoneyFx(x, y, () => {
+      if (tool === "claim") {
+        this.conn.dispatch({ type: "CLAIM_PLOT", playerId, plotIndex: cell.plotIndex });
+      } else if (tool === "girder") {
+        this.conn.dispatch({ type: "PLACE_GIRDER", playerId, plotIndex: cell.plotIndex, col: cell.col, row: cell.row });
+      } else if (tool) {
+        this.conn.dispatch({
+          type: "PLACE_UNIT",
+          playerId,
+          plotIndex: cell.plotIndex,
+          kind: tool,
+          col: cell.col,
+          row: cell.row,
+        });
+      }
+    });
   };
 
-  /** Right-click sells the room under the cursor, or an empty girder. */
+  /** Right-click also destroys the room / bare girder under the cursor. */
   private onContextMenu = (e: MouseEvent): void => {
     e.preventDefault();
     const { x, y } = this.localPointer(e);
     const cell = this.camera.screenToCell(x, y);
     if (!cell) return;
+    this.tryDestroy(cell.plotIndex, cell.col, cell.row, x, y);
+  };
+
+  /** Demolish the room at a cell, or a bare girder if no room is there. */
+  private tryDestroy(plotIndex: number, col: number, row: number, screenX: number, screenY: number): void {
     const state = this.conn.getState();
-    const plot = state.plots[cell.plotIndex];
+    const plot = state.plots[plotIndex];
     const playerId = this.conn.session.playerId;
     if (!plot || plot.ownerId !== playerId) return;
-    const unit = plot.units.find(
-      (u) => u.row === cell.row && cell.col >= u.col && cell.col < u.col + u.width,
-    );
-    if (unit) {
-      this.conn.dispatch({ type: "SELL_UNIT", playerId, plotIndex: cell.plotIndex, unitId: unit.id });
-      return;
-    }
-    // No room here — sell a bare girder if there is one.
-    if ((plot.girders ?? []).some((g) => g.col === cell.col && g.row === cell.row)) {
-      this.conn.dispatch({
-        type: "SELL_GIRDER",
-        playerId,
-        plotIndex: cell.plotIndex,
-        col: cell.col,
-        row: cell.row,
-      });
-    }
-  };
+    const unit = plot.units.find((u) => u.row === row && col >= u.col && col < u.col + u.width);
+    this.withMoneyFx(screenX, screenY, () => {
+      if (unit) {
+        this.conn.dispatch({ type: "SELL_UNIT", playerId, plotIndex, unitId: unit.id });
+      } else if ((plot.girders ?? []).some((g) => g.col === col && g.row === row)) {
+        this.conn.dispatch({ type: "SELL_GIRDER", playerId, plotIndex, col, row });
+      }
+    });
+  }
+
+  /** Run an action and, if it changed the local player's money, flash the delta. */
+  private withMoneyFx(screenX: number, screenY: number, action: () => void): void {
+    const me = this.conn.session.playerId;
+    const before = this.conn.getState().players[me]?.money ?? 0;
+    action();
+    const after = this.conn.getState().players[me]?.money ?? 0;
+    if (after !== before) this.moneyFx(screenX, screenY, after - before);
+  }
 
   private onKeyDown = (e: KeyboardEvent): void => {
     this.keys.add(e.key);
@@ -190,6 +203,8 @@ export class InputController {
       G: "girder",
       c: "claim",
       C: "claim",
+      x: "destroy",
+      X: "destroy",
     };
     if (map[e.key]) this.setSelected(map[e.key]);
     if (e.key === "Escape") this.setSelected(null);

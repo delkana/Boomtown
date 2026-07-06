@@ -205,6 +205,14 @@ function sellUnit(
   if (idx < 0) return fail("No such unit");
 
   const unit = plot.units[idx];
+  // Can't break an elevator shaft in half — remove from the top down.
+  if (
+    unit.kind === "elevator" &&
+    plot.units.some((u) => u.kind === "elevator" && u.col === unit.col && u.row === unit.row + 1)
+  ) {
+    return fail("Can't split the elevator shaft — remove the elevator above first");
+  }
+
   const def = UNIT_DEFS[unit.kind];
   plot.units.splice(idx, 1);
   // Refund half the build cost.

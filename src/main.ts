@@ -87,7 +87,13 @@ function enterGame(conn: GameConnection): void {
   const renderer = new Renderer(canvas, camera);
   let hud: Hud;
 
-  const input = new InputController(canvas, camera, conn, () => hud.update());
+  const input = new InputController(
+    canvas,
+    camera,
+    conn,
+    () => hud.update(),
+    (sx, sy, delta) => renderer.addMoneyPopup(sx, sy, delta),
+  );
   hud = new Hud(
     conn,
     () => input.selectedTool,

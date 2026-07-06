@@ -189,35 +189,57 @@ export class GameDirectory {
   }
 
   private seedDemoCities(): void {
-    const angeles = AuthoritativeGame.create(
-      "new-angeles",
-      { cityName: "New Angeles", archetype: "pacifica", plotCount: 14, maxPlayers: 8, hasPassword: false },
-      null,
-    );
-    this.games.set("new-angeles", angeles);
-    this.tokens.set("new-angeles", new Map());
-    seedOwner(angeles, "Redwood Spire Group", "#3fb96b", [2], [7]);
-    seedOwner(angeles, "Neon Bay Holdings", "#4a86e0", [5, 6], [6, 9]);
-    seedOwner(angeles, "Cascade Systems", "#e79a2f", [10], [5]);
+    this.seedCity("new-angeles", "New Angeles", "pacifica", 22, 8, null, [
+      { name: "Redwood Spire Group", color: "#3fb96b", floors: [7] },
+      { name: "Neon Bay Holdings", color: "#4a86e0", floors: [6, 9] },
+      { name: "Cascade Systems", color: "#e79a2f", floors: [5] },
+    ]);
+    this.seedCity("neo-kyoto", "Neo-Kyoto", "japan", 16, 6, null, [
+      { name: "Zaibatsu Prime", color: "#c94ad1", floors: [6] },
+      { name: "Mirai Systems", color: "#e0503f", floors: [8, 4] },
+    ]);
+    this.seedCity("kosmograd", "Kosmograd", "ussr", 20, 8, null, [
+      { name: "Red October Combine", color: "#e0503f", floors: [9, 5, 7] },
+    ]);
+    this.seedCity("la-defense", "La Défense", "europa", 20, 8, null, [
+      { name: "Rheinturm Group", color: "#f4c94b", floors: [10, 6] },
+      { name: "Concorde Holdings", color: "#4a86e0", floors: [7] },
+      { name: "Pan-Europa Dynamics", color: "#3fb96b", floors: [8] },
+    ]);
+  }
 
-    const kyoto = AuthoritativeGame.create(
-      "neo-kyoto",
-      { cityName: "Neo-Kyoto", archetype: "japan", plotCount: 8, maxPlayers: 4, hasPassword: false },
-      null,
+  /** Create a demo city and seed its owners onto BUILDABLE (non-feature) plots. */
+  private seedCity(
+    id: string,
+    cityName: string,
+    archetype: string,
+    plotCount: number,
+    maxPlayers: number,
+    password: string | null,
+    owners: { name: string; color: string; floors: number[] }[],
+  ): void {
+    const game = AuthoritativeGame.create(
+      id,
+      { cityName, archetype, plotCount, maxPlayers, hasPassword: password !== null },
+      password,
     );
-    this.games.set("neo-kyoto", kyoto);
-    this.tokens.set("neo-kyoto", new Map());
-    seedOwner(kyoto, "Zaibatsu Prime", "#c94ad1", [1], [6]);
-    seedOwner(kyoto, "Mirai Systems", "#e0503f", [4, 5], [8, 4]);
+    this.games.set(id, game);
+    this.tokens.set(id, new Map());
 
-    const kosmograd = AuthoritativeGame.create(
-      "kosmograd",
-      { cityName: "Kosmograd", archetype: "ussr", plotCount: 12, maxPlayers: 6, hasPassword: false },
-      null,
-    );
-    this.games.set("kosmograd", kosmograd);
-    this.tokens.set("kosmograd", new Map());
-    seedOwner(kosmograd, "Red October Combine", "#e0503f", [3, 4, 7], [9, 5, 7]);
+    const buildable = Object.values(game.state.plots)
+      .filter((p) => !p.feature)
+      .map((p) => p.index)
+      .sort((a, b) => a - b);
+
+    let next = 0;
+    for (const owner of owners) {
+      const player = game.addPlayer(owner.name, owner.color);
+      for (const floors of owner.floors) {
+        if (next >= buildable.length) break;
+        const plotIndex = buildable[next++];
+        game.seedPlot(player.id, plotIndex, sampleTower(floors, game.state.plots[plotIndex].cols));
+      }
+    }
   }
 }
 
@@ -230,20 +252,6 @@ function randomToken(): string {
   const c = (globalThis as { crypto?: Crypto }).crypto;
   if (c?.randomUUID) return c.randomUUID();
   return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function seedOwner(
-  game: AuthoritativeGame,
-  name: string,
-  colorHex: string,
-  plotIndices: number[],
-  floorsList: number[],
-): void {
-  const player = game.addPlayer(name, colorHex);
-  plotIndices.forEach((plotIndex, i) => {
-    const cols = game.state.plots[plotIndex]?.cols ?? 8;
-    game.seedPlot(player.id, plotIndex, sampleTower(floorsList[i] ?? 5, cols));
-  });
 }
 
 /** A valid, supported tower that fits within a plot `cols` wide. */

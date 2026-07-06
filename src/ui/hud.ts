@@ -106,6 +106,18 @@ export class Hud {
       btn.addEventListener("click", () => this.toggle(kind));
       this.toolbarEl.appendChild(btn);
     }
+
+    // Destroy tool last.
+    const destroy = document.createElement("button");
+    destroy.className = "tool";
+    destroy.dataset.tool = "destroy";
+    destroy.innerHTML = `
+      <span class="swatch" style="background:#c84646">✕</span>
+      <span class="tool-label">Destroy</span>
+      <span class="tool-cost">+50% back</span>
+      <span class="tool-key">X</span>`;
+    destroy.addEventListener("click", () => this.toggle("destroy"));
+    this.toolbarEl.appendChild(destroy);
   }
 
   private toggle(tool: Exclude<Tool, null>): void {
@@ -161,7 +173,13 @@ export class Hud {
     for (const el of Array.from(this.toolbarEl.children) as HTMLElement[]) {
       const tool = el.dataset.tool as Exclude<Tool, null>;
       const cost =
-        tool === "claim" ? cheapestClaim : tool === "girder" ? GIRDER_BASE_COST : UNIT_DEFS[tool].cost;
+        tool === "claim"
+          ? cheapestClaim
+          : tool === "girder"
+            ? GIRDER_BASE_COST
+            : tool === "destroy"
+              ? 0 // destroying never costs money
+              : UNIT_DEFS[tool].cost;
       el.classList.toggle("selected", this.getSelected() === tool);
       el.classList.toggle("unaffordable", player.money < cost);
     }
@@ -176,7 +194,10 @@ export class Hud {
       this.hintEl.textContent = `Claim mode — click an "Available" plot to buy it, then frame it.`;
       this.hintEl.className = "panel";
     } else if (sel === "girder") {
-      this.hintEl.textContent = `Girder mode — build the frame first ($${GIRDER_BASE_COST} +$5/floor). Rooms need girders under them. Right-click removes.`;
+      this.hintEl.textContent = `Girder mode — the price for the hovered floor shows at your cursor ($${GIRDER_BASE_COST} +$5/floor). Rooms need girders under them.`;
+      this.hintEl.className = "panel";
+    } else if (sel === "destroy") {
+      this.hintEl.textContent = `Destroy mode — click a room to demolish it (50% back), or a bare girder. Can't split an elevator shaft.`;
       this.hintEl.className = "panel";
     } else if (sel) {
       this.hintEl.textContent = `Placing ${UNIT_DEFS[sel].label} — needs girders underneath. Click a framed cell. Right-click sells. Esc deselects.`;
