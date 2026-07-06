@@ -162,15 +162,17 @@ const FLAGS: Record<string, string> = {
       .join("")}`,
 
   taiwan: `
-    <rect width="60" height="40" fill="#c0202a"/>
-    <rect width="30" height="20" fill="#1b3a8f"/>
-    <circle cx="15" cy="10" r="5" fill="#eaf2ff"/>
-    ${[0, 45, 90, 135, 180, 225, 270, 315]
-      .map((deg) => {
-        const r = (deg * Math.PI) / 180;
-        return `<line x1="${15 + 4 * Math.cos(r)}" y1="${10 + 4 * Math.sin(r)}" x2="${15 + 7 * Math.cos(r)}" y2="${10 + 7 * Math.sin(r)}" stroke="#eaf2ff" stroke-width="1.4"/>`;
-      })
-      .join("")}`,
+    <rect width="60" height="40" fill="#fe0000"/>
+    <rect width="30" height="20" fill="#000095"/>
+    ${Array.from({ length: 12 }, (_, k) => {
+      const a = ((k * 30 - 90) * Math.PI) / 180;
+      const hw = (7.5 * Math.PI) / 180;
+      const pt = (r: number, ang: number): string =>
+        `${(15 + r * Math.cos(ang)).toFixed(2)},${(10 + r * Math.sin(ang)).toFixed(2)}`;
+      return `<polygon points="${pt(8, a)} ${pt(4, a - hw)} ${pt(4, a + hw)}" fill="#ffffff"/>`;
+    }).join("")}
+    <circle cx="15" cy="10" r="5" fill="#000095"/>
+    <circle cx="15" cy="10" r="4.25" fill="#ffffff"/>`,
 
   china: `
     <rect width="60" height="40" fill="#ee1c25"/>
