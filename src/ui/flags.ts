@@ -62,12 +62,11 @@ function arcBand(cx: number, cy: number, ro: number, ri: number, deg0: number, d
 
 const FLAGS: Record<string, string> = {
   pacifica: `
-    <rect width="60" height="40" fill="#0b2530"/>
-    <rect width="60" height="22" fill="#e8743b"/>
-    <circle cx="30" cy="13" r="7" fill="#ffd27a"/>
-    <rect y="22" width="60" height="2" fill="#2ec6c0"/>
-    <polygon points="0,40 20,20 32,40" fill="#0e3a40"/>
-    <polygon points="24,40 44,22 60,40" fill="#124b52"/>`,
+    <rect width="60" height="40" fill="#1b2a52"/>
+    <polygon fill="#ffffff" points="0,16 6,13 10,16 16,11 21,15 30,9 38,14 44,10.5 49,15 54,12 60,16 60,35 0,35"/>
+    <rect y="35" width="60" height="5" fill="#2f6a33"/>
+    ${starFill(30, 5, 3, "#ffffff")}
+    <polygon fill="#b31942" points="16.5,27.2 17.5,25.6 19.5,24.3 20.3,23.1 21.2,24 23.5,22.1 29,22.5 35,22.5 39,22.9 41.6,23.9 42.6,25.2 42.7,26.2 41.9,26.6 41.8,27.2 41.5,32 39.8,32 39.9,28.6 37,28.9 36,32 34.5,32 34.7,28.6 30,29 28,32 26.5,32 26.8,28.3 24.3,28.5 23.4,32 22,32 22.4,27.6 19,27.7"/>`,
 
   commonwealth: `
     <rect width="60" height="40" fill="#012169"/>
