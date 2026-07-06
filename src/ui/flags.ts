@@ -34,6 +34,32 @@ function trigram(
   return `<g fill="#141414" transform="rotate(${deg} ${cx} ${cy})">${bars}</g>`;
 }
 
+/** Points string for a 5-pointed star pointing up, outer radius R. */
+function starPoints(cx: number, cy: number, R: number): string {
+  const r = R * 0.4;
+  const pts: string[] = [];
+  for (let k = 0; k < 10; k++) {
+    const a = ((-90 + k * 36) * Math.PI) / 180;
+    const rad = k % 2 === 0 ? R : r;
+    pts.push(`${(cx + rad * Math.cos(a)).toFixed(2)},${(cy + rad * Math.sin(a)).toFixed(2)}`);
+  }
+  return pts.join(" ");
+}
+const starFill = (cx: number, cy: number, R: number, fill: string): string =>
+  `<polygon points="${starPoints(cx, cy, R)}" fill="${fill}"/>`;
+const starOutline = (cx: number, cy: number, R: number, stroke: string, w: number): string =>
+  `<polygon points="${starPoints(cx, cy, R)}" fill="none" stroke="${stroke}" stroke-width="${w}"/>`;
+
+/** A filled annular sector (ring slice) from deg0→deg1 clockwise — used for the sickle. */
+function arcBand(cx: number, cy: number, ro: number, ri: number, deg0: number, deg1: number): string {
+  const a0 = (deg0 * Math.PI) / 180;
+  const a1 = (deg1 * Math.PI) / 180;
+  const large = Math.abs(deg1 - deg0) > 180 ? 1 : 0;
+  const p = (r: number, a: number): string =>
+    `${(cx + r * Math.cos(a)).toFixed(2)} ${(cy + r * Math.sin(a)).toFixed(2)}`;
+  return `M ${p(ro, a0)} A ${ro} ${ro} 0 ${large} 1 ${p(ro, a1)} L ${p(ri, a1)} A ${ri} ${ri} 0 ${large} 0 ${p(ri, a0)} Z`;
+}
+
 const FLAGS: Record<string, string> = {
   pacifica: `
     <rect width="60" height="40" fill="#0b2530"/>
@@ -86,21 +112,27 @@ const FLAGS: Record<string, string> = {
     ${trigram(49, 29, -28, [false, false, false])}`,
 
   oceania: `
-    <rect width="60" height="40" fill="#0a1f3a"/>
-    ${STAR(16, 12, 7, "#eaf2ff")}${STAR(16, 34, 7, "#eaf2ff")}${STAR(9, 23, 6, "#eaf2ff")}
-    ${STAR(24, 21, 6, "#eaf2ff")}${STAR(19, 27, 4, "#9fd0ff")}
-    <circle cx="46" cy="26" r="6" fill="#ffce4a"/>`,
+    <rect width="60" height="40" fill="#6ba3d6"/>
+    <rect x="10" width="3" height="40" fill="#ffffff"/>
+    <rect x="47" width="3" height="40" fill="#ffffff"/>
+    <rect x="13" width="34" height="40" fill="#0a2170"/>
+    ${starFill(33, 8, 4.6, "#ffffff")}
+    ${starFill(40, 16, 4.4, "#ffffff")}
+    ${starFill(23, 21, 4.4, "#ffffff")}
+    ${starFill(34, 24, 2.5, "#ffffff")}
+    ${starFill(31, 33, 4.4, "#ffffff")}`,
 
   atlantea: `
     <rect width="60" height="40" fill="#0a1f3a"/>
     ${STAR(30, 29, 28, "#ffffff")}`,
 
   ussr: `
-    <rect width="60" height="40" fill="#b3161a"/>
-    <path d="M20 27 a9 9 0 0 1 4 -17" fill="none" stroke="#f4c94b" stroke-width="2.4"/>
-    <rect x="19" y="12" width="2.6" height="16" fill="#f4c94b" transform="rotate(38 20 20)"/>
-    <rect x="22" y="9" width="9" height="3.4" rx="1" fill="#f4c94b" transform="rotate(38 26 11)"/>
-    ${STAR(41, 18, 12, "#f4c94b")}`,
+    <rect width="60" height="40" fill="#e01f26"/>
+    <path fill="#f6d500" d="${arcBand(21, 19, 10, 7.5, 95, 265)}"/>
+    <rect x="19.2" y="27.5" width="3.2" height="4.2" rx="0.6" fill="#f6d500" transform="rotate(18 20.8 29.6)"/>
+    <line x1="12" y1="26.5" x2="23" y2="14" stroke="#f6d500" stroke-width="2.7" stroke-linecap="round"/>
+    <rect x="20.6" y="10.3" width="7.8" height="4.3" rx="0.6" fill="#f6d500" transform="rotate(40 24.5 12.4)"/>
+    ${starOutline(15, 6.8, 3.4, "#f6d500", 1)}`,
 
   latam: `
     <rect width="60" height="40" fill="#4aa3e0"/>
@@ -114,13 +146,11 @@ const FLAGS: Record<string, string> = {
       .join("")}`,
 
   gulf: `
-    <rect width="60" height="40" fill="#0b7a3b"/>
-    <rect y="13" width="60" height="14" fill="#e9edf0"/>
-    <rect y="27" width="60" height="13" fill="#12161a"/>
-    <polygon points="0,0 20,20 0,40" fill="#c0392b"/>
-    <circle cx="40" cy="20" r="6" fill="#f4c94b"/>
-    <circle cx="42.5" cy="19" r="5" fill="#e9edf0"/>
-    ${STAR(50, 23, 8, "#f4c94b")}`,
+    <rect width="60" height="40" fill="#d2202e"/>
+    <polygon fill="#17974a" points="0,0 22,0 30,4 22,8 30,12 22,16 30,20 22,24 30,28 22,32 30,36 22,40 0,40"/>
+    <rect x="36" y="14" width="12" height="12" fill="#ffffff"/>
+    <rect x="36" y="14" width="12" height="12" fill="#ffffff" transform="rotate(45 42 20)"/>
+    <rect x="39" y="17" width="6" height="6" fill="#d2202e"/>`,
 
   india: `
     <rect width="60" height="13.3" fill="#e8863b"/>
