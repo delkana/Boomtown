@@ -15,9 +15,9 @@ import {
   runContaining,
   carsInRun,
   autoCarNeeded,
-  stepCar,
   MAX_CARS_PER_SHAFT,
 } from "../game/elevator";
+import { PeopleSim } from "./people";
 import { claimCost, girderCost, undergroundMultiplier } from "../game/economy";
 import { featureLabel } from "../game/features";
 import { facadeById, type Facade } from "../game/facades";
@@ -87,8 +87,8 @@ export class Renderer {
   private bgCanvas: HTMLCanvasElement;
   private bgCtx: CanvasRenderingContext2D;
   private popups: Popup[] = [];
-  /** Smoothly-animated car positions (per car id), advanced every frame. */
-  private carAnim = new Map<string, { pos: number }>();
+  /** Visual-only sim of people commuting + elevator cars answering their calls. */
+  private people = new PeopleSim();
   /** Current in-game hour (0..24) + weekday (0=Mon), for room lights. */
   private hourF = 12;
   private dayIndex = 0;
@@ -157,10 +157,11 @@ export class Renderer {
     const h = camera.viewH;
     const groundY = camera.groundScreenY; // follows vertical pan (offsetY)
 
-    // Cars move continuously (independent of the economy tick), scaled by speed.
-    this.advanceCarAnim(state, (dtMs / 1000) * (state.speed || 1));
     this.hourF = ((state.tick * TICK_MINUTES) / 60) % 24; // for room lights
     this.dayIndex = dayOfWeek(state.tick);
+    // People commute and elevator cars answer their calls — a continuous,
+    // visual-only sim independent of the economy tick, scaled by game speed.
+    this.people.update(state, this.hourF, this.dayIndex, (dtMs / 1000) * (state.speed || 1));
 
     // Latitude + season drive the sky (day/night lengths shift through the year).
     const { day, twilight } = skyState(state.tick, state.config.latitude ?? 0);
@@ -231,40 +232,6 @@ export class Renderer {
     if (hover) this.drawHoverGhost(state, localPlayerId, hover, tool, girderStyle);
 
     this.drawPopups();
-  }
-
-  /**
-   * Advance each elevator car's animated position by `dtSec` (already scaled by
-   * game speed). Purely visual smoothing — the authoritative car entity keeps
-   * its own position for future passenger logic. Prunes cars that vanished.
-   */
-  private advanceCarAnim(state: GameState, dtSec: number): void {
-    const live = new Set<string>();
-    for (const key of Object.keys(state.plots)) {
-      const plot = state.plots[Number(key)];
-      if (!plot.cars || plot.cars.length === 0) continue;
-      const runs = elevatorRuns(plot);
-      for (const car of plot.cars) {
-        live.add(car.id);
-        let a = this.carAnim.get(car.id);
-        if (!a) {
-          a = { pos: car.position };
-          this.carAnim.set(car.id, a);
-        }
-        const run =
-          runs.find((r) => r.col === car.col && Math.round(a!.pos) >= r.from && Math.round(a!.pos) <= r.to) ??
-          runs.find((r) => r.col === car.col);
-        if (!run) continue;
-        // Cars ease toward their idle home floor and then sit still.
-        const target = car.home ?? car.position;
-        if (dtSec > 0) {
-          a.pos = stepCar(a.pos, target, run.from, run.to, Math.min(dtSec, 0.1)).pos; // clamp long frame gaps
-        } else {
-          a.pos = Math.max(run.from, Math.min(run.to, a.pos));
-        }
-      }
-    }
-    for (const id of [...this.carAnim.keys()]) if (!live.has(id)) this.carAnim.delete(id);
   }
 
   /**
@@ -615,11 +582,17 @@ export class Renderer {
     }
     // Elevator cars ride the shafts at their smoothly-animated positions.
     for (const car of plot.cars ?? []) {
-      const anim = this.carAnim.get(car.id);
-      const pos = anim ? anim.pos : car.position;
+      const pos = this.people.carPos(car.id, car.position);
       const x = camera.worldToScreenX(leftWorld + car.col * CELL_SIZE);
       const y = camera.groundScreenY - (pos + 1) * cell;
-      this.drawElevatorCar(x, y, cell);
+      this.drawElevatorCar(x, y, cell, car.doorSide ?? "right");
+    }
+
+    // People (office workers) commuting through the plot.
+    for (const p of this.people.peopleIn(plot.index)) {
+      const px = camera.worldToScreenX(leftWorld + p.x * CELL_SIZE);
+      const py = camera.groundScreenY - p.floor * cell; // standing on the floor line
+      this.drawPerson(px, py, cell, p.color);
     }
 
     // Nameplate under the plot: themed property name, then owner / status.
@@ -706,22 +679,84 @@ export class Renderer {
   }
 
   /** Draw one elevator car (a metallic cabin) at a screen position in its shaft. */
-  private drawElevatorCar(x: number, y: number, cell: number): void {
+  private drawElevatorCar(x: number, y: number, cell: number, doorSide: "left" | "right"): void {
     const { ctx } = this;
-    const inset = Math.max(2, cell * 0.14);
-    const cx = x + inset;
-    const cy = y + 2;
-    const cw = cell - inset * 2;
-    const chH = cell - 4;
-    ctx.fillStyle = "#aab0b8"; // cabin body
-    ctx.fillRect(cx, cy, cw, chH);
-    ctx.fillStyle = "#c9ced4"; // top highlight
-    ctx.fillRect(cx, cy, cw, Math.max(1, chH * 0.16));
-    ctx.fillStyle = "#41474f"; // door seam down the middle
-    ctx.fillRect(cx + cw / 2 - 1, cy + 2, 2, chH - 4);
-    ctx.strokeStyle = "#6b7280";
+    const ix = x + 1, iy = y + 1, iw = cell - 2, ih = cell - 2;
+    // A little 3-point-perspective cabin: floor/ceiling/side/back walls recede.
+    const dx = iw * 0.22, dyy = ih * 0.18;
+    const TL: Pt = { x: ix, y: iy }, TR: Pt = { x: ix + iw, y: iy };
+    const BR: Pt = { x: ix + iw, y: iy + ih }, BL: Pt = { x: ix, y: iy + ih };
+    const bTL: Pt = { x: ix + dx, y: iy + dyy }, bTR: Pt = { x: ix + iw - dx, y: iy + dyy };
+    const bBR: Pt = { x: ix + iw - dx, y: iy + ih - dyy }, bBL: Pt = { x: ix + dx, y: iy + ih - dyy };
+    const poly = (pts: Pt[], fill: string): void => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+    };
+    poly([BL, BR, bBR, bBL], "#6a7078"); // floor
+    poly([TL, TR, bTR, bTL], "#cfd5db"); // ceiling (lit)
+    poly([TL, bTL, bBL, BL], "#8a9098"); // left wall
+    poly([TR, bTR, bBR, BR], "#9aa0a8"); // right wall
+    poly([bTL, bTR, bBR, bBL], "#adb3bb"); // back wall
+    // Bright metal double doors on the chosen side wall (default right).
+    const wall = doorSide === "left" ? { f: TL, fb: BL, b: bTL, bb: bBL } : { f: TR, fb: BR, b: bTR, bb: bBR };
+    // Door frame fills the whole side wall in a bright brushed steel.
+    poly([wall.f, wall.b, wall.bb, wall.fb], "#c3c9cf");
+    // Two door leaves inset from the frame, meeting at a centre seam.
+    const lerp = (a: Pt, b: Pt, t: number): Pt => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    const fTop = lerp(wall.f, wall.b, 0.12), bTop = lerp(wall.f, wall.b, 0.88);
+    const fBot = lerp(wall.fb, wall.bb, 0.12), bBot = lerp(wall.fb, wall.bb, 0.88);
+    const topIn = 0.1, botIn = 0.9; // trim top/bottom so the frame shows around
+    const fT = lerp(fTop, fBot, topIn), fB = lerp(fTop, fBot, botIn);
+    const bT = lerp(bTop, bBot, topIn), bB = lerp(bTop, bBot, botIn);
+    const mT = lerp(fT, bT, 0.5), mB = lerp(fB, bB, 0.5);
+    poly([fT, mT, mB, fB], "#9198a0"); // front leaf
+    poly([mT, bT, bB, mB], "#868d95"); // back leaf (slightly darker with depth)
+    ctx.strokeStyle = "#41474f"; // centre seam between the leaves
+    ctx.lineWidth = Math.max(0.8, cell * 0.03);
+    ctx.beginPath();
+    ctx.moveTo(mT.x, mT.y);
+    ctx.lineTo(mB.x, mB.y);
+    ctx.stroke();
+    ctx.strokeStyle = "#5a626c";
     ctx.lineWidth = 1;
-    ctx.strokeRect(cx + 0.5, cy + 0.5, cw - 1, chH - 1);
+    ctx.strokeRect(ix + 0.5, iy + 0.5, iw - 1, ih - 1);
+  }
+
+  /** A little person standing on the floor line at (px, py) — feet at py. */
+  private drawPerson(px: number, py: number, cell: number, color: string): void {
+    if (cell < 8) return; // too small to make out when zoomed way out
+    const { ctx } = this;
+    const bodyH = cell * 0.26;
+    const bw = Math.max(2, cell * 0.13);
+    const headR = Math.max(1.3, cell * 0.07);
+    // Contact shadow.
+    ctx.fillStyle = "rgba(0,0,0,0.20)";
+    ctx.beginPath();
+    ctx.ellipse(px, py, bw * 0.7, Math.max(1, cell * 0.03), 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Torso (a rounded little body).
+    const bx = px - bw / 2;
+    const bTop = py - bodyH;
+    const r = bw * 0.32;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(bx, py);
+    ctx.lineTo(bx, bTop + r);
+    ctx.quadraticCurveTo(bx, bTop, bx + r, bTop);
+    ctx.lineTo(bx + bw - r, bTop);
+    ctx.quadraticCurveTo(bx + bw, bTop, bx + bw, bTop + r);
+    ctx.lineTo(bx + bw, py);
+    ctx.closePath();
+    ctx.fill();
+    // Head.
+    ctx.fillStyle = "#caa07a";
+    ctx.beginPath();
+    ctx.arc(px, bTop - headR * 0.55, headR, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   /**
@@ -1595,7 +1630,7 @@ export class Renderer {
         ctx.lineWidth = 2;
         ctx.strokeRect(gx + 1, gy + 1, cell - 2, cell - 2);
       } else {
-        this.drawElevatorCar(gx, gy, cell);
+        this.drawElevatorCar(gx, gy, cell, "right");
         ctx.strokeStyle = "#78dc78";
         ctx.lineWidth = 2;
         ctx.strokeRect(gx + 1, gy + 1, cell - 2, cell - 2);

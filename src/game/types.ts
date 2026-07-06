@@ -43,8 +43,8 @@ export interface Girder {
  * A moving elevator car inside a shaft (a vertical run of "elevator" units in
  * one column). A shaft is a "bank"; up to MAX_CARS_PER_SHAFT cars can share it.
  * Cars are what actually carry people — a shaft with no car services no floor.
- * `position` is the car's current (fractional) floor as it travels; today they
- * patrol, and will answer passenger calls once people exist. See elevator.ts.
+ * `position` is the authoritative floor; the client smoothly animates each car
+ * as it idles at `home` and answers passenger calls (see render/people.ts).
  */
 export interface ElevatorCar {
   id: string;
@@ -57,6 +57,8 @@ export interface ElevatorCar {
    * they sit here until given a new home (or, later, a passenger call).
    */
   home: number;
+  /** Which side the cabin door is on (cosmetic). Default "right". */
+  doorSide?: "left" | "right";
 }
 
 /**

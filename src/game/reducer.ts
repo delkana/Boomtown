@@ -45,6 +45,8 @@ export function applyCommand(state: GameState, cmd: Command): CommandResult {
       return sellElevatorCar(state, cmd);
     case "SET_CAR_HOME":
       return setCarHome(state, cmd);
+    case "SET_CAR_DOOR":
+      return setCarDoor(state, cmd);
     default: {
       const _never: never = cmd;
       return { ok: false, error: `Unknown command ${(_never as Command).type}` };
@@ -281,6 +283,18 @@ function setCarHome(
   for (const c of cars) {
     if (Math.round(c.position) >= run.from && Math.round(c.position) <= run.to) c.home = home;
   }
+  return ok();
+}
+
+function setCarDoor(
+  state: GameState,
+  cmd: Extract<Command, { type: "SET_CAR_DOOR" }>,
+): CommandResult {
+  const owned = ownedBuildablePlot(state, cmd.playerId, cmd.plotIndex);
+  if (!owned.ok) return fail(owned.error);
+  const cars = (owned.plot.cars ?? []).filter((c) => c.col === cmd.col);
+  if (cars.length === 0) return fail("No elevator cars in this shaft");
+  for (const c of cars) c.doorSide = cmd.side;
   return ok();
 }
 

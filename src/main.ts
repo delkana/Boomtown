@@ -112,6 +112,8 @@ function enterGame(conn: GameConnection): void {
     () => input.inspectedShaft(),
     (plotIndex, col, home) =>
       conn.dispatch({ type: "SET_CAR_HOME", playerId: conn.session.playerId, plotIndex, col, home }),
+    (plotIndex, col, side) =>
+      conn.dispatch({ type: "SET_CAR_DOOR", playerId: conn.session.playerId, plotIndex, col, side }),
   );
 
   const totalPlots = Object.keys(conn.getState().plots).length;
@@ -153,6 +155,7 @@ function enterGame(conn: GameConnection): void {
     conn,
     camera,
     input,
+    renderer,
     renderOnce: (dtMs = 0) =>
       renderer.render(
         conn.getState(),

@@ -596,6 +596,15 @@ describe("elevator cars", () => {
     expect(s.plots[0].cars[0].home).toBe(4); // clamped to the top floor
   });
 
+  it("sets the shaft cars' cabin door side", () => {
+    const s = shaftTower(4);
+    const r = applyCommand(s, { type: "SET_CAR_DOOR", playerId: "p1", plotIndex: 0, col: 2, side: "left" });
+    expect(r.ok).toBe(true);
+    expect(s.plots[0].cars[0].doorSide).toBe("left");
+    applyCommand(s, { type: "SET_CAR_DOOR", playerId: "p1", plotIndex: 0, col: 2, side: "right" });
+    expect(s.plots[0].cars[0].doorSide).toBe("right");
+  });
+
   it("removing the shaft prunes its now-orphaned car", () => {
     const s = shaftTower(0); // single-floor shaft with its auto car
     expect(s.plots[0].cars).toHaveLength(1);

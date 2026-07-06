@@ -182,8 +182,8 @@ export const UNIT_DEFS: Record<UnitKind, UnitDef> = {
     incomeAtFull: 280,
     fillRate: 0.08,
     color: "#c85a6a",
-    // Wants footfall, access, and a view; noise is fine.
-    prefs: { elevator: 1.0, view: 0.7, foot: 1.0 },
+    // Wants footfall and access; views and noise don't matter for a restaurant.
+    prefs: { elevator: 1.0, foot: 1.0 },
   },
   hotel: {
     kind: "hotel",

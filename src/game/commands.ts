@@ -86,6 +86,14 @@ export type Command =
       /** Shaft column; every car in it gets this idle-return floor. */
       col: number;
       home: number;
+    }
+  | {
+      type: "SET_CAR_DOOR";
+      playerId: string;
+      plotIndex: number;
+      /** Shaft column; every car in it gets this cabin door side. */
+      col: number;
+      side: "left" | "right";
     };
 
 /** A function that accepts commands. Local dispatcher today; socket send later. */

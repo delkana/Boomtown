@@ -670,6 +670,27 @@ button.primary.big {
   border-color: var(--accent);
   background: rgba(91, 143, 176, 0.25);
 }
+.door-grid {
+  display: flex;
+  gap: 4px;
+}
+.door-btn {
+  flex: 1;
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.door-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.door-btn.active {
+  border-color: var(--accent);
+  background: rgba(91, 143, 176, 0.25);
+}
 .insp-title {
   font-size: 13px;
   font-weight: 700;

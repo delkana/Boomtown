@@ -74,6 +74,7 @@ export class Hud {
     private onGirderStyle: (id: string) => void,
     private getInspectedShaft: () => { plotIndex: number; col: number } | null,
     private onSetCarHome: (plotIndex: number, col: number, home: number) => void,
+    private onSetCarDoor: (plotIndex: number, col: number, side: "left" | "right") => void,
   ) {
     this.buildToolbar();
     this.buildGirderStyles();
@@ -192,6 +193,7 @@ export class Hud {
       return;
     }
     const home = cars.length ? cars[0].home : run.from;
+    const doorSide = (cars.length ? cars[0].doorSide : "right") ?? "right";
     const floorLabel = (f: number): string => (f === 0 ? "G" : f > 0 ? String(f) : `B${-f}`);
     let buttons = "";
     for (let f = run.to; f >= run.from; f--)
@@ -202,9 +204,16 @@ export class Hud {
       <div class="insp-sub">${cars.length} car${cars.length === 1 ? "" : "s"} · Floors ${floorLabel(run.from)}–${floorLabel(run.to)}</div>
       <div class="shaft-note">Idle return floor</div>
       <div class="floor-grid">${buttons}</div>
+      <div class="shaft-note">Cabin door side</div>
+      <div class="door-grid">
+        <button class="door-btn${doorSide === "left" ? " active" : ""}" data-door="left">Left</button>
+        <button class="door-btn${doorSide === "right" ? " active" : ""}" data-door="right">Right</button>
+      </div>
       <div class="insp-hint">Cars wait here until a passenger calls them (coming soon). Esc to close.</div>`;
     for (const el of Array.from(this.shaftPanelEl.querySelectorAll<HTMLElement>("[data-floor]")))
       el.addEventListener("click", () => this.onSetCarHome(ref.plotIndex, ref.col, Number(el.dataset.floor)));
+    for (const el of Array.from(this.shaftPanelEl.querySelectorAll<HTMLElement>("[data-door]")))
+      el.addEventListener("click", () => this.onSetCarDoor(ref.plotIndex, ref.col, el.dataset.door as "left" | "right"));
     this.shaftPanelEl.classList.remove("hidden");
   }
 
