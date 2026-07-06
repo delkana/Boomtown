@@ -3,6 +3,7 @@ import type { GameState, Plot } from "../game/types";
 import { unitAt, hasGirder, girderSupported } from "../game/reducer";
 import { claimCost, girderCost } from "../game/economy";
 import { featureLabel } from "../game/features";
+import { heatT, type HeatmapKind } from "../game/heatmaps";
 import { Camera } from "./camera";
 
 /**
@@ -89,6 +90,7 @@ export class Renderer {
     localPlayerId: string,
     hover: HoverState | null,
     tool: Tool,
+    heatmap: HeatmapKind,
   ): void {
     const { ctx, camera } = this;
     const w = camera.viewW;
@@ -108,8 +110,18 @@ export class Renderer {
     ctx.fillStyle = "#3d2f22";
     ctx.fillRect(0, groundY, w, 4);
 
+    // The plot airspace grid + dashed outlines only show while a tool is active.
+    const showGrid = tool !== null;
     for (const key of Object.keys(state.plots)) {
-      this.drawPlot(state, state.plots[Number(key)], localPlayerId);
+      this.drawPlot(state, state.plots[Number(key)], localPlayerId, showGrid);
+    }
+
+    // Heatmap overlay on the local player's own plots.
+    if (heatmap !== "none") {
+      for (const key of Object.keys(state.plots)) {
+        const plot = state.plots[Number(key)];
+        if (plot.ownerId === localPlayerId) this.drawHeatmap(plot, heatmap);
+      }
     }
 
     if (hover) this.drawHoverGhost(state, localPlayerId, hover, tool);
@@ -117,7 +129,28 @@ export class Renderer {
     this.drawPopups();
   }
 
-  private drawPlot(state: GameState, plot: Plot, localId: string): void {
+  /** Tint each cell of an owned plot by a normalized heatmap rating. */
+  private drawHeatmap(plot: Plot, kind: HeatmapKind): void {
+    const { ctx, camera } = this;
+    const cell = camera.scale(CELL_SIZE);
+    const leftScreen = camera.worldToScreenX(camera.plotLeftWorldX(plot.index));
+    if (leftScreen + plot.cols * cell < 0 || leftScreen > camera.viewW) return;
+
+    let maxRow = 0;
+    for (const u of plot.units) maxRow = Math.max(maxRow, u.row);
+    for (const g of plot.girders ?? []) maxRow = Math.max(maxRow, g.row);
+    const top = Math.min(MAX_ROWS - 1, Math.max(7, maxRow + 3));
+
+    for (let row = 0; row <= top; row++) {
+      const y = camera.rowTopScreenY(row);
+      for (let col = 0; col < plot.cols; col++) {
+        ctx.fillStyle = heatColor(heatT(kind, plot, col, row));
+        ctx.fillRect(leftScreen + col * cell + 1, y + 1, cell - 2, cell - 2);
+      }
+    }
+  }
+
+  private drawPlot(state: GameState, plot: Plot, localId: string, showGrid: boolean): void {
     const { ctx, camera } = this;
     const cell = camera.scale(CELL_SIZE); // screen px per grid cell at current zoom
     const leftWorld = camera.plotLeftWorldX(plot.index);
@@ -138,39 +171,41 @@ export class Renderer {
     const isOwn = plot.ownerId === localId;
     const ownerColor = owner?.color ?? "#9fb0c0";
 
-    // Plot pad.
-    if (!plot.ownerId) {
-      // Unclaimed / for sale.
-      ctx.fillStyle = "rgba(120,200,120,0.05)";
-      ctx.fillRect(leftScreen, camera.rowTopScreenY(MAX_ROWS - 1), plotPxW, MAX_ROWS * cell);
-      ctx.save();
-      ctx.setLineDash([6, 6]);
-      ctx.strokeStyle = "rgba(150,210,150,0.35)";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(leftScreen + 2, groundY - cell * 3, plotPxW - 4, cell * 3);
-      ctx.restore();
-    } else {
-      ctx.fillStyle = isOwn ? withAlpha(ownerColor, 0.16) : withAlpha(ownerColor, 0.07);
-      ctx.fillRect(leftScreen, camera.rowTopScreenY(MAX_ROWS - 1), plotPxW, MAX_ROWS * cell);
-    }
-
-    // Buildable grid lines (own plots only).
-    if (isOwn) {
-      ctx.strokeStyle = "rgba(255,255,255,0.07)";
-      ctx.lineWidth = 1;
-      for (let c = 0; c <= plot.cols; c++) {
-        const x = leftScreen + c * cell;
-        ctx.beginPath();
-        ctx.moveTo(x, camera.rowTopScreenY(MAX_ROWS - 1));
-        ctx.lineTo(x, groundY);
-        ctx.stroke();
+    // Plot airspace pad + grid + dashed outlines — only while a tool is active.
+    if (showGrid) {
+      if (!plot.ownerId) {
+        // Unclaimed / for sale.
+        ctx.fillStyle = "rgba(120,200,120,0.05)";
+        ctx.fillRect(leftScreen, camera.rowTopScreenY(MAX_ROWS - 1), plotPxW, MAX_ROWS * cell);
+        ctx.save();
+        ctx.setLineDash([6, 6]);
+        ctx.strokeStyle = "rgba(150,210,150,0.35)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(leftScreen + 2, groundY - cell * 3, plotPxW - 4, cell * 3);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = isOwn ? withAlpha(ownerColor, 0.16) : withAlpha(ownerColor, 0.07);
+        ctx.fillRect(leftScreen, camera.rowTopScreenY(MAX_ROWS - 1), plotPxW, MAX_ROWS * cell);
       }
-      for (let r = 0; r <= MAX_ROWS; r++) {
-        const y = camera.rowTopScreenY(r) + cell;
-        ctx.beginPath();
-        ctx.moveTo(leftScreen, y);
-        ctx.lineTo(leftScreen + plotPxW, y);
-        ctx.stroke();
+
+      // Buildable grid lines (own plots only).
+      if (isOwn) {
+        ctx.strokeStyle = "rgba(255,255,255,0.07)";
+        ctx.lineWidth = 1;
+        for (let c = 0; c <= plot.cols; c++) {
+          const x = leftScreen + c * cell;
+          ctx.beginPath();
+          ctx.moveTo(x, camera.rowTopScreenY(MAX_ROWS - 1));
+          ctx.lineTo(x, groundY);
+          ctx.stroke();
+        }
+        for (let r = 0; r <= MAX_ROWS; r++) {
+          const y = camera.rowTopScreenY(r) + cell;
+          ctx.beginPath();
+          ctx.moveTo(leftScreen, y);
+          ctx.lineTo(leftScreen + plotPxW, y);
+          ctx.stroke();
+        }
       }
     }
 
@@ -504,6 +539,7 @@ export class Renderer {
     ctx.strokeStyle = blocked ? "#c84646" : "#78dc78";
     ctx.lineWidth = 2;
     ctx.strokeRect(x + 1, y + 1, wpx - 2, cell - 2);
+    if (!blocked) this.drawPriceTag(`$${def.cost.toLocaleString()}`, x + wpx / 2, y - 2);
   }
 }
 
@@ -533,6 +569,14 @@ function elevatorRuns(plot: Plot): { col: number; from: number; to: number }[] {
     runs.push({ col, from, to: prev });
   }
   return runs;
+}
+
+/** Heatmap cell color: t=0 red (bad) -> t=1 green (good). */
+function heatColor(t: number): string {
+  const tt = Math.max(0, Math.min(1, t));
+  const r = Math.round(230 - 130 * tt);
+  const g = Math.round(80 + 140 * tt);
+  return `rgba(${r},${g},80,0.42)`;
 }
 
 /** Apply an alpha to a #rrggbb hex, returning an rgba() string. */

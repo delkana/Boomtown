@@ -4,6 +4,7 @@ import { applyCommand } from "../src/game/reducer";
 import { advanceTick, projectedNet } from "../src/game/tick";
 import { propertyNameFor, archetype } from "../src/game/archetypes";
 import { gameTime } from "../src/game/clock";
+import { elevatorAccess, viewRating, noiseRating } from "../src/game/heatmaps";
 import { MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
 import { claimCost, girderCost, plotBaseCost } from "../src/game/economy";
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
@@ -433,6 +434,45 @@ describe("game clock", () => {
     expect(gameTime(TICKS_PER_DAY).dayName).toBe("Tue");
     expect(gameTime(TICKS_PER_WEEK)).toMatchObject({ month: 2, monthName: "Feb", year: 1, dayName: "Mon" });
     expect(gameTime(TICKS_PER_WEEK * 12).year).toBe(2);
+  });
+});
+
+describe("heatmaps", () => {
+  function tower(): GameState {
+    const s = freshGame();
+    s.players["p1"].money = 1_000_000;
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    frame(s, "p1", 0, [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [4, 0]]);
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 1 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "elevator", col: 2, row: 2 });
+    return s;
+  }
+
+  it("elevator access is a non-issue on the ground and falls off with distance", () => {
+    const p = tower().plots[0];
+    expect(elevatorAccess(p, 10, 0)).toBe(100); // ground floor always fine
+    expect(elevatorAccess(p, 2, 1)).toBe(100); // on the shaft
+    expect(elevatorAccess(p, 8, 1)).toBeCloseTo(100 * (1 - 6 / 12), 5); // 6 tiles away
+    expect(elevatorAccess(p, 15, 1)).toBe(0); // >12 tiles away
+  });
+
+  it("view rises with height and open air, and counts a below-overhang", () => {
+    const p = tower().plots[0];
+    // Higher is better.
+    expect(viewRating(p, 6, 5)).toBeGreaterThan(viewRating(p, 6, 1));
+    // An isolated high tile is open on all four sides (incl. below = overhang).
+    expect(viewRating(p, 6, 5)).toBe(5 + 20 * 4);
+    // A ground tile gets no credit for the ground below it.
+    expect(viewRating(p, 6, 0)).toBe(0 + 20 * 3); // left, right, above only
+  });
+
+  it("noise is higher near the ground and near noisy units", () => {
+    const p = tower().plots[0];
+    expect(noiseRating(p, 2, 0)).toBeGreaterThan(noiseRating(p, 6, 6));
+    // Right on the elevator is louder than far away on the same floor.
+    expect(noiseRating(p, 2, 1)).toBeGreaterThan(noiseRating(p, 6, 8));
   });
 });
 

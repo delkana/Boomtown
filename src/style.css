@@ -504,6 +504,44 @@ button.primary.big {
   color: var(--muted) !important;
 }
 
+/* Heatmap overlay selector — left, under the stats panel. */
+#overlay {
+  top: 208px;
+  left: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 10px;
+  max-width: 190px;
+}
+.overlay-title {
+  width: 100%;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.overlay-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-border);
+  color: var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 4px 8px;
+  line-height: 1;
+}
+.overlay-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.overlay-btn.active {
+  background: rgba(91, 143, 176, 0.28);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 /* Players roster — top-right. */
 #players {
   top: 16px;

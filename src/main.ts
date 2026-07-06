@@ -129,7 +129,7 @@ function enterGame(conn: GameConnection): void {
 
   const loop = new RenderLoop((dt) => {
     input.update(dt);
-    renderer.render(conn.getState(), conn.session.playerId, input.hover, input.selectedTool);
+    renderer.render(conn.getState(), conn.session.playerId, input.hover, input.selectedTool, hud.heatmap);
     minimap.render();
   });
   loop.start();
@@ -143,7 +143,7 @@ function enterGame(conn: GameConnection): void {
     camera,
     input,
     renderOnce: () =>
-      renderer.render(conn.getState(), conn.session.playerId, input.hover, input.selectedTool),
+      renderer.render(conn.getState(), conn.session.playerId, input.hover, input.selectedTool, hud.heatmap),
   };
 }
 

@@ -9,6 +9,7 @@ import {
 import { archetype } from "../game/archetypes";
 import { gameTime } from "../game/clock";
 import { claimCost } from "../game/economy";
+import type { HeatmapKind } from "../game/heatmaps";
 import { projectedNet } from "../game/tick";
 import type { GameConnection } from "../net/connection";
 import type { Tool } from "../render/renderer";
@@ -31,7 +32,11 @@ export class Hud {
   private statsEl = must("stats");
   private playersEl = must("players");
   private toolbarEl = must("toolbar");
+  private overlayEl = must("overlay");
   private hintEl = must("hint");
+
+  /** Which heatmap overlay to draw (read by the render loop each frame). */
+  heatmap: HeatmapKind = "none";
 
   constructor(
     private conn: GameConnection,
@@ -40,7 +45,29 @@ export class Hud {
     private onSpeed: (speed: number) => void,
   ) {
     this.buildToolbar();
+    this.buildOverlay();
     this.buildHeader();
+  }
+
+  private buildOverlay(): void {
+    const opts: { k: HeatmapKind; label: string }[] = [
+      { k: "none", label: "Off" },
+      { k: "elevator", label: "Elevator" },
+      { k: "view", label: "View" },
+      { k: "noise", label: "Noise" },
+    ];
+    this.overlayEl.innerHTML = `<span class="overlay-title">Heatmap</span>`;
+    for (const o of opts) {
+      const btn = document.createElement("button");
+      btn.className = "overlay-btn";
+      btn.dataset.hm = o.k;
+      btn.textContent = o.label;
+      btn.addEventListener("click", () => {
+        this.heatmap = o.k;
+        this.update();
+      });
+      this.overlayEl.appendChild(btn);
+    }
   }
 
   private buildHeader(): void {
@@ -136,6 +163,9 @@ export class Hud {
     const speed = state.speed || 1;
     for (const el of Array.from(this.speedEl.children) as HTMLElement[]) {
       el.classList.toggle("active", Number(el.dataset.speed) === speed);
+    }
+    for (const el of Array.from(this.overlayEl.children) as HTMLElement[]) {
+      if (el.dataset.hm) el.classList.toggle("active", el.dataset.hm === this.heatmap);
     }
 
     const myPlots = Object.values(state.plots).filter((p) => p.ownerId === me);

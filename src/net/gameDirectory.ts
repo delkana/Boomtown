@@ -191,7 +191,7 @@ export class GameDirectory {
 
   private seedDemoCities(): void {
     this.seedCity(
-      "new-los-angeles", "New Los Angeles", "pacifica", 22, 8, null,
+      "new-angeles", "New Angeles", "pacifica", 22, 8, null,
       [
         { name: "Redwood Spire Group", color: "#3fb96b", floors: [7] },
         { name: "Neon Bay Holdings", color: "#4a86e0", floors: [6, 9] },
