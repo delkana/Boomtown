@@ -20,6 +20,13 @@ const DATA_FILE = path.join(DATA_DIR, "games.json");
 const ACCOUNTS_FILE = path.join(DATA_DIR, "accounts.json");
 const STATIC_DIR = path.join(dirName, "..", "dist"); // the built web app
 
+// Admin accounts: whoever holds these usernames gets the admin console. Defaults
+// to "delkana"; override with BOOMTOWN_ADMINS="name1,name2" in the environment.
+const ADMINS = (process.env.BOOMTOWN_ADMINS ?? "delkana")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 // Always seed the built-in demo cities fresh, then merge any saved player games
 // on top (so edits to the demo cities always show, and creations persist).
 // The same server also serves the built web app when it's present.
@@ -27,6 +34,7 @@ const handle = await startServer({
   port: PORT,
   seed: true,
   staticDir: fs.existsSync(STATIC_DIR) ? STATIC_DIR : undefined,
+  admins: ADMINS,
 });
 
 if (fs.existsSync(DATA_FILE)) {

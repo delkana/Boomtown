@@ -57,6 +57,20 @@ export class GameDirectory {
     return this.games.get(id);
   }
 
+  /** Built-in demo cities are re-seeded on boot, so they can't be deleted. */
+  isSeeded(id: string): boolean {
+    return this.seededIds.has(id);
+  }
+
+  /** Delete a game and its reconnect tokens. Returns false if it didn't exist. */
+  remove(id: string): boolean {
+    if (!this.games.has(id)) return false;
+    this.games.delete(id);
+    this.tokens.delete(id);
+    this.changed();
+    return true;
+  }
+
   summaries(): GameSummary[] {
     return [...this.games.values()].map((g) => g.summary());
   }

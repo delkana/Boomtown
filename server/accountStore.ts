@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { PLAYER_COLORS } from "../src/game/constants";
-import type { AuthResult, Membership, Profile } from "../src/net/protocol";
+import type { AdminAccountView, AuthResult, Membership, Profile } from "../src/net/protocol";
 
 /**
  * Server-side user accounts. A user has a username + scrypt-hashed password, a
@@ -25,15 +25,24 @@ interface Account {
   salt: string; // hex
   hash: string; // hex scrypt(password, salt)
   createdAt: number;
+  banned: boolean; // a banned account can't sign in until reactivated
   memberships: Map<string, Membership>; // gameId -> membership
 }
 
 const err = (error: string): AuthResult => ({ ok: false, error });
 
+/** The default admin allowlist. Override at construction (e.g. from an env var). */
+const DEFAULT_ADMINS = ["delkana"];
+
 export class AccountStore {
   private users = new Map<string, Account>(); // key: lowercase username
   private sessions = new Map<string, string>(); // sessionToken -> username key
+  private admins: Set<string>; // canonical (lowercase) admin usernames
   private onChangeCb: (() => void) | null = null;
+
+  constructor(admins: string[] = DEFAULT_ADMINS) {
+    this.admins = new Set(admins.map((a) => a.trim().toLowerCase()).filter(Boolean));
+  }
 
   onChange(cb: () => void): void {
     this.onChangeCb = cb;
@@ -59,6 +68,7 @@ export class AccountStore {
       salt,
       hash: this.hashPw(password, salt),
       createdAt: Date.now(),
+      banned: false,
       memberships: new Map(),
     };
     this.users.set(key, account);
@@ -72,6 +82,7 @@ export class AccountStore {
     const salt = account?.salt ?? "0".repeat(SALT_BYTES * 2);
     const candidate = this.hashPw(password ?? "", salt);
     if (!account || !this.safeEqual(candidate, account.hash)) return err("Wrong username or password");
+    if (account.banned) return err("This account has been banned");
     return this.newSession(account);
   }
 
@@ -79,6 +90,7 @@ export class AccountStore {
   resume(sessionToken: string): AuthResult {
     const account = this.accountForSession(sessionToken);
     if (!account) return err("Your session expired — please sign in again");
+    if (account.banned) return err("This account has been banned");
     return { ok: true, sessionToken, profile: this.profile(account), memberships: [...account.memberships.values()] };
   }
 
@@ -113,6 +125,61 @@ export class AccountStore {
     if (dirty) this.changed();
   }
 
+  // --- admin -----------------------------------------------------------------
+
+  /** Is this username (any case) on the admin allowlist? */
+  isAdmin(username: string): boolean {
+    return this.admins.has((username ?? "").trim().toLowerCase());
+  }
+
+  /** True only if the session belongs to a non-banned admin account. */
+  isAdminSession(sessionToken: string): boolean {
+    const account = this.accountForSession(sessionToken);
+    return !!account && !account.banned && this.admins.has(account.username.toLowerCase());
+  }
+
+  /** Every account, as the admin console shows them (no password material). */
+  listAccounts(): AdminAccountView[] {
+    return [...this.users.values()]
+      .map((a) => ({
+        username: a.username,
+        displayName: a.displayName,
+        color: a.color,
+        createdAt: a.createdAt,
+        isAdmin: this.admins.has(a.username.toLowerCase()),
+        banned: a.banned,
+        gameCount: a.memberships.size,
+      }))
+      .sort((x, y) => x.username.localeCompare(y.username));
+  }
+
+  /** Ban an account and drop its active sessions. Admins can't be banned. */
+  banUser(username: string): { ok: boolean; error?: string } {
+    const key = (username ?? "").trim().toLowerCase();
+    const account = this.users.get(key);
+    if (!account) return { ok: false, error: "No such account" };
+    if (this.admins.has(key)) return { ok: false, error: "You can't ban an admin account" };
+    if (!account.banned) {
+      account.banned = true;
+      // Invalidate any sessions so the ban takes effect immediately.
+      for (const [token, uk] of [...this.sessions]) if (uk === key) this.sessions.delete(token);
+      this.changed();
+    }
+    return { ok: true };
+  }
+
+  /** Reactivate a previously banned account. */
+  unbanUser(username: string): { ok: boolean; error?: string } {
+    const key = (username ?? "").trim().toLowerCase();
+    const account = this.users.get(key);
+    if (!account) return { ok: false, error: "No such account" };
+    if (account.banned) {
+      account.banned = false;
+      this.changed();
+    }
+    return { ok: true };
+  }
+
   private newSession(account: Account): AuthResult {
     const token = crypto.randomBytes(SESSION_BYTES).toString("hex");
     this.sessions.set(token, account.username.toLowerCase());
@@ -126,7 +193,12 @@ export class AccountStore {
   }
 
   private profile(a: Account): Profile {
-    return { username: a.username, displayName: a.displayName, color: a.color };
+    return {
+      username: a.username,
+      displayName: a.displayName,
+      color: a.color,
+      isAdmin: this.admins.has(a.username.toLowerCase()),
+    };
   }
 
   private hashPw(password: string, salt: string): string {
@@ -150,6 +222,7 @@ export class AccountStore {
         salt: a.salt,
         hash: a.hash,
         createdAt: a.createdAt,
+        banned: a.banned,
         memberships: [...a.memberships.values()],
       })),
       sessions: [...this.sessions.entries()],
@@ -159,7 +232,7 @@ export class AccountStore {
   load(json: string): void {
     try {
       const data = JSON.parse(json) as {
-        users?: (Omit<Account, "memberships"> & { memberships?: Membership[] })[];
+        users?: (Omit<Account, "memberships" | "banned"> & { banned?: boolean; memberships?: Membership[] })[];
         sessions?: [string, string][];
       };
       this.users.clear();
@@ -167,6 +240,7 @@ export class AccountStore {
       for (const u of data.users ?? []) {
         this.users.set(u.username.toLowerCase(), {
           ...u,
+          banned: u.banned ?? false, // tolerate saves from before bans existed
           memberships: new Map((u.memberships ?? []).map((m) => [m.gameId, m])),
         });
       }

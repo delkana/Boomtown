@@ -1,7 +1,7 @@
 import { PLAYER_COLORS, type ColorOption } from "../game/constants";
 import { GameDirectory, type DirResult } from "./gameDirectory";
 import { LocalConnection, type GameConnection } from "./connection";
-import type { GameSummary, CreateGameConfig, JoinRequest, PlayerSession, AuthResult } from "./protocol";
+import type { GameSummary, CreateGameConfig, JoinRequest, PlayerSession, AuthResult, AdminAction, AdminResult } from "./protocol";
 
 export type ConnectResult =
   | { ok: true; connection: GameConnection }
@@ -37,6 +37,9 @@ export interface GameServer {
   /** Resume a stored session token (keeps the user signed in across reloads). */
   resume(sessionToken: string): Promise<AuthResult>;
   logout(sessionToken: string): void;
+
+  /** Admin console actions (online + admin account only). */
+  adminAction(sessionToken: string, action: AdminAction): Promise<AdminResult>;
 }
 
 // Bump this when the persisted state shape changes (e.g. variable plot widths),
@@ -101,6 +104,9 @@ export class LocalServer implements GameServer {
   }
   logout(): void {
     /* nothing to do offline */
+  }
+  async adminAction(): Promise<AdminResult> {
+    return { ok: false, error: "Admin tools are only available on the online server" };
   }
 
   // --- internals -----------------------------------------------------------

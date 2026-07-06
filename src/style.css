@@ -116,6 +116,105 @@ textarea {
   text-align: center;
 }
 
+/* --- admin console --- */
+.badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.badge.admin {
+  background: rgba(233, 179, 47, 0.18);
+  color: #e9b32f;
+}
+.badge.banned {
+  background: rgba(224, 80, 63, 0.18);
+  color: #e0503f;
+}
+.badge.active {
+  background: rgba(63, 185, 107, 0.16);
+  color: #3fb96b;
+}
+.admin-link {
+  font-weight: 600;
+}
+.linkish.danger {
+  color: #e0503f;
+}
+.admin-card {
+  width: 640px;
+  max-width: 96vw;
+}
+.admin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.admin-head h2 {
+  margin: 0;
+}
+.admin-head-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.admin-body {
+  max-height: 62vh;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+.admin-section {
+  margin-top: 14px;
+}
+.admin-section h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.admin-table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+}
+.admin-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  vertical-align: middle;
+}
+.admin-table td.num,
+.admin-table th.num {
+  text-align: center;
+  width: 1%;
+  white-space: nowrap;
+}
+.admin-table td.right,
+.admin-table th.right {
+  text-align: right;
+  width: 1%;
+  white-space: nowrap;
+}
+.admin-table .dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 2px;
+}
+
 .lobby-join {
   max-width: 640px;
   margin: 0 auto;

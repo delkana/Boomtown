@@ -19,7 +19,7 @@ import {
 } from "../game/backgrounds";
 import type { GameConnection } from "../net/connection";
 import type { ConnectResult, GameServer } from "../net/localServer";
-import type { AuthResult, GameSummary, Membership, PlayerSession, Profile } from "../net/protocol";
+import type { AdminSnapshot, AuthResult, GameSummary, Membership, PlayerSession, Profile } from "../net/protocol";
 import { flagSvg } from "./flags";
 
 /**
@@ -70,6 +70,7 @@ export class LobbyScreen {
     this.mountCreateForm();
     this.mountModal();
     this.mountAuth();
+    this.mountAdmin();
     this.renderAuthBar();
     this.renderList();
     void this.tryResume();
@@ -354,8 +355,10 @@ export class LobbyScreen {
     }
     bar.classList.remove("hidden");
     if (this.profile) {
-      bar.innerHTML = `<span class="auth-who">Signed in as <b>${escapeHtml(this.profile.displayName)}</b></span>
-        <button id="ab-logout" class="linkish">Log out</button>`;
+      const adminBtn = this.profile.isAdmin ? `<button id="ab-admin" class="linkish admin-link">🛡 Admin</button><span class="auth-sep">·</span>` : "";
+      bar.innerHTML = `<span class="auth-who">Signed in as <b>${escapeHtml(this.profile.displayName)}</b>${this.profile.isAdmin ? ' <span class="badge admin">admin</span>' : ""}</span>
+        ${adminBtn}<button id="ab-logout" class="linkish">Log out</button>`;
+      if (this.profile.isAdmin) this.q("#ab-admin").addEventListener("click", () => void this.openAdmin());
       this.q("#ab-logout").addEventListener("click", () => this.logout());
     } else {
       bar.innerHTML = `<button id="ab-login" class="linkish">Sign in</button>
@@ -441,6 +444,107 @@ export class LobbyScreen {
     localStorage.removeItem(SESSION_KEY);
     this.renderAuthBar();
     this.renderList();
+  }
+
+  // --- admin console -------------------------------------------------------
+
+  private mountAdmin(): void {
+    const close = this.root.querySelector("#adm-close");
+    close?.addEventListener("click", () => this.q("#admin-modal").classList.add("hidden"));
+    const refresh = this.root.querySelector("#adm-refresh");
+    refresh?.addEventListener("click", () => void this.openAdmin());
+  }
+
+  /** Open the admin console and load the current accounts + cities. */
+  private async openAdmin(): Promise<void> {
+    if (!this.profile?.isAdmin || !this.sessionToken) return;
+    this.q("#admin-modal").classList.remove("hidden");
+    this.q("#adm-error").textContent = "";
+    this.q("#adm-body").innerHTML = `<p class="muted">Loading…</p>`;
+    const result = await this.server.adminAction(this.sessionToken, { kind: "list" });
+    if (result.ok) this.renderAdmin(result.snapshot);
+    else this.q("#adm-error").textContent = result.error;
+  }
+
+  /** Run an admin action, then re-render with the fresh snapshot it returns. */
+  private async doAdmin(action: Parameters<GameServer["adminAction"]>[1]): Promise<void> {
+    if (!this.sessionToken) return;
+    this.q("#adm-error").textContent = "";
+    const result = await this.server.adminAction(this.sessionToken, action);
+    if (result.ok) this.renderAdmin(result.snapshot);
+    else this.q("#adm-error").textContent = result.error;
+  }
+
+  private renderAdmin(snap: AdminSnapshot): void {
+    const colorHex = (id: string): string => this.palette.find((c) => c.id === id)?.hex ?? "#888";
+    const accountRows = snap.accounts
+      .map((a) => {
+        const status = a.isAdmin
+          ? `<span class="badge admin">admin</span>`
+          : a.banned
+            ? `<span class="badge banned">banned</span>`
+            : `<span class="badge active">active</span>`;
+        const action = a.isAdmin
+          ? `<span class="muted">—</span>`
+          : a.banned
+            ? `<button class="linkish" data-unban="${escapeHtml(a.username)}">Reactivate</button>`
+            : `<button class="linkish danger" data-ban="${escapeHtml(a.username)}">Ban</button>`;
+        return `<tr>
+          <td><span class="dot" style="background:${colorHex(a.color)}"></span> <b>${escapeHtml(a.displayName)}</b> <span class="muted">@${escapeHtml(a.username)}</span></td>
+          <td class="num">${a.gameCount}</td>
+          <td>${status}</td>
+          <td class="right">${action}</td>
+        </tr>`;
+      })
+      .join("");
+    const gameRows = snap.games.length
+      ? snap.games
+          .map((g) => {
+            const del = g.isSeeded
+              ? `<span class="muted">demo</span>`
+              : `<button class="linkish danger" data-del="${escapeHtml(g.id)}">Delete</button>`;
+            return `<tr>
+              <td><b>${escapeHtml(g.cityName)}</b> <span class="muted">${escapeHtml(g.archetype)}</span></td>
+              <td class="num">${g.playerCount}</td>
+              <td class="num">${g.claimedPlots}/${g.plotCount}</td>
+              <td class="right">${del}</td>
+            </tr>`;
+          })
+          .join("")
+      : `<tr><td colspan="4" class="muted">No cities.</td></tr>`;
+
+    this.q("#adm-body").innerHTML = `
+      <div class="admin-section">
+        <h3>Accounts <span class="muted">(${snap.accounts.length})</span></h3>
+        <table class="admin-table">
+          <thead><tr><th>Player</th><th class="num">Games</th><th>Status</th><th class="right">Action</th></tr></thead>
+          <tbody>${accountRows || `<tr><td colspan="4" class="muted">No accounts yet.</td></tr>`}</tbody>
+        </table>
+      </div>
+      <div class="admin-section">
+        <h3>Cities <span class="muted">(${snap.games.length})</span></h3>
+        <table class="admin-table">
+          <thead><tr><th>City</th><th class="num">Players</th><th class="num">Plots</th><th class="right">Action</th></tr></thead>
+          <tbody>${gameRows}</tbody>
+        </table>
+      </div>`;
+
+    const body = this.q("#adm-body");
+    body.querySelectorAll<HTMLButtonElement>("[data-ban]").forEach((b) =>
+      b.addEventListener("click", () => {
+        if (confirm(`Ban ${b.dataset.ban}? They'll be signed out and can't sign back in.`))
+          void this.doAdmin({ kind: "banUser", username: b.dataset.ban! });
+      }),
+    );
+    body.querySelectorAll<HTMLButtonElement>("[data-unban]").forEach((b) =>
+      b.addEventListener("click", () => void this.doAdmin({ kind: "unbanUser", username: b.dataset.unban! })),
+    );
+    body.querySelectorAll<HTMLButtonElement>("[data-del]").forEach((b) =>
+      b.addEventListener("click", () => {
+        if (confirm(`Delete this city permanently? This can't be undone.`))
+          void this.doAdmin({ kind: "deleteGame", gameId: b.dataset.del! });
+      }),
+    );
   }
 
   /** The reconnect token for a game the player belongs to (account or local), or null. */
@@ -572,6 +676,20 @@ const SHELL = `
       </div>
       <div id="am-error" class="form-error"></div>
       <p class="auth-switch"><span id="am-switch-text"></span> <button id="am-switch" type="button" class="linkish"></button></p>
+    </div>
+  </div>
+
+  <div id="admin-modal" class="modal hidden">
+    <div class="modal-card admin-card">
+      <div class="admin-head">
+        <h2>🛡 Admin console</h2>
+        <div class="admin-head-actions">
+          <button id="adm-refresh" class="linkish">Refresh</button>
+          <button id="adm-close">Close</button>
+        </div>
+      </div>
+      <div id="adm-error" class="form-error"></div>
+      <div id="adm-body" class="admin-body"></div>
     </div>
   </div>
 

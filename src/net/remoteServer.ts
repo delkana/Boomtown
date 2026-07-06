@@ -4,6 +4,8 @@ import type { GameState } from "../game/types";
 import type { GameConnection } from "./connection";
 import type { GameServer, ConnectResult } from "./localServer";
 import type {
+  AdminAction,
+  AdminResult,
   AuthResult,
   ClientMsg,
   CreateGameConfig,
@@ -27,6 +29,7 @@ export class RemoteServer implements GameServer {
   private listeners = new Set<() => void>();
   private pending = new Map<number, (msg: Extract<ServerMsg, { t: "result" }>) => void>();
   private pendingAuth = new Map<number, (result: AuthResult) => void>();
+  private pendingAdmin = new Map<number, (result: AdminResult) => void>();
   private reqSeq = 1;
   private active: RemoteConnection | null = null;
   private readyPromise: Promise<void>;
@@ -93,6 +96,14 @@ export class RemoteServer implements GameServer {
     this.send({ t: "logout", sessionToken });
   }
 
+  adminAction(sessionToken: string, action: AdminAction): Promise<AdminResult> {
+    const reqId = this.reqSeq++;
+    return new Promise<AdminResult>((resolve) => {
+      this.pendingAdmin.set(reqId, resolve);
+      this.send({ t: "adminAction", reqId, sessionToken, action });
+    });
+  }
+
   private authRequest(build: (reqId: number) => ClientMsg): Promise<AuthResult> {
     const reqId = this.reqSeq++;
     return new Promise<AuthResult>((resolve) => {
@@ -147,6 +158,12 @@ export class RemoteServer implements GameServer {
       case "auth": {
         const resolve = this.pendingAuth.get(msg.reqId);
         this.pendingAuth.delete(msg.reqId);
+        resolve?.(msg.result);
+        break;
+      }
+      case "admin": {
+        const resolve = this.pendingAdmin.get(msg.reqId);
+        this.pendingAdmin.delete(msg.reqId);
         resolve?.(msg.result);
         break;
       }

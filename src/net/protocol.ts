@@ -66,6 +66,8 @@ export interface Profile {
   displayName: string;
   /** Preferred player color id (see PLAYER_COLORS). */
   color: string;
+  /** True for accounts on the server's admin allowlist — unlocks the admin page. */
+  isAdmin?: boolean;
 }
 
 /** One game an account belongs to, with the reconnect token to re-enter it. */
@@ -79,6 +81,54 @@ export interface Membership {
 /** Result of a register/login/resume attempt. */
 export type AuthResult =
   | { ok: true; sessionToken: string; profile: Profile; memberships: Membership[] }
+  | { ok: false; error: string };
+
+/* ------------------------------------------------------------------ *
+ * Admin console (admin accounts only). Every admin request carries the  *
+ * caller's session token; the server verifies it belongs to an admin    *
+ * account before doing anything, then returns a fresh snapshot.         *
+ * ------------------------------------------------------------------ */
+
+/** One account as shown in the admin console (never includes password data). */
+export interface AdminAccountView {
+  username: string;
+  displayName: string;
+  color: string;
+  createdAt: number;
+  isAdmin: boolean;
+  banned: boolean;
+  /** How many games this account belongs to. */
+  gameCount: number;
+}
+
+/** One city as shown in the admin console. */
+export interface AdminGameView {
+  id: string;
+  cityName: string;
+  archetype: string;
+  playerCount: number;
+  plotCount: number;
+  claimedPlots: number;
+  /** Built-in demo cities re-seed on restart and can't be deleted. */
+  isSeeded: boolean;
+}
+
+/** The full picture the admin console renders. */
+export interface AdminSnapshot {
+  accounts: AdminAccountView[];
+  games: AdminGameView[];
+}
+
+/** An action an admin can perform from the console. */
+export type AdminAction =
+  | { kind: "list" }
+  | { kind: "deleteGame"; gameId: string }
+  | { kind: "banUser"; username: string }
+  | { kind: "unbanUser"; username: string };
+
+/** Result of an admin action — a refreshed snapshot, or a reason it was refused. */
+export type AdminResult =
+  | { ok: true; snapshot: AdminSnapshot }
   | { ok: false; error: string };
 
 /**
@@ -114,7 +164,8 @@ export type ClientMsg =
   | { t: "register"; reqId: number; username: string; password: string; displayName: string; color: string }
   | { t: "login"; reqId: number; username: string; password: string }
   | { t: "resume"; reqId: number; sessionToken: string }
-  | { t: "logout"; sessionToken: string };
+  | { t: "logout"; sessionToken: string }
+  | { t: "adminAction"; reqId: number; sessionToken: string; action: AdminAction };
 
 /** Messages the server sends to the client. */
 export type ServerMsg =
@@ -122,5 +173,6 @@ export type ServerMsg =
   | { t: "result"; reqId: number; ok: true; session: PlayerSession; state: GameState }
   | { t: "result"; reqId: number; ok: false; error: string }
   | { t: "auth"; reqId: number; result: AuthResult }
+  | { t: "admin"; reqId: number; result: AdminResult }
   | { t: "snapshot"; state: GameState }
   | { t: "cmdError"; error: string };

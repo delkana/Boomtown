@@ -5,7 +5,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { GameDirectory } from "../src/net/gameDirectory";
 import { AccountStore } from "./accountStore";
 import type { AuthoritativeGame } from "../src/net/authoritativeGame";
-import type { ClientMsg, PlayerSession, ServerMsg } from "../src/net/protocol";
+import type { AdminAction, AdminResult, AdminSnapshot, ClientMsg, PlayerSession, ServerMsg } from "../src/net/protocol";
 import type { DirResult } from "../src/net/gameDirectory";
 
 /**
@@ -27,10 +27,10 @@ export interface ServerHandle {
 }
 
 export function startServer(
-  opts: { port?: number; seed?: boolean; staticDir?: string } = {},
+  opts: { port?: number; seed?: boolean; staticDir?: string; admins?: string[] } = {},
 ): Promise<ServerHandle> {
   const dir = new GameDirectory({ seed: opts.seed ?? true });
-  const accounts = new AccountStore();
+  const accounts = opts.admins ? new AccountStore(opts.admins) : new AccountStore();
   // One HTTP server both serves the built web app (in production) and hosts the
   // WebSocket endpoint, so a single Railway service/port does everything.
   const httpServer = http.createServer((req, res) => {
@@ -50,6 +50,47 @@ export function startServer(
     for (const client of wss.clients) send(client, msg);
   };
   dir.onChange(broadcastDirectory);
+
+  // Snapshot the whole world for the admin console.
+  const adminSnapshot = (): AdminSnapshot => ({
+    accounts: accounts.listAccounts(),
+    games: dir.summaries().map((g) => ({
+      id: g.id,
+      cityName: g.cityName,
+      archetype: g.archetype,
+      playerCount: g.playerCount,
+      plotCount: g.plotCount,
+      claimedPlots: g.claimedPlots,
+      isSeeded: dir.isSeeded(g.id),
+    })),
+  });
+
+  // Perform a validated admin action. The CALLER must already be authorized;
+  // this only enforces the per-action rules (e.g. demo cities can't be deleted).
+  const runAdmin = (action: AdminAction): AdminResult => {
+    switch (action.kind) {
+      case "list":
+        return { ok: true, snapshot: adminSnapshot() };
+      case "deleteGame": {
+        if (dir.isSeeded(action.gameId))
+          return { ok: false, error: "Demo cities re-seed on restart and can't be deleted" };
+        if (!dir.remove(action.gameId)) return { ok: false, error: "That city no longer exists" };
+        // Drop memberships that pointed at the deleted game so "your games" stays clean.
+        accounts.pruneMemberships((id) => dir.getGame(id) !== undefined);
+        return { ok: true, snapshot: adminSnapshot() };
+      }
+      case "banUser": {
+        const r = accounts.banUser(action.username);
+        if (!r.ok) return { ok: false, error: r.error ?? "Could not ban that account" };
+        return { ok: true, snapshot: adminSnapshot() };
+      }
+      case "unbanUser": {
+        const r = accounts.unbanUser(action.username);
+        if (!r.ok) return { ok: false, error: r.error ?? "Could not reactivate that account" };
+        return { ok: true, snapshot: adminSnapshot() };
+      }
+    }
+  };
 
   wss.on("connection", (ws: WebSocket) => {
     let game: AuthoritativeGame | null = null;
@@ -148,6 +189,15 @@ export function startServer(
           accounts.logout(msg.sessionToken);
           authedUser = null;
           break;
+        case "adminAction": {
+          // Authorization is derived from the session token, verified server-side
+          // against the admin allowlist — never from anything the client asserts.
+          const result: AdminResult = accounts.isAdminSession(msg.sessionToken)
+            ? runAdmin(msg.action)
+            : { ok: false, error: "Not authorized" };
+          send(ws, { t: "admin", reqId: msg.reqId, result });
+          break;
+        }
       }
     });
 
