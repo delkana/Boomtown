@@ -19,7 +19,7 @@ import {
 } from "../game/backgrounds";
 import type { GameConnection } from "../net/connection";
 import type { ConnectResult, GameServer } from "../net/localServer";
-import type { GameSummary, PlayerSession } from "../net/protocol";
+import type { AuthResult, GameSummary, Membership, PlayerSession, Profile } from "../net/protocol";
 import { flagSvg } from "./flags";
 
 /**
@@ -42,6 +42,12 @@ export class LobbyScreen {
   private joinColor: string | null = null;
   private joinTaken = new Set<string>();
   private joiningGameId: string | null = null;
+  // Account state (online only). When signed in, your games follow you here.
+  private profile: Profile | null = null;
+  private sessionToken: string | null = null;
+  private memberships: Membership[] = [];
+  private authMode: "login" | "register" = "login";
+  private authColor: string;
 
   constructor(
     private root: HTMLElement,
@@ -51,6 +57,7 @@ export class LobbyScreen {
   ) {
     this.palette = server.getPalette();
     this.createColor = this.palette[0].id;
+    this.authColor = this.palette[0].id;
     this.joined = loadJoined();
     server.onDirectoryChange(() => this.renderList());
   }
@@ -62,7 +69,10 @@ export class LobbyScreen {
     if (status) status.textContent = `● ${this.serverLabel}`;
     this.mountCreateForm();
     this.mountModal();
+    this.mountAuth();
+    this.renderAuthBar();
     this.renderList();
+    void this.tryResume();
   }
 
   /** Reveal the lobby (and refresh the live game list). */
@@ -112,6 +122,11 @@ export class LobbyScreen {
     // Create-city is a modal opened from the lobby.
     this.q("#open-create").addEventListener("click", () => {
       this.q("#cf-error").textContent = "";
+      if (this.profile) {
+        this.q<HTMLInputElement>("#cf-name").value = this.profile.displayName;
+        this.createColor = this.profile.color;
+        this.renderCreateColors();
+      }
       this.q("#create-modal").classList.remove("hidden");
     });
     this.q("#cf-cancel").addEventListener("click", () => this.q("#create-modal").classList.add("hidden"));
@@ -218,13 +233,13 @@ export class LobbyScreen {
   }
 
   private gameRow(g: GameSummary): string {
-    const joined = this.joined.has(g.id);
+    const member = this.membershipToken(g.id) !== null;
     const full = g.playerCount >= g.maxPlayers;
     const dots = g.players
       .map((p) => `<span class="dot" title="${escapeHtml(p.name)}" style="background:${p.color}"></span>`)
       .join("");
-    const label = joined ? "Enter" : full ? "Full" : "Join";
-    const disabled = !joined && full ? "disabled" : "";
+    const label = member ? "Enter" : full ? "Full" : "Join";
+    const disabled = !member && full ? "disabled" : "";
     return `
       <div class="game-row">
         <span class="flag list-flag">${flagSvg(g.archetype)}</span>
@@ -238,13 +253,14 @@ export class LobbyScreen {
   }
 
   private async onJoinClick(g: GameSummary): Promise<void> {
-    const existing = this.joined.get(g.id);
-    if (existing) {
-      const result = await this.server.reconnect(g.id, existing.token);
+    const token = this.membershipToken(g.id);
+    if (token) {
+      const result = await this.server.reconnect(g.id, token);
       if (!result.ok) {
         // Stale token (e.g. server restarted without persistence) — re-prompt.
         this.joined.delete(g.id);
         saveJoined(this.joined);
+        this.memberships = this.memberships.filter((m) => m.gameId !== g.id);
         this.openJoinModal(g);
         return;
       }
@@ -264,10 +280,15 @@ export class LobbyScreen {
   private openJoinModal(g: GameSummary): void {
     this.joiningGameId = g.id;
     this.joinTaken = new Set(g.players.map((p) => p.color));
-    this.joinColor = this.palette.find((c) => !this.joinTaken.has(c.hex))?.id ?? null;
+    // Prefer the signed-in account's color if it's free, else the first free one.
+    const preferHex = this.profile ? this.palette.find((c) => c.id === this.profile!.color)?.hex : undefined;
+    this.joinColor =
+      preferHex && !this.joinTaken.has(preferHex)
+        ? this.profile!.color
+        : (this.palette.find((c) => !this.joinTaken.has(c.hex))?.id ?? null);
 
     this.q("#jm-title").textContent = `Join ${g.cityName}`;
-    this.q<HTMLInputElement>("#jm-name").value = "";
+    this.q<HTMLInputElement>("#jm-name").value = this.profile?.displayName ?? "";
     this.q<HTMLInputElement>("#jm-pw").value = "";
     this.q("#jm-pw-field").classList.toggle("hidden", !g.hasPassword);
     this.q("#jm-error").textContent = "";
@@ -308,6 +329,125 @@ export class LobbyScreen {
     } finally {
       btn.disabled = false;
     }
+  }
+
+  // --- accounts ------------------------------------------------------------
+
+  private mountAuth(): void {
+    if (!this.server.supportsAccounts()) return;
+    this.q("#am-cancel").addEventListener("click", () => this.q("#auth-modal").classList.add("hidden"));
+    this.q("#am-submit").addEventListener("click", () => void this.submitAuth());
+    this.q("#am-switch").addEventListener("click", () => this.openAuthModal(this.authMode === "login" ? "register" : "login"));
+    // Submit on Enter from either field.
+    for (const id of ["#am-user", "#am-pass", "#am-display"]) {
+      this.q<HTMLInputElement>(id).addEventListener("keydown", (e) => {
+        if ((e as KeyboardEvent).key === "Enter") void this.submitAuth();
+      });
+    }
+  }
+
+  private renderAuthBar(): void {
+    const bar = this.q("#auth-bar");
+    if (!this.server.supportsAccounts()) {
+      bar.classList.add("hidden");
+      return;
+    }
+    bar.classList.remove("hidden");
+    if (this.profile) {
+      bar.innerHTML = `<span class="auth-who">Signed in as <b>${escapeHtml(this.profile.displayName)}</b></span>
+        <button id="ab-logout" class="linkish">Log out</button>`;
+      this.q("#ab-logout").addEventListener("click", () => this.logout());
+    } else {
+      bar.innerHTML = `<button id="ab-login" class="linkish">Sign in</button>
+        <span class="auth-sep">·</span>
+        <button id="ab-register" class="linkish">Create account</button>`;
+      this.q("#ab-login").addEventListener("click", () => this.openAuthModal("login"));
+      this.q("#ab-register").addEventListener("click", () => this.openAuthModal("register"));
+    }
+  }
+
+  private openAuthModal(mode: "login" | "register"): void {
+    this.authMode = mode;
+    const register = mode === "register";
+    this.q("#am-title").textContent = register ? "Create account" : "Sign in";
+    this.q<HTMLButtonElement>("#am-submit").textContent = register ? "Create account" : "Sign in";
+    this.q("#am-register-only").classList.toggle("hidden", !register);
+    this.q("#am-switch-text").textContent = register ? "Already have an account?" : "New here?";
+    this.q<HTMLButtonElement>("#am-switch").textContent = register ? "Sign in" : "Create an account";
+    this.q("#am-error").textContent = "";
+    this.q<HTMLInputElement>("#am-pass").value = "";
+    this.q<HTMLInputElement>("#am-pass").autocomplete = register ? "new-password" : "current-password";
+    if (register) {
+      this.authColor = this.palette[0].id;
+      this.renderAuthColors();
+    }
+    this.q("#auth-modal").classList.remove("hidden");
+    this.q<HTMLInputElement>("#am-user").focus();
+  }
+
+  private renderAuthColors(): void {
+    this.renderColorGrid(this.q("#am-colors"), () => this.authColor, new Set(), (id) => {
+      this.authColor = id;
+      this.renderAuthColors();
+    });
+  }
+
+  private async submitAuth(): Promise<void> {
+    const btn = this.q<HTMLButtonElement>("#am-submit");
+    if (btn.disabled) return;
+    const username = this.q<HTMLInputElement>("#am-user").value;
+    const password = this.q<HTMLInputElement>("#am-pass").value;
+    btn.disabled = true;
+    try {
+      const result: AuthResult =
+        this.authMode === "register"
+          ? await this.server.register(username, password, this.q<HTMLInputElement>("#am-display").value, this.authColor)
+          : await this.server.login(username, password);
+      if (!result.ok) {
+        this.q("#am-error").textContent = result.error;
+        return;
+      }
+      this.q("#auth-modal").classList.add("hidden");
+      this.setSignedIn(result);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  /** On load, silently resume a stored session so you stay signed in. */
+  private async tryResume(): Promise<void> {
+    if (!this.server.supportsAccounts()) return;
+    const token = localStorage.getItem(SESSION_KEY);
+    if (!token) return;
+    const result = await this.server.resume(token);
+    if (result.ok) this.setSignedIn(result);
+    else localStorage.removeItem(SESSION_KEY);
+  }
+
+  private setSignedIn(result: Extract<AuthResult, { ok: true }>): void {
+    this.profile = result.profile;
+    this.sessionToken = result.sessionToken;
+    this.memberships = result.memberships;
+    localStorage.setItem(SESSION_KEY, result.sessionToken);
+    this.renderAuthBar();
+    this.renderList();
+  }
+
+  private logout(): void {
+    if (this.sessionToken) this.server.logout(this.sessionToken);
+    this.profile = null;
+    this.sessionToken = null;
+    this.memberships = [];
+    localStorage.removeItem(SESSION_KEY);
+    this.renderAuthBar();
+    this.renderList();
+  }
+
+  /** The reconnect token for a game the player belongs to (account or local), or null. */
+  private membershipToken(gameId: string): string | null {
+    const m = this.memberships.find((x) => x.gameId === gameId);
+    if (m) return m.token;
+    return this.joined.get(gameId)?.token ?? null;
   }
 
   // --- shared helpers ------------------------------------------------------
@@ -356,6 +496,7 @@ export class LobbyScreen {
 }
 
 const JOINED_KEY = "boomtown.joined.v1";
+const SESSION_KEY = "boomtown.session.v1";
 
 /** Load the map of games this browser has joined (with reconnect tokens). */
 function loadJoined(): Map<string, PlayerSession> {
@@ -399,6 +540,7 @@ const SHELL = `
       <p class="tagline">Claim plots, raise towers, share the skyline.
         <span id="lobby-status" class="lobby-status"></span>
       </p>
+      <div id="auth-bar" class="auth-bar hidden"></div>
     </header>
     <section class="lobby-card lobby-join">
       <div class="join-head">
@@ -407,6 +549,30 @@ const SHELL = `
       </div>
       <div id="game-list" class="game-list"></div>
     </section>
+  </div>
+
+  <div id="auth-modal" class="modal hidden">
+    <div class="modal-card auth-card">
+      <h2 id="am-title">Sign in</h2>
+      <label class="field">Username
+        <input id="am-user" type="text" maxlength="20" placeholder="Username" autocomplete="username" />
+      </label>
+      <label class="field">Password
+        <input id="am-pass" type="password" maxlength="64" placeholder="Password" autocomplete="current-password" />
+      </label>
+      <div id="am-register-only" class="hidden">
+        <label class="field">Display name
+          <input id="am-display" type="text" maxlength="24" placeholder="Shown to other players" />
+        </label>
+        <div class="field">Your color<div id="am-colors" class="swatch-grid"></div></div>
+      </div>
+      <div class="modal-actions">
+        <button id="am-cancel">Cancel</button>
+        <button id="am-submit" class="primary">Sign in</button>
+      </div>
+      <div id="am-error" class="form-error"></div>
+      <p class="auth-switch"><span id="am-switch-text"></span> <button id="am-switch" type="button" class="linkish"></button></p>
+    </div>
   </div>
 
   <div id="create-modal" class="modal hidden">

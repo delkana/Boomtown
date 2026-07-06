@@ -77,6 +77,45 @@ textarea {
   opacity: 0.85;
 }
 
+/* Account bar in the lobby header. */
+.auth-bar {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.auth-who b {
+  color: var(--text);
+}
+.auth-sep {
+  opacity: 0.5;
+}
+.linkish {
+  background: none;
+  border: none;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.linkish:hover {
+  text-decoration: underline;
+}
+.auth-card {
+  width: 360px;
+  max-width: 94vw;
+}
+.auth-switch {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  text-align: center;
+}
+
 .lobby-join {
   max-width: 640px;
   margin: 0 auto;

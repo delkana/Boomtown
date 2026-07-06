@@ -17,6 +17,7 @@ const PORT = Number(process.env.PORT) || 8787;
 const dirName = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(dirName, "data");
 const DATA_FILE = path.join(DATA_DIR, "games.json");
+const ACCOUNTS_FILE = path.join(DATA_DIR, "accounts.json");
 const STATIC_DIR = path.join(dirName, "..", "dist"); // the built web app
 
 // Always seed the built-in demo cities fresh, then merge any saved player games
@@ -36,20 +37,34 @@ if (fs.existsSync(DATA_FILE)) {
     console.warn("Could not load saved games:", e);
   }
 }
+if (fs.existsSync(ACCOUNTS_FILE)) {
+  try {
+    handle.accounts.load(fs.readFileSync(ACCOUNTS_FILE, "utf8"));
+    // Forget memberships whose game no longer exists so "your games" stays clean.
+    handle.accounts.pruneMemberships((gameId) => handle.directory.summaries().some((g) => g.id === gameId));
+    console.log("Restored accounts from", ACCOUNTS_FILE);
+  } catch (e) {
+    console.warn("Could not load accounts:", e);
+  }
+}
 
-// Debounced persistence: coalesce bursts of changes into one write.
-let timer: ReturnType<typeof setTimeout> | null = null;
-handle.directory.onChange(() => {
-  if (timer) return;
-  timer = setTimeout(() => {
-    timer = null;
-    try {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-      fs.writeFileSync(DATA_FILE, handle.directory.serialize());
-    } catch (e) {
-      console.warn("Persist failed:", e);
-    }
-  }, 500);
-});
+// Debounced persistence: coalesce bursts of changes into one write per file.
+const persist = (file: string, data: () => string): (() => void) => {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return () => {
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      try {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+        fs.writeFileSync(file, data());
+      } catch (e) {
+        console.warn("Persist failed:", e);
+      }
+    }, 500);
+  };
+};
+handle.directory.onChange(persist(DATA_FILE, () => handle.directory.serialize()));
+handle.accounts.onChange(persist(ACCOUNTS_FILE, () => handle.accounts.serialize()));
 
 console.log(`Boomtown listening on port ${handle.port} (web + WebSocket)`);

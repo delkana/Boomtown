@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import { GameDirectory } from "../src/net/gameDirectory";
+import { AccountStore } from "./accountStore";
 import type { AuthoritativeGame } from "../src/net/authoritativeGame";
 import type { ClientMsg, PlayerSession, ServerMsg } from "../src/net/protocol";
 import type { DirResult } from "../src/net/gameDirectory";
@@ -21,6 +22,7 @@ import type { DirResult } from "../src/net/gameDirectory";
 export interface ServerHandle {
   port: number;
   directory: GameDirectory;
+  accounts: AccountStore;
   close: () => Promise<void>;
 }
 
@@ -28,6 +30,7 @@ export function startServer(
   opts: { port?: number; seed?: boolean; staticDir?: string } = {},
 ): Promise<ServerHandle> {
   const dir = new GameDirectory({ seed: opts.seed ?? true });
+  const accounts = new AccountStore();
   // One HTTP server both serves the built web app (in production) and hosts the
   // WebSocket endpoint, so a single Railway service/port does everything.
   const httpServer = http.createServer((req, res) => {
@@ -52,6 +55,7 @@ export function startServer(
     let game: AuthoritativeGame | null = null;
     let playerId: string | null = null;
     let unsub: (() => void) | null = null;
+    let authedUser: string | null = null; // canonical username, once signed in on this socket
 
     const detach = (): void => {
       unsub?.();
@@ -65,7 +69,7 @@ export function startServer(
       playerId = pid;
       unsub = g.subscribe((snap) => send(ws, { t: "snapshot", state: JSON.parse(snap) }));
     };
-    const enter = (r: DirResult, reqId: number): void => {
+    const enter = (r: DirResult, reqId: number, newMembership: boolean): void => {
       if (!r.ok) {
         send(ws, { t: "result", reqId, ok: false, error: r.error });
         return;
@@ -79,6 +83,16 @@ export function startServer(
         colorHex: p.color,
         token: r.token,
       };
+      // If a signed-in user just created/joined, remember it on their account so
+      // the game follows them to other devices.
+      if (newMembership && authedUser) {
+        accounts.recordMembership(authedUser, {
+          gameId: session.gameId,
+          playerId: session.playerId,
+          token: session.token,
+          cityName: r.game.state.config.cityName,
+        });
+      }
       send(ws, { t: "result", reqId, ok: true, session, state: r.game.state });
     };
 
@@ -94,13 +108,13 @@ export function startServer(
       }
       switch (msg.t) {
         case "create":
-          enter(dir.create(msg.cfg), msg.reqId);
+          enter(dir.create(msg.cfg), msg.reqId, true);
           break;
         case "join":
-          enter(dir.join(msg.req), msg.reqId);
+          enter(dir.join(msg.req), msg.reqId, true);
           break;
         case "reconnect":
-          enter(dir.reconnect(msg.gameId, msg.token), msg.reqId);
+          enter(dir.reconnect(msg.gameId, msg.token), msg.reqId, false);
           break;
         case "command":
           if (game && playerId) {
@@ -111,6 +125,28 @@ export function startServer(
           break;
         case "leave":
           detach();
+          break;
+        case "register": {
+          const result = accounts.register(msg.username, msg.password, msg.displayName, msg.color);
+          if (result.ok) authedUser = result.profile.username.toLowerCase();
+          send(ws, { t: "auth", reqId: msg.reqId, result });
+          break;
+        }
+        case "login": {
+          const result = accounts.login(msg.username, msg.password);
+          if (result.ok) authedUser = result.profile.username.toLowerCase();
+          send(ws, { t: "auth", reqId: msg.reqId, result });
+          break;
+        }
+        case "resume": {
+          const result = accounts.resume(msg.sessionToken);
+          if (result.ok) authedUser = result.profile.username.toLowerCase();
+          send(ws, { t: "auth", reqId: msg.reqId, result });
+          break;
+        }
+        case "logout":
+          accounts.logout(msg.sessionToken);
+          authedUser = null;
           break;
       }
     });
@@ -125,6 +161,7 @@ export function startServer(
       resolve({
         port,
         directory: dir,
+        accounts,
         close: () =>
           new Promise<void>((res) => {
             for (const c of wss.clients) c.terminate();

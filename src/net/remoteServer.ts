@@ -4,6 +4,7 @@ import type { GameState } from "../game/types";
 import type { GameConnection } from "./connection";
 import type { GameServer, ConnectResult } from "./localServer";
 import type {
+  AuthResult,
   ClientMsg,
   CreateGameConfig,
   GameSummary,
@@ -25,6 +26,7 @@ export class RemoteServer implements GameServer {
   private directory: GameSummary[] = [];
   private listeners = new Set<() => void>();
   private pending = new Map<number, (msg: Extract<ServerMsg, { t: "result" }>) => void>();
+  private pendingAuth = new Map<number, (result: AuthResult) => void>();
   private reqSeq = 1;
   private active: RemoteConnection | null = null;
   private readyPromise: Promise<void>;
@@ -69,6 +71,36 @@ export class RemoteServer implements GameServer {
     return this.request((reqId) => ({ t: "reconnect", reqId, gameId, token }));
   }
 
+  // --- accounts ------------------------------------------------------------
+
+  supportsAccounts(): boolean {
+    return true;
+  }
+
+  register(username: string, password: string, displayName: string, color: string): Promise<AuthResult> {
+    return this.authRequest((reqId) => ({ t: "register", reqId, username, password, displayName, color }));
+  }
+
+  login(username: string, password: string): Promise<AuthResult> {
+    return this.authRequest((reqId) => ({ t: "login", reqId, username, password }));
+  }
+
+  resume(sessionToken: string): Promise<AuthResult> {
+    return this.authRequest((reqId) => ({ t: "resume", reqId, sessionToken }));
+  }
+
+  logout(sessionToken: string): void {
+    this.send({ t: "logout", sessionToken });
+  }
+
+  private authRequest(build: (reqId: number) => ClientMsg): Promise<AuthResult> {
+    const reqId = this.reqSeq++;
+    return new Promise<AuthResult>((resolve) => {
+      this.pendingAuth.set(reqId, resolve);
+      this.send(build(reqId));
+    });
+  }
+
   // --- internals -----------------------------------------------------------
 
   private request(build: (reqId: number) => ClientMsg): Promise<ConnectResult> {
@@ -110,6 +142,12 @@ export class RemoteServer implements GameServer {
         const resolve = this.pending.get(msg.reqId);
         this.pending.delete(msg.reqId);
         resolve?.(msg);
+        break;
+      }
+      case "auth": {
+        const resolve = this.pendingAuth.get(msg.reqId);
+        this.pendingAuth.delete(msg.reqId);
+        resolve?.(msg.result);
         break;
       }
       case "snapshot":

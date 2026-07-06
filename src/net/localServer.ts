@@ -1,7 +1,7 @@
 import { PLAYER_COLORS, type ColorOption } from "../game/constants";
 import { GameDirectory, type DirResult } from "./gameDirectory";
 import { LocalConnection, type GameConnection } from "./connection";
-import type { GameSummary, CreateGameConfig, JoinRequest, PlayerSession } from "./protocol";
+import type { GameSummary, CreateGameConfig, JoinRequest, PlayerSession, AuthResult } from "./protocol";
 
 export type ConnectResult =
   | { ok: true; connection: GameConnection }
@@ -26,6 +26,17 @@ export interface GameServer {
   joinGame(req: JoinRequest): Promise<ConnectResult>;
   /** Re-enter a game via the reconnect token issued at create/join time. */
   reconnect(gameId: string, token: string): Promise<ConnectResult>;
+
+  /**
+   * Accounts (online only). `supportsAccounts()` gates the lobby's sign-in UI;
+   * the LocalServer returns false and leaves the anonymous per-browser flow.
+   */
+  supportsAccounts(): boolean;
+  register(username: string, password: string, displayName: string, color: string): Promise<AuthResult>;
+  login(username: string, password: string): Promise<AuthResult>;
+  /** Resume a stored session token (keeps the user signed in across reloads). */
+  resume(sessionToken: string): Promise<AuthResult>;
+  logout(sessionToken: string): void;
 }
 
 // Bump this when the persisted state shape changes (e.g. variable plot widths),
@@ -72,6 +83,24 @@ export class LocalServer implements GameServer {
 
   async reconnect(gameId: string, token: string): Promise<ConnectResult> {
     return this.wrap(this.dir.reconnect(gameId, token));
+  }
+
+  // Accounts are an online-only feature; offline play stays anonymous and
+  // already remembers your local games via localStorage.
+  supportsAccounts(): boolean {
+    return false;
+  }
+  async register(): Promise<AuthResult> {
+    return { ok: false, error: "Accounts are only available on the online server" };
+  }
+  async login(): Promise<AuthResult> {
+    return { ok: false, error: "Accounts are only available on the online server" };
+  }
+  async resume(): Promise<AuthResult> {
+    return { ok: false, error: "No account session" };
+  }
+  logout(): void {
+    /* nothing to do offline */
   }
 
   // --- internals -----------------------------------------------------------

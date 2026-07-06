@@ -54,6 +54,33 @@ export interface JoinRequest {
   password: string | null;
 }
 
+/* ------------------------------------------------------------------ *
+ * Accounts (server-side only). A user has a password-protected login,   *
+ * a session token that keeps them signed in, and a list of the games    *
+ * they've joined so those follow them across devices.                   *
+ * ------------------------------------------------------------------ */
+
+/** The public-facing bits of a signed-in account. */
+export interface Profile {
+  username: string;
+  displayName: string;
+  /** Preferred player color id (see PLAYER_COLORS). */
+  color: string;
+}
+
+/** One game an account belongs to, with the reconnect token to re-enter it. */
+export interface Membership {
+  gameId: string;
+  playerId: string;
+  token: string;
+  cityName: string;
+}
+
+/** Result of a register/login/resume attempt. */
+export type AuthResult =
+  | { ok: true; sessionToken: string; profile: Profile; memberships: Membership[] }
+  | { ok: false; error: string };
+
 /**
  * Per-connection identity. This is what replaces the old `localPlayerId` field
  * on GameState — it belongs to the CLIENT, not the shared world.
@@ -83,12 +110,17 @@ export type ClientMsg =
   | { t: "join"; reqId: number; req: JoinRequest }
   | { t: "reconnect"; reqId: number; gameId: string; token: string }
   | { t: "command"; cmd: Command }
-  | { t: "leave" };
+  | { t: "leave" }
+  | { t: "register"; reqId: number; username: string; password: string; displayName: string; color: string }
+  | { t: "login"; reqId: number; username: string; password: string }
+  | { t: "resume"; reqId: number; sessionToken: string }
+  | { t: "logout"; sessionToken: string };
 
 /** Messages the server sends to the client. */
 export type ServerMsg =
   | { t: "directory"; games: GameSummary[] }
   | { t: "result"; reqId: number; ok: true; session: PlayerSession; state: GameState }
   | { t: "result"; reqId: number; ok: false; error: string }
+  | { t: "auth"; reqId: number; result: AuthResult }
   | { t: "snapshot"; state: GameState }
   | { t: "cmdError"; error: string };
