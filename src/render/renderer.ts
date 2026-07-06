@@ -709,7 +709,7 @@ export class Renderer {
     const lerp = (a: Pt, b: Pt, t: number): Pt => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
     const fTop = lerp(wall.f, wall.b, 0.12), bTop = lerp(wall.f, wall.b, 0.88);
     const fBot = lerp(wall.fb, wall.bb, 0.12), bBot = lerp(wall.fb, wall.bb, 0.88);
-    const topIn = 0.1, botIn = 0.9; // trim top/bottom so the frame shows around
+    const topIn = 0.07, botIn = 1.0; // reach the floor; keep a small lintel up top
     const fT = lerp(fTop, fBot, topIn), fB = lerp(fTop, fBot, botIn);
     const bT = lerp(bTop, bBot, topIn), bB = lerp(bTop, bBot, botIn);
     const mT = lerp(fT, bT, 0.5), mB = lerp(fB, bB, 0.5);

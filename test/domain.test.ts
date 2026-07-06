@@ -8,7 +8,7 @@ import { elevatorAccess, viewRating, noiseRating, footTraffic, roomSatisfaction 
 import { ELEVATOR_CAR_COST, GIRDER_BASE_COST, MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
 import { claimCost, girderCost, plotBaseCost, undergroundMultiplier } from "../src/game/economy";
 import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
-import { servicedRows, elevatorRuns, stepCar, MAX_CARS_PER_SHAFT } from "../src/game/elevator";
+import { servicedRows, elevatorRuns, stepCar, CAR_SPEED, MAX_CARS_PER_SHAFT } from "../src/game/elevator";
 import { facadeById, DEFAULT_FACADE } from "../src/game/facades";
 import { generateTenant, tenantLit, hasTrades } from "../src/game/tenants";
 import type { GameState } from "../src/game/types";
@@ -570,20 +570,27 @@ describe("elevator cars", () => {
     expect(overflow.ok).toBe(false);
   });
 
-  it("cars ease toward a target floor and then hold there (stepCar)", () => {
+  it("cars accelerate, cruise, then brake to a smooth stop (stepCar)", () => {
     // From the ground, head to floor 4 (time-based motion, not tick-based).
-    let st = stepCar(0, 4, 0, 4, 0.5);
+    let st = stepCar(0, 0, 4, 0, 4, 0.25);
     expect(st.pos).toBeGreaterThan(0); // started moving up
+    expect(st.vel).toBeGreaterThan(0); // and building speed
+    const firstSpeed = st.vel;
+    st = stepCar(st.pos, st.vel, 4, 0, 4, 0.25);
+    expect(st.vel).toBeGreaterThan(firstSpeed); // still accelerating (momentum)
+    let maxSpeed = 0;
     for (let i = 0; i < 400; i++) {
-      st = stepCar(st.pos, 4, 0, 4, 0.25);
+      st = stepCar(st.pos, st.vel, 4, 0, 4, 0.1);
+      maxSpeed = Math.max(maxSpeed, st.vel);
       expect(st.pos).toBeGreaterThanOrEqual(0);
       expect(st.pos).toBeLessThanOrEqual(4);
     }
-    expect(st.pos).toBeCloseTo(4, 5); // reaches the target and stays
+    expect(maxSpeed).toBeLessThanOrEqual(CAR_SPEED + 1e-6); // never exceeds top speed
+    expect(st.pos).toBeCloseTo(4, 5); // reaches the target...
+    expect(st.vel).toBe(0); // ...and comes to rest
     // A car already at its target stays put; target clamps to the shaft.
-    expect(stepCar(2, 2, 0, 4, 1).pos).toBe(2);
-    expect(stepCar(1, -3, 0, 4, 1).pos).toBeLessThan(1); // clamps toward 0
-    expect(stepCar(2, 2, 2, 2, 0.5).pos).toBe(2); // single-floor shaft
+    expect(stepCar(2, 0, 2, 0, 4, 1).pos).toBe(2);
+    expect(stepCar(2, 0, 2, 2, 2, 0.5).pos).toBe(2); // single-floor shaft
   });
 
   it("sets the shaft cars' idle home floor (clamped to the shaft)", () => {

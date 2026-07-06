@@ -16,11 +16,19 @@ import type { ElevatorCar, Plot } from "./types";
 export const MAX_CARS_PER_SHAFT = 8;
 
 /**
- * Floors a car travels per SECOND of real time at 1× game speed. Car motion is
- * continuous (animated every frame, scaled by game speed) rather than stepped
- * per economy tick — see `stepCar`.
+ * Top speed of a car in floors per SECOND of real time at 1× game speed. Car
+ * motion is continuous (animated every frame, scaled by game speed) rather than
+ * stepped per economy tick — see `stepCar`.
  */
 export const CAR_SPEED = 1.1;
+
+/**
+ * How fast a car changes speed, in floors/sec². Cars ramp up to CAR_SPEED and
+ * ease back to a stop rather than snapping to full speed — a real elevator feel.
+ * At this rate the accel/decel each take ~0.7s and the braking distance near a
+ * stop is ~0.4 floors.
+ */
+export const CAR_ACCEL = 1.6;
 
 export interface ElevatorRun {
   col: number;
@@ -128,18 +136,40 @@ export function servicedRows(plot: Plot): Set<number> {
 }
 
 /**
- * Move a car toward `target` floor by `dt` seconds (already scaled by game
- * speed), clamped to the shaft [from,to], stopping exactly at the target (no
- * overshoot). Cars sit still once they reach it — passenger routing will later
- * drive the target. Pure — returns the new position.
+ * Advance a car toward `target` floor by `dt` seconds (already scaled by game
+ * speed), clamped to the shaft [from,to]. The car has momentum: it accelerates
+ * up to CAR_SPEED and brakes to a smooth stop at the target rather than moving
+ * at a constant rate. Pure — takes the current position + velocity and returns
+ * the new ones. Cars sit still (vel 0) once parked.
  */
-export function stepCar(pos: number, target: number, from: number, to: number, dt: number): { pos: number } {
+export function stepCar(
+  pos: number,
+  vel: number,
+  target: number,
+  from: number,
+  to: number,
+  dt: number,
+): { pos: number; vel: number } {
   const tgt = Math.max(from, Math.min(to, target));
   const d = tgt - pos;
-  if (Math.abs(d) < 0.02) return { pos: tgt };
-  const next = pos + Math.sign(d) * CAR_SPEED * dt;
-  if ((d > 0 && next >= tgt) || (d < 0 && next <= tgt)) return { pos: tgt };
-  return { pos: next };
+  // Parked: essentially at the target and barely moving.
+  if (Math.abs(d) < 0.004 && Math.abs(vel) < 0.02) return { pos: tgt, vel: 0 };
+
+  const a = CAR_ACCEL;
+  const brakeDist = (vel * vel) / (2 * a); // distance to bleed off current speed
+  const movingToward = vel * d >= 0;
+  // Brake if we're heading at the target and within stopping distance; otherwise
+  // accelerate toward it (reversing any wrong-way momentum first).
+  const accel = movingToward && Math.abs(d) <= brakeDist ? -Math.sign(vel) * a : Math.sign(d) * a;
+
+  let nv = vel + accel * dt;
+  if (nv > CAR_SPEED) nv = CAR_SPEED;
+  if (nv < -CAR_SPEED) nv = -CAR_SPEED;
+  let np = pos + nv * dt;
+  // Snap on overshoot (discrete steps can nudge us just past the target).
+  if ((d > 0 && np >= tgt) || (d < 0 && np <= tgt)) return { pos: tgt, vel: 0 };
+  np = Math.max(from, Math.min(to, np));
+  return { pos: np, vel: nv };
 }
 
 /**

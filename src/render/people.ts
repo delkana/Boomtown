@@ -14,7 +14,7 @@ import { hashString } from "../game/hash";
  */
 
 const WALK_SPEED = 2.6; // fractional columns per second
-const CAR_CAPACITY = 8;
+const CAR_CAPACITY = 16;
 const ENTRANCE_X = 0.7; // where people enter/leave, near the ground-floor lobby
 const ARRIVE_EPS = 0.04;
 
@@ -51,6 +51,7 @@ interface Person {
 interface Car {
   col: number;
   pos: number;
+  vel: number;
   passengers: string[];
 }
 
@@ -98,7 +99,8 @@ export class PeopleSim {
       // Cars.
       for (const car of plot.cars ?? []) {
         liveCars.add(car.id);
-        if (!this.cars.has(car.id)) this.cars.set(car.id, { col: car.col, pos: car.home ?? car.position, passengers: [] });
+        if (!this.cars.has(car.id))
+          this.cars.set(car.id, { col: car.col, pos: car.home ?? car.position, vel: 0, passengers: [] });
       }
       // Office workers.
       for (const unit of plot.units) {
@@ -181,7 +183,9 @@ export class PeopleSim {
         const calls = this.waitingFloors(plot.index, car.col, run);
         if (calls.length > 0) target = this.nearestFloor(calls, cs.pos, target);
       }
-      cs.pos = stepCar(cs.pos, target, run.from, run.to, dt).pos;
+      const moved = stepCar(cs.pos, cs.vel, target, run.from, run.to, dt);
+      cs.pos = moved.pos;
+      cs.vel = moved.vel;
 
       // Board waiting workers when stopped at a floor (up to capacity).
       const f = Math.round(cs.pos);
@@ -279,7 +283,7 @@ export class PeopleSim {
           break;
         }
         p.floor = car.pos;
-        p.x = p.shaftCol + p.spread;
+        p.x = p.shaftCol + 0.5 + p.spread; // stand out on the cabin floor, not the left edge
         if (Math.abs(car.pos - p.officeRow) < 0.1) {
           this.alight(car, p.id);
           p.floor = p.officeRow;
@@ -310,7 +314,7 @@ export class PeopleSim {
           break;
         }
         p.floor = car.pos;
-        p.x = p.shaftCol + p.spread;
+        p.x = p.shaftCol + 0.5 + p.spread; // stand out on the cabin floor, not the left edge
         if (Math.abs(car.pos) < 0.1) {
           this.alight(car, p.id);
           p.floor = 0;
