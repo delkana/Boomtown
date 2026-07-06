@@ -91,6 +91,17 @@ export class Minimap {
       const owner = plot.ownerId ? state.players[plot.ownerId] : undefined;
       const maxRow = plot.units.reduce((m, u) => Math.max(m, u.row + 1), 0);
 
+      if (plot.feature) {
+        // City feature — color by kind so the strip's character reads at a glance.
+        ctx.fillStyle =
+          plot.feature === "park"
+            ? "rgba(80,180,100,0.7)"
+            : plot.feature === "river"
+              ? "rgba(70,140,200,0.7)"
+              : "rgba(150,155,165,0.7)";
+        ctx.fillRect(x, groundY - 5, Math.max(1, plotW), 5);
+        continue;
+      }
       if (!plot.ownerId) {
         // Unclaimed: faint stub.
         ctx.fillStyle = "rgba(150,210,150,0.18)";

@@ -5,7 +5,17 @@ import { advanceTick, projectedNet } from "../src/game/tick";
 import { propertyNameFor, archetype } from "../src/game/archetypes";
 import { MAX_PLOT_COLS, MIN_PLOT_COLS, STARTING_MONEY, UNIT_DEFS } from "../src/game/constants";
 import { claimCost, plotBaseCost } from "../src/game/economy";
+import { FEATURE_COLS, FEATURE_COUNT } from "../src/game/features";
 import type { GameState } from "../src/game/types";
+
+/** Indices of the first `n` buildable (non-feature) plots. */
+function buildable(s: GameState, n: number): number[] {
+  return Object.values(s.plots)
+    .filter((p) => !p.feature)
+    .map((p) => p.index)
+    .sort((a, b) => a - b)
+    .slice(0, n);
+}
 
 /**
  * Tests for the pure simulation layer (src/game/*). This is the code that runs
@@ -28,15 +38,17 @@ function freshGame(plotCount = 6, archetypeId = "pacifica"): GameState {
 }
 
 describe("createGameState", () => {
-  it("creates the right number of unowned plots", () => {
+  it("creates plotCount buildable lots plus the feature plots, all unowned", () => {
     const s = freshGame(9);
-    expect(Object.keys(s.plots)).toHaveLength(9);
+    expect(Object.keys(s.plots)).toHaveLength(9 + FEATURE_COUNT);
+    const lots = Object.values(s.plots).filter((p) => !p.feature);
+    expect(lots).toHaveLength(9);
     expect(Object.values(s.plots).every((p) => p.ownerId === null)).toBe(true);
   });
 
-  it("gives each plot a width within [MIN, MAX]_PLOT_COLS", () => {
+  it("gives each buildable lot a width within [MIN, MAX]_PLOT_COLS", () => {
     const s = freshGame(12);
-    for (const p of Object.values(s.plots)) {
+    for (const p of Object.values(s.plots).filter((p) => !p.feature)) {
       expect(p.cols).toBeGreaterThanOrEqual(MIN_PLOT_COLS);
       expect(p.cols).toBeLessThanOrEqual(MAX_PLOT_COLS);
     }
@@ -63,13 +75,14 @@ describe("CLAIM_PLOT", () => {
   });
 
   it("charges escalating multiples for each additional plot (×1, ×2, ×3)", () => {
-    const s = freshGame(6);
+    const s = freshGame(8);
     s.players["p1"].money = 10_000_000; // enough for several
-    expect(claimCost(s, "p1", 0)).toBe(plotBaseCost(s.plots[0].cols) * 1);
-    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
-    expect(claimCost(s, "p1", 1)).toBe(plotBaseCost(s.plots[1].cols) * 2);
-    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 1 });
-    expect(claimCost(s, "p1", 2)).toBe(plotBaseCost(s.plots[2].cols) * 3);
+    const [a, b, c] = buildable(s, 3);
+    expect(claimCost(s, "p1", a)).toBe(plotBaseCost(s.plots[a].cols) * 1);
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: a });
+    expect(claimCost(s, "p1", b)).toBe(plotBaseCost(s.plots[b].cols) * 2);
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: b });
+    expect(claimCost(s, "p1", c)).toBe(plotBaseCost(s.plots[c].cols) * 3);
   });
 
   it("prices land from PLOT_COST_MIN (narrow) up to PLOT_COST_MAX (wide)", () => {
@@ -250,6 +263,46 @@ describe("advanceTick economy", () => {
   });
 });
 
+describe("feature plots", () => {
+  function featureIndex(s: GameState): number {
+    return Object.values(s.plots).find((p) => p.feature)!.index;
+  }
+
+  it("adds exactly FEATURE_COUNT non-buildable features, each FEATURE_COLS wide", () => {
+    const s = freshGame(10);
+    const features = Object.values(s.plots).filter((p) => p.feature);
+    expect(features).toHaveLength(FEATURE_COUNT);
+    expect(features.every((p) => p.cols === FEATURE_COLS)).toBe(true);
+    expect(features.every((p) => ["river", "park", "highway"].includes(p.feature!))).toBe(true);
+  });
+
+  it("cannot be claimed", () => {
+    const s = freshGame(10);
+    const i = featureIndex(s);
+    const r = applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: i });
+    expect(r.ok).toBe(false);
+    expect(s.plots[i].ownerId).toBeNull();
+  });
+
+  it("cannot be built on", () => {
+    const s = freshGame(10);
+    const i = featureIndex(s);
+    const r = applyCommand(s, {
+      type: "PLACE_UNIT", playerId: "p1", plotIndex: i, kind: "lobby", col: 0, row: 0,
+    });
+    expect(r.ok).toBe(false);
+    expect(s.plots[i].units).toHaveLength(0);
+  });
+
+  it("is placed deterministically for a given game id", () => {
+    const a = freshGame(10);
+    const b = freshGame(10);
+    const idsA = Object.values(a.plots).filter((p) => p.feature).map((p) => p.index);
+    const idsB = Object.values(b.plots).filter((p) => p.feature).map((p) => p.index);
+    expect(idsA).toEqual(idsB);
+  });
+});
+
 describe("archetypes", () => {
   it("propertyNameFor is deterministic and varied", () => {
     // Same (archetype, index) always yields the same name.
@@ -270,8 +323,8 @@ describe("archetypes", () => {
 describe("serialize / deserialize", () => {
   it("round-trips state losslessly", () => {
     const s = freshGame();
-    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 1 });
-    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 1, kind: "lobby", col: 0, row: 0 });
+    applyCommand(s, { type: "CLAIM_PLOT", playerId: "p1", plotIndex: 0 });
+    applyCommand(s, { type: "PLACE_UNIT", playerId: "p1", plotIndex: 0, kind: "lobby", col: 0, row: 0 });
     advanceTick(s);
     const copy = deserialize(serialize(s));
     expect(copy).toEqual(s);

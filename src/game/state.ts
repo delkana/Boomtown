@@ -1,6 +1,13 @@
 import { MAX_PLOT_COLS, MIN_PLOT_COLS } from "./constants";
 import type { GameConfig, GameState, Plot } from "./types";
 import { propertyNameFor } from "./archetypes";
+import { hashString } from "./hash";
+import {
+  FEATURE_COLS,
+  FEATURE_COUNT,
+  featureKindFor,
+  featureName,
+} from "./features";
 
 /**
  * State construction + (de)serialization.
@@ -16,28 +23,58 @@ import { propertyNameFor } from "./archetypes";
  * Math.random), so the server stays authoritative and tests are stable.
  */
 export function plotColsFor(gameId: string, index: number): number {
-  let h = 2166136261;
-  const key = `${gameId}:${index}`;
-  for (let i = 0; i < key.length; i++) {
-    h ^= key.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
   const span = MAX_PLOT_COLS - MIN_PLOT_COLS + 1;
-  return MIN_PLOT_COLS + ((h >>> 0) % span);
+  return MIN_PLOT_COLS + (hashString(`${gameId}:${index}`) % span);
+}
+
+/**
+ * Pick FEATURE_COUNT distinct interior positions for the city's feature plots
+ * (deterministic). Interior so features read as "cutting through" the city
+ * rather than sitting on the edge.
+ */
+function featurePositions(id: string, total: number): Set<number> {
+  const positions = new Set<number>();
+  const lo = 1;
+  const hi = Math.max(lo, total - 2);
+  const span = hi - lo + 1;
+  for (let n = 0; positions.size < FEATURE_COUNT && n < 100; n++) {
+    positions.add(lo + (hashString(`${id}:fpos:${n}`) % span));
+  }
+  return positions;
 }
 
 export function createGameState(id: string, config: GameConfig): GameState {
   const plots: Record<number, Plot> = {};
-  for (let i = 0; i < config.plotCount; i++) {
-    plots[i] = {
-      id: `${id}:plot:${i}`,
-      index: i,
-      cols: plotColsFor(id, i),
-      name: propertyNameFor(config.archetype, i),
-      ownerId: null,
-      units: [],
-    };
+  // The creator's plot count is the number of BUILDABLE lots; feature plots are
+  // added on top, interspersed through the strip.
+  const total = config.plotCount + FEATURE_COUNT;
+  const features = featurePositions(id, total);
+
+  for (let i = 0; i < total; i++) {
+    if (features.has(i)) {
+      const kind = featureKindFor(`${id}:fkind:${i}`);
+      plots[i] = {
+        id: `${id}:plot:${i}`,
+        index: i,
+        cols: FEATURE_COLS,
+        name: featureName(kind, `${id}:fname:${i}`),
+        feature: kind,
+        ownerId: null,
+        units: [],
+      };
+    } else {
+      plots[i] = {
+        id: `${id}:plot:${i}`,
+        index: i,
+        cols: plotColsFor(id, i),
+        name: propertyNameFor(config.archetype, i),
+        feature: null,
+        ownerId: null,
+        units: [],
+      };
+    }
   }
+
   return {
     id,
     tick: 0,

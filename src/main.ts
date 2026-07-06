@@ -93,12 +93,12 @@ function enterGame(conn: GameConnection): void {
     hud.update();
   });
 
-  const plotCount = conn.getState().config.plotCount;
+  const totalPlots = Object.keys(conn.getState().plots).length;
   const minimap = new Minimap(minimapEl, conn, camera);
 
   // Size the canvas and center on the middle of the city.
   sizeCanvas(camera);
-  jumpToMyPlots(conn, camera, Math.floor(plotCount / 2));
+  jumpToMyPlots(conn, camera, Math.floor(totalPlots / 2));
 
   const unsub = conn.onSnapshot(() => hud.update());
   hud.update();
@@ -106,7 +106,7 @@ function enterGame(conn: GameConnection): void {
   // Nav controls.
   const onZoomIn = () => input.zoomBy(1.25);
   const onZoomOut = () => input.zoomBy(1 / 1.25);
-  const onJump = () => jumpToMyPlots(conn, camera, Math.floor(plotCount / 2));
+  const onJump = () => jumpToMyPlots(conn, camera, Math.floor(totalPlots / 2));
   zoomInBtn.addEventListener("click", onZoomIn);
   zoomOutBtn.addEventListener("click", onZoomOut);
   jumpBtn.addEventListener("click", onJump);

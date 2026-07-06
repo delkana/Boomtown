@@ -2,6 +2,7 @@ import { CELL_SIZE, MAX_ROWS, UNIT_DEFS } from "../game/constants";
 import type { GameState, Plot } from "../game/types";
 import { unitAt } from "../game/reducer";
 import { claimCost } from "../game/economy";
+import { featureLabel } from "../game/features";
 import { Camera } from "./camera";
 
 /**
@@ -71,6 +72,12 @@ export class Renderer {
 
     // Cull off-screen plots.
     if (leftScreen + plotPxW < 0 || leftScreen > camera.viewW) return;
+
+    // Feature plots (river/park/highway) draw their own art and no build grid.
+    if (plot.feature) {
+      this.drawFeature(plot, leftScreen, plotPxW, cell);
+      return;
+    }
 
     const groundY = camera.groundScreenY;
     const owner = plot.ownerId ? state.players[plot.ownerId] : undefined;
@@ -171,6 +178,77 @@ export class Renderer {
     ctx.textAlign = "left";
   }
 
+  /** Draw a non-buildable city feature (river / park / highway) + its nameplate. */
+  private drawFeature(plot: Plot, leftScreen: number, plotPxW: number, cell: number): void {
+    const { ctx, camera } = this;
+    const groundY = camera.groundScreenY;
+    const kind = plot.feature!;
+
+    if (kind === "park") {
+      // Grass mound + trees.
+      ctx.fillStyle = "#2f6b3a";
+      ctx.fillRect(leftScreen, groundY - cell * 0.7, plotPxW, cell * 0.7 + 4);
+      ctx.fillStyle = "#8a6a3a"; // path
+      ctx.fillRect(leftScreen + plotPxW * 0.45, groundY - cell * 0.7, plotPxW * 0.1, cell * 0.7);
+      for (const f of [0.18, 0.36, 0.62, 0.82]) {
+        const tx = leftScreen + plotPxW * f;
+        const ty = groundY - cell * 0.9;
+        ctx.fillStyle = "#5a3f28";
+        ctx.fillRect(tx - cell * 0.03, ty, cell * 0.06, cell * 0.5);
+        ctx.fillStyle = "#3f9a52";
+        ctx.beginPath();
+        ctx.arc(tx, ty, cell * 0.28, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (kind === "river") {
+      // Water channel filling the plot's ground, with a bridge deck across it.
+      const water = ctx.createLinearGradient(0, groundY - cell * 0.4, 0, camera.viewH);
+      water.addColorStop(0, "#3a7bb0");
+      water.addColorStop(1, "#1e4a70");
+      ctx.fillStyle = water;
+      ctx.fillRect(leftScreen, groundY - cell * 0.3, plotPxW, camera.groundMargin + cell * 0.3);
+      // Bridge deck.
+      const deckY = groundY - cell * 0.45;
+      ctx.fillStyle = "#6b7079";
+      ctx.fillRect(leftScreen - cell * 0.1, deckY, plotPxW + cell * 0.2, cell * 0.3);
+      ctx.fillStyle = "#8a9099"; // rail
+      ctx.fillRect(leftScreen - cell * 0.1, deckY - 3, plotPxW + cell * 0.2, 3);
+      // Pylons.
+      ctx.fillStyle = "#565b63";
+      for (const f of [0.3, 0.7]) {
+        ctx.fillRect(leftScreen + plotPxW * f - cell * 0.06, deckY, cell * 0.12, camera.groundMargin);
+      }
+    } else {
+      // Elevated highway: deck a few floors up on pillars, with a couple of cars.
+      const deckY = camera.rowTopScreenY(3);
+      const deckH = cell * 0.5;
+      ctx.fillStyle = "#4a4e56"; // pillars
+      for (const f of [0.2, 0.5, 0.8]) {
+        ctx.fillRect(leftScreen + plotPxW * f - cell * 0.08, deckY + deckH, cell * 0.16, groundY - (deckY + deckH));
+      }
+      ctx.fillStyle = "#6b7079"; // deck
+      ctx.fillRect(leftScreen - cell * 0.1, deckY, plotPxW + cell * 0.2, deckH);
+      ctx.fillStyle = "#2a2d33"; // road surface
+      ctx.fillRect(leftScreen - cell * 0.1, deckY + deckH * 0.2, plotPxW + cell * 0.2, deckH * 0.35);
+      for (const [f, col] of [[0.3, "#e0d24a"], [0.6, "#e0503f"]] as const) {
+        ctx.fillStyle = col;
+        ctx.fillRect(leftScreen + plotPxW * f, deckY + deckH * 0.22, cell * 0.5, deckH * 0.28);
+      }
+    }
+
+    // Nameplate: feature name + type label.
+    const cx = leftScreen + plotPxW / 2;
+    ctx.textBaseline = "top";
+    ctx.textAlign = "center";
+    ctx.font = "600 12px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(200,214,226,0.9)";
+    ctx.fillText(plot.name, cx, groundY + 9);
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(150,170,190,0.7)";
+    ctx.fillText(featureLabel(kind), cx, groundY + 25);
+    ctx.textAlign = "left";
+  }
+
   private drawHoverGhost(
     state: GameState,
     localId: string,
@@ -184,7 +262,7 @@ export class Renderer {
     const leftWorld = camera.plotLeftWorldX(hover.plotIndex);
 
     if (tool === "claim") {
-      if (plot.ownerId) return; // only unclaimed plots are claimable
+      if (plot.ownerId || plot.feature) return; // features & owned plots aren't claimable
       const canAfford =
         (state.players[localId]?.money ?? 0) >= claimCost(state, localId, plot.index);
       const x = camera.worldToScreenX(leftWorld);

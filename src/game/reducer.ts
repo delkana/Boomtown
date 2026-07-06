@@ -2,6 +2,7 @@ import type { Command } from "./commands";
 import type { GameState, Plot, Unit, UnitKind } from "./types";
 import { MAX_ROWS, UNIT_DEFS } from "./constants";
 import { claimCost } from "./economy";
+import { featureLabel } from "./features";
 
 /**
  * The reducer applies a single command to the authoritative state.
@@ -45,6 +46,7 @@ function claimPlot(
   if (!player) return fail("No such player");
   const plot = state.plots[cmd.plotIndex];
   if (!plot) return fail("No such plot");
+  if (plot.feature) return fail(`${featureLabel(plot.feature)} — can't be claimed`);
   if (plot.ownerId === cmd.playerId) return fail("You already own this plot");
   if (plot.ownerId) return fail("Plot already claimed by another player");
 
@@ -65,6 +67,7 @@ function placeUnit(
 
   const plot = state.plots[cmd.plotIndex];
   if (!plot) return fail("No such plot");
+  if (plot.feature) return fail(`${featureLabel(plot.feature)} — nothing can be built here`);
   if (plot.ownerId === null) return fail("Claim this plot before building");
   if (plot.ownerId !== cmd.playerId) return fail("You don't own this plot");
 

@@ -106,7 +106,8 @@ export class Hud {
     let cheapestClaim = Infinity;
     for (const key of Object.keys(state.plots)) {
       const p = state.plots[Number(key)];
-      if (!p.ownerId) cheapestClaim = Math.min(cheapestClaim, claimCost(state, me, p.index));
+      if (!p.ownerId && !p.feature)
+        cheapestClaim = Math.min(cheapestClaim, claimCost(state, me, p.index));
     }
 
     // Toolbar selected/affordability states.

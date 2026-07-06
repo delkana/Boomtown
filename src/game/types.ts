@@ -14,6 +14,8 @@
  * src/net/protocol.ts), not part of the shared authoritative world.
  */
 
+import type { FeatureKind } from "./features";
+
 /** What kind of thing can occupy a grid cell on a tower floor. */
 export type UnitKind = "lobby" | "office" | "apartment" | "elevator";
 
@@ -44,8 +46,13 @@ export interface Plot {
   index: number;
   /** Footprint width in grid columns (varies per plot, MIN..MAX_PLOT_COLS). */
   cols: number;
-  /** Themed property name (from the city archetype), e.g. "Redwood Spire". */
+  /** Themed property name, e.g. "Redwood Spire" (or a feature name). */
   name: string;
+  /**
+   * If set, this is a non-buildable city feature (river/park/highway) rather
+   * than a claimable lot. Feature plots can never be claimed or built on.
+   */
+  feature: FeatureKind | null;
   /** Owning player id, or `null` if the plot is unclaimed / for sale. */
   ownerId: string | null;
   units: Unit[];
