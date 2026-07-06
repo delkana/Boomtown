@@ -1,4 +1,6 @@
 import type { ColorOption } from "../game/constants";
+import type { Command } from "../game/commands";
+import type { GameState } from "../game/types";
 
 /**
  * Wire protocol DTOs — the messages that cross the client/server boundary.
@@ -55,4 +57,32 @@ export interface PlayerSession {
   playerId: string;
   playerName: string;
   colorHex: string;
+  /**
+   * Secret reconnect token for THIS client. Lets the player rejoin the same
+   * game (across refresh / reconnect) without re-picking name+color. Never
+   * appears in shared GameState, so it isn't leaked to other players.
+   */
+  token: string;
 }
+
+/* ------------------------------------------------------------------ *
+ * WebSocket wire protocol (used by RemoteServer <-> server/wsServer). *
+ * The in-process LocalServer bypasses this and calls the directory    *
+ * directly, but both go through the exact same GameDirectory logic.   *
+ * ------------------------------------------------------------------ */
+
+/** Messages the client sends to the server. */
+export type ClientMsg =
+  | { t: "create"; reqId: number; cfg: CreateGameConfig }
+  | { t: "join"; reqId: number; req: JoinRequest }
+  | { t: "reconnect"; reqId: number; gameId: string; token: string }
+  | { t: "command"; cmd: Command }
+  | { t: "leave" };
+
+/** Messages the server sends to the client. */
+export type ServerMsg =
+  | { t: "directory"; games: GameSummary[] }
+  | { t: "result"; reqId: number; ok: true; session: PlayerSession; state: GameState }
+  | { t: "result"; reqId: number; ok: false; error: string }
+  | { t: "snapshot"; state: GameState }
+  | { t: "cmdError"; error: string };

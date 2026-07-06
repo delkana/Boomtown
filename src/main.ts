@@ -5,7 +5,8 @@ import { InputController } from "./input/input";
 import { Hud } from "./ui/hud";
 import { Minimap } from "./ui/minimap";
 import { LobbyScreen } from "./ui/lobby";
-import { LocalServer } from "./net/localServer";
+import { LocalServer, type GameServer } from "./net/localServer";
+import { RemoteServer } from "./net/remoteServer";
 import type { GameConnection } from "./net/connection";
 
 /**
@@ -29,8 +30,6 @@ const zoomInBtn = document.getElementById("zoom-in")!;
 const zoomOutBtn = document.getElementById("zoom-out")!;
 const jumpBtn = document.getElementById("jump-btn")!;
 
-const server = new LocalServer();
-
 /** Everything tied to one active in-game session; torn down on leave. */
 interface Session {
   conn: GameConnection;
@@ -42,11 +41,40 @@ interface Session {
   buttons: Array<() => void>;
 }
 let active: Session | null = null;
-
-const lobby = new LobbyScreen(lobbyEl, server, enterGame);
-lobby.render();
+let lobby: LobbyScreen;
+let serverRef: GameServer;
 
 leaveBtn.addEventListener("click", leaveGame);
+
+/**
+ * Pick a transport. With no config we run fully offline against LocalServer.
+ * Point at a real server with `?server=ws://host:port` (or set
+ * localStorage["boomtown.serverUrl"]) and the SAME app talks to server/wsServer
+ * over WebSockets — that's the entire "go multiplayer" switch.
+ */
+async function init(): Promise<void> {
+  const params = new URLSearchParams(location.search);
+  const url = params.get("server") || localStorage.getItem("boomtown.serverUrl") || "";
+  let label = "Offline · local";
+
+  if (url) {
+    const remote = new RemoteServer(url);
+    try {
+      await remote.ready();
+      serverRef = remote;
+      label = `Online · ${url}`;
+    } catch {
+      serverRef = new LocalServer();
+      label = "Offline · local (server unreachable)";
+    }
+  } else {
+    serverRef = new LocalServer();
+  }
+
+  lobby = new LobbyScreen(lobbyEl, serverRef, enterGame, label);
+  lobby.render();
+}
+void init();
 
 function enterGame(conn: GameConnection): void {
   lobby.hide();
@@ -96,7 +124,7 @@ function enterGame(conn: GameConnection): void {
 
   // Debug handle (also used for headless verification where rAF is suspended).
   (window as unknown as { boomtown: unknown }).boomtown = {
-    server,
+    server: serverRef,
     conn,
     camera,
     input,

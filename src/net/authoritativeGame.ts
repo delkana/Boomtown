@@ -22,9 +22,15 @@ export class AuthoritativeGame {
   private subscribers = new Set<(snapshot: string) => void>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(id: string, config: GameConfig, password: string | null) {
-    this.state = createGameState(id, config);
+  /** Build from an existing state (fresh via `create`, or restored from disk). */
+  constructor(state: GameState, password: string | null) {
+    this.state = state;
     this.password = password;
+  }
+
+  /** Create a brand-new game with a seeded empty world. */
+  static create(id: string, config: GameConfig, password: string | null): AuthoritativeGame {
+    return new AuthoritativeGame(createGameState(id, config), password);
   }
 
   /** Register a new player and return them. */

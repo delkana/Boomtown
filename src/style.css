@@ -58,6 +58,12 @@ body {
   color: var(--muted);
   font-size: 15px;
 }
+.lobby-status {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--pos);
+  opacity: 0.85;
+}
 
 .lobby-cols {
   display: grid;

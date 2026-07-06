@@ -25,7 +25,25 @@ Other scripts:
 npm run build      # type-check + production build to dist/
 npm run preview    # serve the production build
 npm run typecheck  # tsc --noEmit
+npm test           # vitest: domain unit tests + a real-WebSocket multiplayer test
+npm run server     # start the authoritative WebSocket server (ws://localhost:8787)
 ```
+
+### Playing online (real multiplayer)
+
+By default the game runs **fully offline** against an in-browser server. To play
+a genuinely shared, networked city:
+
+```bash
+npm run server          # terminal 1 — authoritative server on ws://localhost:8787
+npm run dev             # terminal 2 — the client
+```
+
+Then open the client at **`http://localhost:5173/?server=ws://localhost:8787`**
+(or set `localStorage["boomtown.serverUrl"]`). The lobby header shows
+**● Online**. Open that URL in two browsers/tabs, join the same city, and you'll
+see each other claim plots and raise towers in real time. The server persists
+every city to `server/data/games.json`, so it survives restarts.
 
 ### Playing
 
@@ -82,8 +100,10 @@ Two rules drive the layout:
   on client or server. Notably it has **no `localPlayerId`**: which player a
   client is, is per-connection info, not shared world state.
 - **`src/net/` (BOUNDARY)** — the transport seam. `GameServer` +
-  `GameConnection` are the interfaces the rest of the app depends on;
-  `LocalServer` / `LocalConnection` are the in-process implementations.
+  `GameConnection` are the interfaces the rest of the app depends on. There are
+  **two interchangeable implementations**: `LocalServer`/`LocalConnection`
+  (in-process) and `RemoteServer`/`RemoteConnection` (WebSocket). Both drive the
+  same `GameDirectory` + `AuthoritativeGame`.
 - **`src/render`, `src/input`, `src/ui`** — read state through the connection,
   produce commands. Never mutate state.
 
@@ -98,10 +118,16 @@ Two rules drive the layout:
 | `src/game/commands.ts`     | STATE    | `Command` union (`CLAIM_PLOT`, `PLACE_UNIT`, `SELL_UNIT`) — **the wire protocol for intents**. |
 | `src/game/reducer.ts`      | STATE    | `applyCommand` — pure, fully validated, authoritative state transitions.             |
 | `src/game/tick.ts`         | STATE    | `advanceTick` — pure economy step (occupancy, income, upkeep).                       |
-| `src/net/protocol.ts`      | BOUNDARY | Wire DTOs: `GameSummary`, `CreateGameConfig`, `JoinRequest`, `PlayerSession`.         |
+| `src/net/protocol.ts`      | BOUNDARY | Wire DTOs + WebSocket message unions (`ClientMsg`, `ServerMsg`).                      |
+| `src/net/gameDirectory.ts` | SERVER   | Transport-agnostic core: game registry, all lobby validation, reconnect tokens, (de)serialization. Used by both servers. |
 | `src/net/authoritativeGame.ts` | SERVER | Owns one game's `GameState`; applies commands, runs the tick clock, broadcasts snapshots. |
-| `src/net/connection.ts`    | BOUNDARY | `GameConnection` interface + `LocalConnection` (client's handle on a game).           |
-| `src/net/localServer.ts`   | SERVER   | `GameServer` interface + `LocalServer`: lobby, validation, demo-city seeding.         |
+| `src/net/connection.ts`    | BOUNDARY | `GameConnection` interface + `LocalConnection` (in-process handle).                   |
+| `src/net/localServer.ts`   | SERVER   | `GameServer` interface + `LocalServer` (offline; localStorage persistence).           |
+| `src/net/remoteServer.ts`  | CLIENT   | `RemoteServer` + `RemoteConnection` — the WebSocket transport (browser side).         |
+| `server/wsServer.ts`       | SERVER   | Node WebSocket server: routes the wire protocol to a `GameDirectory`.                 |
+| `server/index.ts`          | SERVER   | Process entry: port config + JSON file persistence of all cities.                    |
+| `test/domain.test.ts`      | TEST     | Vitest suite over the pure simulation (reducer, tick, claim, archetypes, serialize). |
+| `test/multiplayer.test.ts` | TEST     | Two real `ws` clients: cross-player sync + server-authoritative identity.             |
 | `src/render/camera.ts`     | RENDER   | World⇄screen transforms; screen→cell picking. Shared by render + input.              |
 | `src/render/renderer.ts`   | RENDER   | Draws the whole city (all owners' plots) to canvas. Read-only.                       |
 | `src/input/input.ts`       | INPUT    | Pointer/keyboard → commands (via connection) + camera panning.                       |
@@ -120,7 +146,7 @@ Two rules drive the layout:
 4. **The reducer is the authority.** The UI greys out illegal actions for feel,
    but every command is re-validated server-side (ownership, funds, placement) —
    clients are never trusted. Same for the lobby: color/password/capacity rules
-   are enforced in `LocalServer`, not just the form.
+   are enforced in `GameDirectory` (shared by both servers), not just the form.
 5. **The client renders snapshots.** `LocalConnection` deserializes a fresh
    snapshot on every broadcast — the exact path a networked client takes — so the
    snapshot format is dogfooded continuously.
@@ -129,42 +155,53 @@ Two rules drive the layout:
 
 ## Multiplayer
 
-The boundary is implemented; only the transport is local. To go online you
-implement the two interfaces against a socket and change **nothing else**:
+Multiplayer is **implemented**, not hypothetical. The same `GameServer` /
+`GameConnection` interfaces have two implementations, chosen at startup:
 
 ```
-                         Today (local)                Networked (later)
-GameServer     LocalServer (in-process Map)   →  RPC client over WebSocket
-GameConnection LocalConnection (direct calls) →  socket send + snapshot stream
-AuthoritativeGame  runs in the browser        →  runs on the server (same class)
+                    Offline (default)              Online (?server=ws://…)
+GameServer      LocalServer                    RemoteServer  ──┐  WebSocket
+GameConnection  LocalConnection                RemoteConnection │
+                     │                                          ▼
+                GameDirectory  ◄──── identical ────►  server/wsServer → GameDirectory
+                AuthoritativeGame                     AuthoritativeGame (Node)
 ```
 
-Because `AuthoritativeGame` already `import`s `applyCommand`, `advanceTick`, and
-`serialize` from `src/game/`, the real server reuses those files verbatim. The
-client's render/input/HUD only ever touch `GameConnection`, so they don't move.
+The authoritative logic lives in **one place** — `GameDirectory` (lobby rules,
+tokens) and `AuthoritativeGame` (commands, tick, snapshots) — and both the
+offline and online paths run it, so behavior can't drift. `AuthoritativeGame`
+imports `applyCommand` / `advanceTick` / `serialize` straight from `src/game/`,
+and the Node server reuses those files verbatim.
 
-What a real server changes (all outside the domain layer):
+What the networked path adds — all **outside** the render/input/UI layers:
 
-- **Identity from the connection.** Commands carry `playerId`; a real server
-  ignores the client-supplied value and derives it from the authenticated socket.
-  The reducer's ownership checks (`plot.ownerId !== playerId`) already enforce the
-  rest.
-- **Continuous ticking.** `AuthoritativeGame` currently ticks only while a client
-  is subscribed (no point simulating an unobserved local city); a real server
-  ticks always.
-- **Async acks.** `LocalConnection.dispatch` learns a command's rejection reason
-  synchronously; over a socket that becomes an ack/error message. The `lastError`
-  hook is already the place it surfaces.
+- **Server-authoritative identity.** Commands carry a `playerId`, but the server
+  overwrites it with the id it assigned to that socket. A client cannot act as
+  another player by spoofing the field (covered by `test/multiplayer.test.ts`).
+- **Async lobby.** `createGame` / `joinGame` / `reconnect` return Promises;
+  `listGames()` stays sync and reads a cache the server keeps fresh via directory
+  pushes. `ready()` resolves once connected.
+- **Reconnect tokens.** Create/join issue a secret token (kept in a server-side
+  side map, never in broadcast `GameState`). The client stores it in
+  `localStorage` and reuses it to rejoin after a refresh — the lobby shows
+  **Enter** instead of Join.
 
-Natural follow-ups that need **no domain change**: delta snapshots instead of
-full state, client-side prediction, and interest management (only stream plots
-near the viewport as you pan).
+### Persistence
+
+- **Server:** `server/index.ts` writes the whole directory (cities, towers,
+  tokens) to `server/data/games.json` and restores it on boot.
+- **Client:** offline `LocalServer` persists its directory to `localStorage`, and
+  joined-session tokens are persisted so rejoin survives a refresh in both modes.
+
+Natural follow-ups that still need **no domain change**: delta snapshots instead
+of full-state broadcasts, client-side prediction, and interest management (only
+stream plots near the viewport as you pan).
 
 ### Demo cities
 
-`LocalServer` seeds a couple of cities (one password-protected) with existing
-owners and pre-built towers, so the browse/join flow — taken colors, password
-prompts, populated skyline — works out of the box.
+`GameDirectory` seeds a few cities (one password-protected) with existing owners
+and pre-built towers, so the browse/join flow — taken colors, password prompts,
+populated skyline — works out of the box, offline or online.
 
 ---
 

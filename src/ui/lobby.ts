@@ -32,15 +32,19 @@ export class LobbyScreen {
     private root: HTMLElement,
     private server: GameServer,
     private onEnter: (conn: GameConnection) => void,
+    private serverLabel = "Offline · local",
   ) {
     this.palette = server.getPalette();
     this.createColor = this.palette[0].id;
+    this.joined = loadJoined();
     server.onDirectoryChange(() => this.renderList());
   }
 
   /** Full render of the lobby shell. Call once, then `show()` to reveal. */
   render(): void {
     this.root.innerHTML = SHELL;
+    const status = this.root.querySelector("#lobby-status");
+    if (status) status.textContent = `● ${this.serverLabel}`;
     this.mountCreateForm();
     this.mountModal();
     this.renderList();
@@ -108,19 +112,26 @@ export class LobbyScreen {
     });
   }
 
-  private submitCreate(): void {
-    const result = this.server.createGame({
-      cityName: this.q<HTMLInputElement>("#cf-city").value,
-      archetype: this.createArchetype,
-      plotCount: Number(this.q<HTMLInputElement>("#cf-plots").value),
-      maxPlayers: Number(this.q<HTMLInputElement>("#cf-max").value),
-      password: this.q<HTMLInputElement>("#cf-pw-toggle").checked
-        ? this.q<HTMLInputElement>("#cf-pw").value
-        : null,
-      playerName: this.q<HTMLInputElement>("#cf-name").value,
-      playerColor: this.createColor,
-    });
-    this.finish(result, this.q("#cf-error"));
+  private async submitCreate(): Promise<void> {
+    const btn = this.q<HTMLButtonElement>("#cf-create");
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try {
+      const result = await this.server.createGame({
+        cityName: this.q<HTMLInputElement>("#cf-city").value,
+        archetype: this.createArchetype,
+        plotCount: Number(this.q<HTMLInputElement>("#cf-plots").value),
+        maxPlayers: Number(this.q<HTMLInputElement>("#cf-max").value),
+        password: this.q<HTMLInputElement>("#cf-pw-toggle").checked
+          ? this.q<HTMLInputElement>("#cf-pw").value
+          : null,
+        playerName: this.q<HTMLInputElement>("#cf-name").value,
+        playerColor: this.createColor,
+      });
+      this.finish(result, this.q("#cf-error"));
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   // --- Game list -----------------------------------------------------------
@@ -159,10 +170,18 @@ export class LobbyScreen {
       </div>`;
   }
 
-  private onJoinClick(g: GameSummary): void {
+  private async onJoinClick(g: GameSummary): Promise<void> {
     const existing = this.joined.get(g.id);
     if (existing) {
-      this.finish(this.server.reconnect(g.id, existing.playerId), this.q("#cf-error"));
+      const result = await this.server.reconnect(g.id, existing.token);
+      if (!result.ok) {
+        // Stale token (e.g. server restarted without persistence) — re-prompt.
+        this.joined.delete(g.id);
+        saveJoined(this.joined);
+        this.openJoinModal(g);
+        return;
+      }
+      this.finish(result, this.q("#cf-error"));
       return;
     }
     this.openJoinModal(g);
@@ -201,20 +220,27 @@ export class LobbyScreen {
     this.q("#join-modal").classList.add("hidden");
   }
 
-  private submitJoin(): void {
+  private async submitJoin(): Promise<void> {
     if (!this.joiningGameId) return;
-    const result = this.server.joinGame({
-      gameId: this.joiningGameId,
-      playerName: this.q<HTMLInputElement>("#jm-name").value,
-      playerColor: this.joinColor ?? "",
-      password: this.q<HTMLInputElement>("#jm-pw").value || null,
-    });
-    if (!result.ok) {
-      this.q("#jm-error").textContent = result.error;
-      return;
+    const btn = this.q<HTMLButtonElement>("#jm-join");
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try {
+      const result = await this.server.joinGame({
+        gameId: this.joiningGameId,
+        playerName: this.q<HTMLInputElement>("#jm-name").value,
+        playerColor: this.joinColor ?? "",
+        password: this.q<HTMLInputElement>("#jm-pw").value || null,
+      });
+      if (!result.ok) {
+        this.q("#jm-error").textContent = result.error;
+        return;
+      }
+      this.closeJoinModal();
+      this.finish(result, this.q("#cf-error"));
+    } finally {
+      btn.disabled = false;
     }
-    this.closeJoinModal();
-    this.finish(result, this.q("#cf-error"));
   }
 
   // --- shared helpers ------------------------------------------------------
@@ -226,6 +252,7 @@ export class LobbyScreen {
     }
     errorEl.textContent = "";
     this.joined.set(result.connection.session.gameId, result.connection.session);
+    saveJoined(this.joined);
     this.onEnter(result.connection);
   }
 
@@ -260,6 +287,28 @@ export class LobbyScreen {
   }
 }
 
+const JOINED_KEY = "boomtown.joined.v1";
+
+/** Load the map of games this browser has joined (with reconnect tokens). */
+function loadJoined(): Map<string, PlayerSession> {
+  try {
+    const raw = localStorage.getItem(JOINED_KEY);
+    if (!raw) return new Map();
+    const obj = JSON.parse(raw) as Record<string, PlayerSession>;
+    return new Map(Object.entries(obj));
+  } catch {
+    return new Map();
+  }
+}
+
+function saveJoined(joined: Map<string, PlayerSession>): void {
+  try {
+    localStorage.setItem(JOINED_KEY, JSON.stringify(Object.fromEntries(joined)));
+  } catch {
+    /* storage unavailable — rejoin-after-refresh is best-effort */
+  }
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string,
@@ -270,7 +319,9 @@ const SHELL = `
   <div class="lobby-wrap">
     <header class="lobby-header">
       <h1>Boomtown</h1>
-      <p class="tagline">Claim plots, raise towers, share the skyline.</p>
+      <p class="tagline">Claim plots, raise towers, share the skyline.
+        <span id="lobby-status" class="lobby-status"></span>
+      </p>
     </header>
     <div class="lobby-cols">
       <section class="lobby-card">

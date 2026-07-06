@@ -1,52 +1,51 @@
-import {
-  colorHexById,
-  MAX_PLAYERS_LIMIT,
-  MAX_PLOTS,
-  MIN_PLOTS,
-  PLAYER_COLORS,
-  type ColorOption,
-} from "../game/constants";
-import { isArchetype } from "../game/archetypes";
-import type { UnitKind } from "../game/types";
-import { AuthoritativeGame } from "./authoritativeGame";
+import { PLAYER_COLORS, type ColorOption } from "../game/constants";
+import { GameDirectory, type DirResult } from "./gameDirectory";
 import { LocalConnection, type GameConnection } from "./connection";
-import type {
-  CreateGameConfig,
-  GameSummary,
-  JoinRequest,
-  PlayerSession,
-} from "./protocol";
+import type { GameSummary, CreateGameConfig, JoinRequest, PlayerSession } from "./protocol";
 
 export type ConnectResult =
   | { ok: true; connection: GameConnection }
   | { ok: false; error: string };
 
 /**
- * GameServer is the lobby + game-directory boundary. LocalServer implements it
- * in-process; a networked build swaps in a client that RPCs a real server over
- * the same interface. The lobby UI (src/ui/lobby.ts) depends only on this.
+ * GameServer is the lobby boundary the UI depends on. It is intentionally
+ * async (createGame/joinGame/reconnect return Promises, `ready()` resolves once
+ * connected) so the SAME interface serves both the in-process LocalServer and
+ * the networked RemoteServer (src/net/remoteServer.ts) with no UI changes.
+ *
+ * `listGames()` stays synchronous and returns a cached directory that updates
+ * via `onDirectoryChange` — for the remote server that cache is fed by pushes.
  */
 export interface GameServer {
+  /** Resolves once the server is ready to take lobby requests. */
+  ready(): Promise<void>;
   getPalette(): ColorOption[];
   listGames(): GameSummary[];
   onDirectoryChange(cb: () => void): () => void;
-  createGame(cfg: CreateGameConfig): ConnectResult;
-  joinGame(req: JoinRequest): ConnectResult;
-  /** Re-enter a game this client already joined (skips name/color prompt). */
-  reconnect(gameId: string, playerId: string): ConnectResult;
+  createGame(cfg: CreateGameConfig): Promise<ConnectResult>;
+  joinGame(req: JoinRequest): Promise<ConnectResult>;
+  /** Re-enter a game via the reconnect token issued at create/join time. */
+  reconnect(gameId: string, token: string): Promise<ConnectResult>;
 }
 
+const LS_KEY = "boomtown.local.v1";
+
 /**
- * In-memory authoritative server. Holds every game, validates lobby requests
- * (the authority — the client's own checks are just UX), and hands back
- * connections. Seeds a few demo cities so the browse/join flow is meaningful.
+ * In-process authoritative server. Wraps a GameDirectory and hands out
+ * LocalConnections. Persists the whole directory to localStorage so offline
+ * cities (and your buildings) survive a page refresh.
  */
 export class LocalServer implements GameServer {
-  private games = new Map<string, AuthoritativeGame>();
-  private directoryListeners = new Set<() => void>();
+  private dir: GameDirectory;
 
   constructor() {
-    this.seedDemoCities();
+    this.dir = new GameDirectory();
+    this.restore();
+    this.dir.onChange(() => this.persist());
+  }
+
+  ready(): Promise<void> {
+    return Promise.resolve();
   }
 
   getPalette(): ColorOption[] {
@@ -54,179 +53,54 @@ export class LocalServer implements GameServer {
   }
 
   listGames(): GameSummary[] {
-    return [...this.games.values()].map((g) => g.summary());
+    return this.dir.summaries();
   }
 
   onDirectoryChange(cb: () => void): () => void {
-    this.directoryListeners.add(cb);
-    return () => this.directoryListeners.delete(cb);
+    return this.dir.onChange(cb);
   }
 
-  createGame(cfg: CreateGameConfig): ConnectResult {
-    const cityName = cfg.cityName.trim();
-    if (!cityName) return err("City name is required");
-    if (cityName.length > 28) return err("City name is too long");
-
-    const plotCount = Math.floor(cfg.plotCount);
-    if (plotCount < MIN_PLOTS || plotCount > MAX_PLOTS)
-      return err(`Properties must be between ${MIN_PLOTS} and ${MAX_PLOTS}`);
-
-    const maxPlayers = Math.floor(cfg.maxPlayers);
-    if (maxPlayers < 1 || maxPlayers > MAX_PLAYERS_LIMIT)
-      return err(`Max players must be between 1 and ${MAX_PLAYERS_LIMIT}`);
-
-    const name = cfg.playerName.trim();
-    if (!name) return err("Enter a player name");
-
-    const colorHex = colorHexById(cfg.playerColor);
-    if (!colorHex) return err("Pick a color");
-
-    if (!isArchetype(cfg.archetype)) return err("Pick a city archetype");
-
-    const password = cfg.password && cfg.password.length > 0 ? cfg.password : null;
-    const id = this.uniqueId(cityName);
-    const game = new AuthoritativeGame(
-      id,
-      { cityName, archetype: cfg.archetype, plotCount, maxPlayers, hasPassword: password !== null },
-      password,
-    );
-    this.games.set(id, game);
-    const player = game.addPlayer(name, colorHex);
-    this.notifyDirectory();
-
-    return { ok: true, connection: this.connect(game, player.id) };
+  async createGame(cfg: CreateGameConfig): Promise<ConnectResult> {
+    return this.wrap(this.dir.create(cfg));
   }
 
-  joinGame(req: JoinRequest): ConnectResult {
-    const game = this.games.get(req.gameId);
-    if (!game) return err("Game no longer exists");
-
-    if (game.password !== null && req.password !== game.password)
-      return err("Wrong password");
-
-    const players = Object.values(game.state.players);
-    if (players.length >= game.state.config.maxPlayers)
-      return err("Game is full");
-
-    const name = req.playerName.trim();
-    if (!name) return err("Enter a player name");
-    if (players.some((p) => p.name.toLowerCase() === name.toLowerCase()))
-      return err("That name is taken in this game");
-
-    const colorHex = colorHexById(req.playerColor);
-    if (!colorHex) return err("Pick a color");
-    if (players.some((p) => p.color === colorHex))
-      return err("That color is already taken");
-
-    const player = game.addPlayer(name, colorHex);
-    this.notifyDirectory();
-    return { ok: true, connection: this.connect(game, player.id) };
+  async joinGame(req: JoinRequest): Promise<ConnectResult> {
+    return this.wrap(this.dir.join(req));
   }
 
-  reconnect(gameId: string, playerId: string): ConnectResult {
-    const game = this.games.get(gameId);
-    if (!game) return err("Game no longer exists");
-    const player = game.state.players[playerId];
-    if (!player) return err("You are no longer in this game");
-    return { ok: true, connection: this.connect(game, player.id) };
+  async reconnect(gameId: string, token: string): Promise<ConnectResult> {
+    return this.wrap(this.dir.reconnect(gameId, token));
   }
 
   // --- internals -----------------------------------------------------------
 
-  private connect(game: AuthoritativeGame, playerId: string): GameConnection {
-    const player = game.state.players[playerId];
+  private wrap(r: DirResult): ConnectResult {
+    if (!r.ok) return { ok: false, error: r.error };
+    const player = r.game.state.players[r.playerId];
     const session: PlayerSession = {
-      gameId: game.state.id,
-      playerId,
+      gameId: r.game.state.id,
+      playerId: r.playerId,
       playerName: player.name,
       colorHex: player.color,
+      token: r.token,
     };
-    return new LocalConnection(game, session);
+    return { ok: true, connection: new LocalConnection(r.game, session) };
   }
 
-  private notifyDirectory(): void {
-    for (const cb of this.directoryListeners) cb();
+  private persist(): void {
+    try {
+      localStorage.setItem(LS_KEY, this.dir.serialize());
+    } catch {
+      /* storage unavailable or full — offline persistence is best-effort */
+    }
   }
 
-  private uniqueId(cityName: string): string {
-    const base =
-      cityName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "city";
-    let id = base;
-    let n = 2;
-    while (this.games.has(id)) id = `${base}-${n++}`;
-    return id;
+  private restore(): void {
+    try {
+      const saved = localStorage.getItem(LS_KEY);
+      if (saved) this.dir.load(saved);
+    } catch {
+      /* corrupt/absent — fall back to the freshly seeded demo cities */
+    }
   }
-
-  private seedDemoCities(): void {
-    // "New Angeles" (Pacifica): open, three established owners.
-    const angeles = new AuthoritativeGame(
-      "new-angeles",
-      { cityName: "New Angeles", archetype: "pacifica", plotCount: 14, maxPlayers: 8, hasPassword: false },
-      null,
-    );
-    this.games.set("new-angeles", angeles);
-    seedOwner(angeles, "Redwood Spire Group", "#3fb96b", [2], [7]);
-    seedOwner(angeles, "Neon Bay Holdings", "#4a86e0", [5, 6], [6, 9]);
-    seedOwner(angeles, "Cascade Systems", "#e79a2f", [10], [5]);
-
-    // "Neo-Kyoto" (Japan): password-protected, two zaibatsu.
-    const kyoto = new AuthoritativeGame(
-      "neo-kyoto",
-      { cityName: "Neo-Kyoto", archetype: "japan", plotCount: 8, maxPlayers: 4, hasPassword: true },
-      "1234",
-    );
-    this.games.set("neo-kyoto", kyoto);
-    seedOwner(kyoto, "Zaibatsu Prime", "#c94ad1", [1], [6]);
-    seedOwner(kyoto, "Mirai Systems", "#e0503f", [4, 5], [8, 4]);
-
-    // "Kosmograd" (USSR): open, one big state combine.
-    const kosmograd = new AuthoritativeGame(
-      "kosmograd",
-      { cityName: "Kosmograd", archetype: "ussr", plotCount: 12, maxPlayers: 6, hasPassword: false },
-      null,
-    );
-    this.games.set("kosmograd", kosmograd);
-    seedOwner(kosmograd, "Red October Combine", "#e0503f", [3, 4, 7], [9, 5, 7]);
-  }
-}
-
-function err(error: string): ConnectResult {
-  return { ok: false, error };
-}
-
-/**
- * Seed one demo owner: register the player, then build a tower of `floors` on
- * each of the given plot indices (parallel `plotIndices`/`floorsList` arrays).
- */
-function seedOwner(
-  game: AuthoritativeGame,
-  name: string,
-  colorHex: string,
-  plotIndices: number[],
-  floorsList: number[],
-): void {
-  const player = game.addPlayer(name, colorHex);
-  plotIndices.forEach((plotIndex, i) => {
-    game.seedPlot(player.id, plotIndex, sampleTower(floorsList[i] ?? 5));
-  });
-}
-
-/** A valid, supported tower layout `floors` high with pre-filled occupancy. */
-function sampleTower(
-  floors: number,
-): { kind: UnitKind; col: number; row: number; occupancy?: number }[] {
-  const specs: { kind: UnitKind; col: number; row: number; occupancy?: number }[] = [];
-  specs.push({ kind: "lobby", col: 0, row: 0 });
-  for (let r = 0; r < floors; r++) {
-    specs.push({ kind: "elevator", col: 2, row: r });
-    // Alternate offices and apartments up the two right-hand columns.
-    const left: UnitKind = r % 2 === 0 ? "office" : "apartment";
-    const right: UnitKind = r % 2 === 0 ? "apartment" : "office";
-    specs.push({ kind: left, col: 4, row: r, occupancy: 0.6 + (r % 3) * 0.1 });
-    specs.push({ kind: right, col: 6, row: r, occupancy: 0.55 + (r % 2) * 0.15 });
-  }
-  return specs;
 }
