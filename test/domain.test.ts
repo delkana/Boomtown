@@ -241,6 +241,16 @@ describe("girders (structural supports)", () => {
     expect(applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col: 0, row: 1 }).ok).toBe(true);
   });
 
+  it("allows a 1-tile overhang but not a 2-tile cantilever", () => {
+    const s = owned();
+    const G = (col: number, row: number) =>
+      applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col, row });
+    G(2, 0); // ground
+    G(2, 1); // directly supported (girder below)
+    expect(G(3, 1).ok).toBe(true); // 1-tile overhang off a directly-supported girder
+    expect(G(4, 1).ok).toBe(false); // 2-tile: neighbor (3,1) is itself only an overhang
+  });
+
   it("gates a room until its whole footprint is framed", () => {
     const s = owned();
     applyCommand(s, { type: "PLACE_GIRDER", playerId: "p1", plotIndex: 0, col: 0, row: 0 });

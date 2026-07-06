@@ -69,9 +69,10 @@ function placeGirder(
   if (cmd.row < 0 || cmd.row >= MAX_ROWS) return fail("Out of vertical bounds");
   if (cmd.col < 0 || cmd.col >= plot.cols) return fail("Outside the plot");
   if (hasGirder(plot, cmd.col, cmd.row)) return fail("Support already here");
-  // Girders rise from the ground: a girder needs the ground or a girder below.
-  if (cmd.row > 0 && !hasGirder(plot, cmd.col, cmd.row - 1))
-    return fail("Girders must rest on the ground or another girder");
+  // A girder needs the ground or a girder below — OR a single-tile overhang off
+  // a directly-supported neighbor (a cantilever, if you want the architecture).
+  if (!girderSupported(plot, cmd.col, cmd.row))
+    return fail("Girders need support below (a 1-tile overhang is allowed)");
 
   const cost = girderCost(cmd.row);
   if (player.money < cost) return fail("Not enough money");
@@ -93,9 +94,16 @@ function sellGirder(
   const idx = plot.girders.findIndex((g) => g.col === cmd.col && g.row === cmd.row);
   if (idx < 0) return fail("No support here");
   if (isOccupied(plot, cmd.col, cmd.row)) return fail("Remove the room on this girder first");
-  if (hasGirder(plot, cmd.col, cmd.row + 1)) return fail("Remove the girder above first");
 
-  plot.girders.splice(idx, 1);
+  // Tentatively remove it; block if that would leave any other girder floating
+  // (covers girders resting directly on top and 1-tile overhangs off this one).
+  const [removed] = plot.girders.splice(idx, 1);
+  const orphaned = plot.girders.some((g) => !girderSupported(plot, g.col, g.row));
+  if (orphaned) {
+    plot.girders.splice(idx, 0, removed);
+    return fail("That would leave girders unsupported");
+  }
+
   player.money += Math.floor(girderCost(cmd.row) * 0.5);
   return ok();
 }
@@ -201,6 +209,25 @@ export function isOccupied(plot: Plot, col: number, row: number): boolean {
 /** Does cell (col,row) have a structural girder? */
 export function hasGirder(plot: Plot, col: number, row: number): boolean {
   return (plot.girders ?? []).some((g) => g.col === col && g.row === row);
+}
+
+/** A girder is "directly supported" if it sits on the ground or a girder below. */
+function girderDirectlySupported(plot: Plot, col: number, row: number): boolean {
+  return row === 0 || hasGirder(plot, col, row - 1);
+}
+
+/**
+ * Whether a girder at (col,row) is validly supported: directly, or as a single
+ * 1-tile overhang resting on a directly-supported same-row neighbor. Requiring
+ * the neighbor to be *directly* supported caps overhangs at one tile — you
+ * can't cantilever off another cantilever.
+ */
+export function girderSupported(plot: Plot, col: number, row: number): boolean {
+  if (girderDirectlySupported(plot, col, row)) return true;
+  return (
+    (hasGirder(plot, col - 1, row) && girderDirectlySupported(plot, col - 1, row)) ||
+    (hasGirder(plot, col + 1, row) && girderDirectlySupported(plot, col + 1, row))
+  );
 }
 
 /** The unit occupying a cell, if any. */

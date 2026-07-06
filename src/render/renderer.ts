@@ -1,6 +1,6 @@
 import { CELL_SIZE, MAX_ROWS, UNIT_DEFS } from "../game/constants";
 import type { GameState, Plot } from "../game/types";
-import { unitAt, hasGirder } from "../game/reducer";
+import { unitAt, hasGirder, girderSupported } from "../game/reducer";
 import { claimCost } from "../game/economy";
 import { featureLabel } from "../game/features";
 import { Camera } from "./camera";
@@ -21,7 +21,9 @@ export interface HoverState {
 export type Tool = keyof typeof UNIT_DEFS | "claim" | "girder" | null;
 
 /** Steel-frame color for structural girders. */
-const GIRDER_COLOR = "#b5793a";
+const GIRDER_COLOR = "#5c6470";
+/** Lighter edge highlight so the steel beams read against the dark plot. */
+const GIRDER_HILITE = "#7a828f";
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
@@ -188,16 +190,19 @@ export class Renderer {
     ctx.textAlign = "left";
   }
 
-  /** Draw a single structural girder (steel frame + cross-brace) in a cell. */
+  /** Draw a single structural girder (dark steel frame + cross-brace) in a cell. */
   private drawGirder(x: number, y: number, cell: number): void {
     const { ctx } = this;
     const t = Math.max(1, cell * 0.09); // beam thickness
     ctx.fillStyle = GIRDER_COLOR;
-    // Outer frame.
+    // Outer frame (the steel beams).
     ctx.fillRect(x, y, cell, t); // top
     ctx.fillRect(x, y + cell - t, cell, t); // bottom
     ctx.fillRect(x, y, t, cell); // left
     ctx.fillRect(x + cell - t, y, t, cell); // right
+    // Thin top highlight for a bit of metallic sheen.
+    ctx.fillStyle = GIRDER_HILITE;
+    ctx.fillRect(x, y, cell, Math.max(1, t * 0.4));
     // Diagonal cross-brace.
     ctx.strokeStyle = GIRDER_COLOR;
     ctx.lineWidth = Math.max(1, cell * 0.06);
@@ -331,13 +336,12 @@ export class Renderer {
       if (plot.ownerId !== localId) return;
       const gx = camera.worldToScreenX(leftWorld + hover.col * CELL_SIZE);
       const gy = camera.rowTopScreenY(hover.row);
-      const supported = hover.row === 0 || hasGirder(plot, hover.col, hover.row - 1);
       const blocked =
         hover.col >= plot.cols ||
         hover.row >= MAX_ROWS ||
         hasGirder(plot, hover.col, hover.row) ||
-        !supported;
-      ctx.fillStyle = blocked ? "rgba(200,70,70,0.30)" : "rgba(181,121,58,0.45)";
+        !girderSupported(plot, hover.col, hover.row);
+      ctx.fillStyle = blocked ? "rgba(200,70,70,0.30)" : "rgba(150,160,175,0.45)";
       ctx.fillRect(gx + 1, gy + 1, cell - 2, cell - 2);
       ctx.strokeStyle = blocked ? "#c84646" : GIRDER_COLOR;
       ctx.lineWidth = 2;

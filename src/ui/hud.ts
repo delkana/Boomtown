@@ -13,7 +13,7 @@ import type { Tool } from "../render/renderer";
 import { flagSvg } from "./flags";
 
 /** Toolbar swatch color for the girder tool (matches the in-canvas girders). */
-const GIRDER_SWATCH = "#b5793a";
+const GIRDER_SWATCH = "#5c6470";
 
 /**
  * HUD: the DOM-based in-game UI (city header, player chip, stats, build
