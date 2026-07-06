@@ -63,14 +63,15 @@ export class Renderer {
 
   private drawPlot(state: GameState, plot: Plot, localId: string): void {
     const { ctx, camera } = this;
+    const cell = camera.scale(CELL_SIZE); // screen px per grid cell at current zoom
     const leftWorld = camera.plotLeftWorldX(plot.index);
     const leftScreen = camera.worldToScreenX(leftWorld);
-    const plotPxW = PLOT_COLS * CELL_SIZE;
+    const plotPxW = PLOT_COLS * cell;
 
     // Cull off-screen plots.
     if (leftScreen + plotPxW < 0 || leftScreen > camera.viewW) return;
 
-    const groundY = camera.viewH - camera.groundMargin;
+    const groundY = camera.groundScreenY;
     const owner = plot.ownerId ? state.players[plot.ownerId] : undefined;
     const isOwn = plot.ownerId === localId;
     const ownerColor = owner?.color ?? "#9fb0c0";
@@ -79,16 +80,16 @@ export class Renderer {
     if (!plot.ownerId) {
       // Unclaimed / for sale.
       ctx.fillStyle = "rgba(120,200,120,0.05)";
-      ctx.fillRect(leftScreen, camera.rowTopScreenY(MAX_ROWS - 1), plotPxW, MAX_ROWS * CELL_SIZE);
+      ctx.fillRect(leftScreen, camera.rowTopScreenY(MAX_ROWS - 1), plotPxW, MAX_ROWS * cell);
       ctx.save();
       ctx.setLineDash([6, 6]);
       ctx.strokeStyle = "rgba(150,210,150,0.35)";
       ctx.lineWidth = 1;
-      ctx.strokeRect(leftScreen + 2, groundY - CELL_SIZE * 3, plotPxW - 4, CELL_SIZE * 3);
+      ctx.strokeRect(leftScreen + 2, groundY - cell * 3, plotPxW - 4, cell * 3);
       ctx.restore();
     } else {
       ctx.fillStyle = isOwn ? withAlpha(ownerColor, 0.16) : withAlpha(ownerColor, 0.07);
-      ctx.fillRect(leftScreen, camera.rowTopScreenY(MAX_ROWS - 1), plotPxW, MAX_ROWS * CELL_SIZE);
+      ctx.fillRect(leftScreen, camera.rowTopScreenY(MAX_ROWS - 1), plotPxW, MAX_ROWS * cell);
     }
 
     // Buildable grid lines (own plots only).
@@ -96,14 +97,14 @@ export class Renderer {
       ctx.strokeStyle = "rgba(255,255,255,0.07)";
       ctx.lineWidth = 1;
       for (let c = 0; c <= PLOT_COLS; c++) {
-        const x = leftScreen + c * CELL_SIZE;
+        const x = leftScreen + c * cell;
         ctx.beginPath();
         ctx.moveTo(x, camera.rowTopScreenY(MAX_ROWS - 1));
         ctx.lineTo(x, groundY);
         ctx.stroke();
       }
       for (let r = 0; r <= MAX_ROWS; r++) {
-        const y = camera.rowTopScreenY(r) + CELL_SIZE;
+        const y = camera.rowTopScreenY(r) + cell;
         ctx.beginPath();
         ctx.moveTo(leftScreen, y);
         ctx.lineTo(leftScreen + plotPxW, y);
@@ -112,31 +113,36 @@ export class Renderer {
     }
 
     // Units.
+    const bandH = Math.max(2, cell * 0.07);
+    const showLabels = cell >= 30;
     for (const unit of plot.units) {
       const def = UNIT_DEFS[unit.kind];
       const x = camera.worldToScreenX(leftWorld + unit.col * CELL_SIZE);
       const y = camera.rowTopScreenY(unit.row);
-      const wpx = unit.width * CELL_SIZE;
+      const wpx = unit.width * cell;
 
       ctx.fillStyle = def.color;
-      ctx.fillRect(x + 1, y + 1, wpx - 2, CELL_SIZE - 2);
+      ctx.fillRect(x + 1, y + 1, wpx - 2, cell - 2);
 
       // Owner-color band along the top edge so ownership reads at a glance.
       ctx.fillStyle = ownerColor;
-      ctx.fillRect(x + 1, y + 1, wpx - 2, 3);
+      ctx.fillRect(x + 1, y + 1, wpx - 2, bandH);
 
       // Occupancy shading for revenue units.
       if (def.incomeAtFull > 0) {
         ctx.fillStyle = "rgba(255,220,120,0.4)";
+        const barH = Math.max(3, cell * 0.16);
         const litW = (wpx - 6) * unit.occupancy;
-        ctx.fillRect(x + 3, y + CELL_SIZE - 8, litW, 4);
+        ctx.fillRect(x + 3, y + cell - barH - 2, litW, barH);
       }
 
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.font = "10px system-ui, sans-serif";
-      ctx.textBaseline = "top";
-      ctx.textAlign = "left";
-      ctx.fillText(def.label, x + 4, y + 6);
+      if (showLabels) {
+        ctx.fillStyle = "rgba(0,0,0,0.35)";
+        ctx.font = `${Math.min(11, cell * 0.24)}px system-ui, sans-serif`;
+        ctx.textBaseline = "top";
+        ctx.textAlign = "left";
+        ctx.fillText(def.label, x + 4, y + bandH + 3);
+      }
     }
 
     // Nameplate under the plot: themed property name, then owner / status.
@@ -166,6 +172,7 @@ export class Renderer {
     tool: Tool,
   ): void {
     const { ctx, camera } = this;
+    const cell = camera.scale(CELL_SIZE);
     const plot = state.plots[hover.plotIndex];
     if (!plot || !tool) return;
     const leftWorld = camera.plotLeftWorldX(hover.plotIndex);
@@ -175,12 +182,12 @@ export class Renderer {
       const canAfford = (state.players[localId]?.money ?? 0) >= CLAIM_COST;
       const x = camera.worldToScreenX(leftWorld);
       const top = camera.rowTopScreenY(2);
-      const hgt = camera.viewH - camera.groundMargin - top;
+      const hgt = camera.groundScreenY - top;
       ctx.fillStyle = canAfford ? "rgba(120,220,120,0.18)" : "rgba(200,70,70,0.18)";
-      ctx.fillRect(x, top, PLOT_COLS * CELL_SIZE, hgt);
+      ctx.fillRect(x, top, PLOT_COLS * cell, hgt);
       ctx.strokeStyle = canAfford ? "#78dc78" : "#c84646";
       ctx.lineWidth = 2;
-      ctx.strokeRect(x + 1, top + 1, PLOT_COLS * CELL_SIZE - 2, hgt - 2);
+      ctx.strokeRect(x + 1, top + 1, PLOT_COLS * cell - 2, hgt - 2);
       return;
     }
 
@@ -189,17 +196,17 @@ export class Renderer {
     const def = UNIT_DEFS[tool];
     const x = camera.worldToScreenX(leftWorld + hover.col * CELL_SIZE);
     const y = camera.rowTopScreenY(hover.row);
-    const wpx = def.width * CELL_SIZE;
+    const wpx = def.width * cell;
 
     const blocked =
       hover.col + def.width > PLOT_COLS ||
       hover.row >= MAX_ROWS ||
       !!unitAt(plot, hover.col, hover.row);
     ctx.fillStyle = blocked ? "rgba(200,70,70,0.35)" : "rgba(120,220,120,0.35)";
-    ctx.fillRect(x + 1, y + 1, wpx - 2, CELL_SIZE - 2);
+    ctx.fillRect(x + 1, y + 1, wpx - 2, cell - 2);
     ctx.strokeStyle = blocked ? "#c84646" : "#78dc78";
     ctx.lineWidth = 2;
-    ctx.strokeRect(x + 1, y + 1, wpx - 2, CELL_SIZE - 2);
+    ctx.strokeRect(x + 1, y + 1, wpx - 2, cell - 2);
   }
 }
 

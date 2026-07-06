@@ -15,6 +15,7 @@ export class Hud {
   private cityEl = must("city-name");
   private chipEl = must("player-chip");
   private statsEl = must("stats");
+  private playersEl = must("players");
   private toolbarEl = must("toolbar");
   private hintEl = must("hint");
 
@@ -98,6 +99,8 @@ export class Hud {
       <div class="row"><span>Occupancy</span><span>${Math.round(avgOcc * 100)}%</span></div>
       <div class="row muted"><span>Tick</span><span>${state.tick}</span></div>`;
 
+    this.renderPlayers(state, me);
+
     // Toolbar selected/affordability states.
     for (const el of Array.from(this.toolbarEl.children) as HTMLElement[]) {
       const tool = el.dataset.tool as Exclude<Tool, null>;
@@ -122,6 +125,33 @@ export class Hud {
       this.hintEl.textContent = `Pick a tool (1–4, or C to claim). Drag or use arrow keys to pan the city.`;
       this.hintEl.className = "panel";
     }
+  }
+
+  /** Roster of everyone in this city, with owner color and holdings. */
+  private renderPlayers(state: ReturnType<GameConnection["getState"]>, me: string): void {
+    const plotsByOwner: Record<string, number> = {};
+    for (const key of Object.keys(state.plots)) {
+      const owner = state.plots[Number(key)].ownerId;
+      if (owner) plotsByOwner[owner] = (plotsByOwner[owner] ?? 0) + 1;
+    }
+    const roster = Object.values(state.players)
+      .map((p) => ({ p, plots: plotsByOwner[p.id] ?? 0 }))
+      .sort((a, b) => b.plots - a.plots || a.p.name.localeCompare(b.p.name));
+
+    this.playersEl.innerHTML =
+      `<div class="players-title">City · ${Object.keys(state.players).length} player${
+        Object.keys(state.players).length === 1 ? "" : "s"
+      }</div>` +
+      roster
+        .map(
+          ({ p, plots }) => `
+        <div class="player-row${p.id === me ? " me" : ""}">
+          <span class="dot" style="background:${p.color}"></span>
+          <span class="pname">${escapeHtml(p.name)}${p.id === me ? " (you)" : ""}</span>
+          <span class="pplots">${plots} plot${plots === 1 ? "" : "s"}</span>
+        </div>`,
+        )
+        .join("");
   }
 }
 

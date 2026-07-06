@@ -3,6 +3,7 @@ import { Camera } from "./render/camera";
 import { Renderer } from "./render/renderer";
 import { InputController } from "./input/input";
 import { Hud } from "./ui/hud";
+import { Minimap } from "./ui/minimap";
 import { LobbyScreen } from "./ui/lobby";
 import { LocalServer } from "./net/localServer";
 import type { GameConnection } from "./net/connection";
@@ -23,6 +24,10 @@ const canvas = document.getElementById("game") as HTMLCanvasElement;
 const lobbyEl = document.getElementById("lobby")!;
 const gameRoot = document.getElementById("game-root")!;
 const leaveBtn = document.getElementById("leave-btn")!;
+const minimapEl = document.getElementById("minimap")!;
+const zoomInBtn = document.getElementById("zoom-in")!;
+const zoomOutBtn = document.getElementById("zoom-out")!;
+const jumpBtn = document.getElementById("jump-btn")!;
 
 const server = new LocalServer();
 
@@ -31,8 +36,10 @@ interface Session {
   conn: GameConnection;
   camera: Camera;
   input: InputController;
+  minimap: Minimap;
   loop: RenderLoop;
   unsub: () => void;
+  buttons: Array<() => void>;
 }
 let active: Session | null = null;
 
@@ -55,21 +62,37 @@ function enterGame(conn: GameConnection): void {
     hud.update();
   });
 
+  const plotCount = conn.getState().config.plotCount;
+  const minimap = new Minimap(minimapEl, conn, camera, () => plotCount);
+
   // Size the canvas and center on the middle of the city.
   sizeCanvas(camera);
-  const mid = Math.floor(conn.getState().config.plotCount / 2);
-  camera.offsetX = camera.plotLeftWorldX(mid) - camera.viewW / 2;
+  jumpToMyPlots(conn, camera, plotCount, Math.floor(plotCount / 2));
 
   const unsub = conn.onSnapshot(() => hud.update());
   hud.update();
 
+  // Nav controls.
+  const onZoomIn = () => input.zoomBy(1.25);
+  const onZoomOut = () => input.zoomBy(1 / 1.25);
+  const onJump = () => jumpToMyPlots(conn, camera, plotCount, Math.floor(plotCount / 2));
+  zoomInBtn.addEventListener("click", onZoomIn);
+  zoomOutBtn.addEventListener("click", onZoomOut);
+  jumpBtn.addEventListener("click", onJump);
+  const buttons = [
+    () => zoomInBtn.removeEventListener("click", onZoomIn),
+    () => zoomOutBtn.removeEventListener("click", onZoomOut),
+    () => jumpBtn.removeEventListener("click", onJump),
+  ];
+
   const loop = new RenderLoop((dt) => {
     input.update(dt);
     renderer.render(conn.getState(), conn.session.playerId, input.hover, input.selectedTool);
+    minimap.render();
   });
   loop.start();
 
-  active = { conn, camera, input, loop, unsub };
+  active = { conn, camera, input, minimap, loop, unsub, buttons };
 
   // Debug handle (also used for headless verification where rAF is suspended).
   (window as unknown as { boomtown: unknown }).boomtown = {
@@ -86,11 +109,30 @@ function leaveGame(): void {
   if (!active) return;
   active.loop.stop();
   active.input.detach();
+  active.minimap.detach();
   active.unsub();
+  active.buttons.forEach((off) => off());
   active.conn.leave();
   active = null;
   gameRoot.classList.add("hidden");
   lobby.show();
+}
+
+/** Center the camera on the player's first owned plot, or `fallback` if none. */
+function jumpToMyPlots(
+  conn: GameConnection,
+  camera: Camera,
+  plotCount: number,
+  fallback: number,
+): void {
+  const state = conn.getState();
+  const me = conn.session.playerId;
+  const mine = Object.values(state.plots)
+    .filter((p) => p.ownerId === me)
+    .map((p) => p.index)
+    .sort((a, b) => a - b);
+  camera.centerOnPlot(mine.length ? mine[0] : fallback);
+  camera.clampToWorld(0, plotCount - 1);
 }
 
 function sizeCanvas(camera: Camera): void {

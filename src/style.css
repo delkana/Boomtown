@@ -466,6 +466,90 @@ button.primary.big {
   color: var(--muted) !important;
 }
 
+/* Players roster — top-right. */
+#players {
+  top: 16px;
+  right: 16px;
+  min-width: 168px;
+  max-width: 220px;
+  max-height: 42vh;
+  overflow-y: auto;
+  padding: 10px 12px;
+}
+.players-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.player-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  padding: 3px 0;
+}
+.player-row.me {
+  font-weight: 700;
+}
+.player-row .pname {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.player-row .pplots {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Minimap — top-center, under the topbar. */
+#minimap {
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, 60vw);
+  height: 60px;
+  padding: 0;
+  overflow: hidden;
+}
+#minimap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+/* Nav controls — bottom-right. */
+#nav-controls {
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  align-items: center;
+}
+#nav-controls button {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 7px 10px;
+  line-height: 1;
+}
+#nav-controls button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+#nav-controls #zoom-in,
+#nav-controls #zoom-out {
+  width: 34px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
 /* Build toolbar — bottom-center. */
 #toolbar {
   bottom: 16px;

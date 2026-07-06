@@ -39,6 +39,7 @@ export class InputController {
     c.addEventListener("pointerup", this.onPointerUp);
     c.addEventListener("pointerleave", this.onPointerLeave);
     c.addEventListener("contextmenu", this.onContextMenu);
+    c.addEventListener("wheel", this.onWheel, { passive: false });
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
   }
@@ -51,8 +52,15 @@ export class InputController {
     c.removeEventListener("pointerup", this.onPointerUp);
     c.removeEventListener("pointerleave", this.onPointerLeave);
     c.removeEventListener("contextmenu", this.onContextMenu);
+    c.removeEventListener("wheel", this.onWheel);
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
+  }
+
+  /** Zoom by a factor, keeping `screenX` fixed (defaults to viewport center). */
+  zoomBy(factor: number, screenX = this.camera.viewW / 2): void {
+    this.camera.setZoomAt(this.camera.zoom * factor, screenX);
+    this.clampCamera();
   }
 
   /** Called once per animation frame to apply held-key panning. */
@@ -75,6 +83,13 @@ export class InputController {
 
   private onPointerLeave = (): void => {
     this.hover = null;
+  };
+
+  private onWheel = (e: WheelEvent): void => {
+    e.preventDefault();
+    const { x } = this.localPointer(e);
+    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    this.zoomBy(factor, x);
   };
 
   private onPointerDown = (e: PointerEvent): void => {
@@ -162,6 +177,8 @@ export class InputController {
     };
     if (map[e.key]) this.setSelected(map[e.key]);
     if (e.key === "Escape") this.setSelected(null);
+    if (e.key === "+" || e.key === "=") this.zoomBy(1.15);
+    if (e.key === "-" || e.key === "_") this.zoomBy(1 / 1.15);
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
