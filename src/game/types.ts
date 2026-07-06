@@ -64,7 +64,9 @@ export interface ElevatorCar {
 export interface Tenant {
   /** Display name, e.g. "Halbrook & Vance" or "Sterling Bakery". */
   name: string;
-  /** The trade/type, e.g. "Law Offices", "Dental Clinic", "Bistro". */
+  /** Business subtype id (drives furniture), e.g. "software", "law", "pizza". */
+  subset: string;
+  /** The trade/type label, e.g. "Law Offices", "Dental Clinic", "Pizzeria". */
   trade: string;
   /** Business open hour (0..23) and close hour (1..24). Lights follow these. */
   openHour: number;

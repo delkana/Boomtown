@@ -627,8 +627,17 @@ describe("tenants", () => {
     expect(hi.dailyRent).toBeGreaterThan(lo.dailyRent);
   });
 
+  it("assigns a subset from the kind's set and pulls from a large name pool", () => {
+    const t = generateTenant("restaurant", "seed", 0.7, 4)!;
+    expect(["mexican", "chinese", "pizza", "american", "sushi", "cafe"]).toContain(t.subset);
+    // Many distinct names available per kind (100+ combinations across subsets).
+    const names = new Set<string>();
+    for (let i = 0; i < 300; i++) names.add(generateTenant("restaurant", `r:${i}`, 0.7, 4)!.name);
+    expect(names.size).toBeGreaterThan(80);
+  });
+
   it("lights are on from an hour before opening to an hour after closing", () => {
-    const t = { name: "x", trade: "y", openHour: 9, closeHour: 17, openDays: [0, 1, 2, 3, 4, 5, 6], employees: 5, dailyRent: 100 };
+    const t = { name: "x", subset: "generic", trade: "y", openHour: 9, closeHour: 17, openDays: [0, 1, 2, 3, 4, 5, 6], employees: 5, dailyRent: 100 };
     expect(tenantLit(t, 8, 0)).toBe(true); // 1h before open
     expect(tenantLit(t, 13, 0)).toBe(true); // midday
     expect(tenantLit(t, 17.5, 0)).toBe(true); // within 1h after close
@@ -637,12 +646,14 @@ describe("tenants", () => {
   });
 
   it("a weekday-only business is dark on the weekend", () => {
-    const t = { name: "x", trade: "Law", openHour: 9, closeHour: 17, openDays: [0, 1, 2, 3, 4], employees: 5, dailyRent: 100 };
+    const t = { name: "x", subset: "law", trade: "Law", openHour: 9, closeHour: 17, openDays: [0, 1, 2, 3, 4], employees: 5, dailyRent: 100 };
     expect(tenantLit(t, 13, 2)).toBe(true); // Wednesday
     expect(tenantLit(t, 13, 5)).toBe(false); // Saturday
     expect(tenantLit(t, 13, 6)).toBe(false); // Sunday
-    // Offices default to Mon–Fri.
-    expect(generateTenant("office", "seed:x", 0.7, 2)!.openDays).toEqual([0, 1, 2, 3, 4]);
+    // Generated office tenants get a valid subset + operating days.
+    const g = generateTenant("office", "seed:x", 0.7, 2)!;
+    expect(g.subset).toBeTruthy();
+    expect(g.openDays.length).toBeGreaterThan(0);
   });
 });
 

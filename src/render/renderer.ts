@@ -586,7 +586,8 @@ export class Renderer {
       const g = (plot.girders ?? []).find((gg) => gg.col === unit.col && gg.row === unit.row);
       const occupied = !!unit.tenant;
       const lit = unit.kind === "lobby" ? true : occupied && tenantLit(unit.tenant!, this.hourF, this.dayIndex);
-      this.drawRoomInterior(unit.kind, x + 1, y + 1, wpx - 2, cell - 2, facadeById(g?.style), unit.row < 0, lit, occupied);
+      const subset = unit.tenant?.subset ?? "";
+      this.drawRoomInterior(unit.kind, x + 1, y + 1, wpx - 2, cell - 2, facadeById(g?.style), unit.row < 0, lit, occupied, subset);
 
       // Owner-color band along the top edge so ownership reads at a glance.
       ctx.fillStyle = ownerColor;
@@ -735,20 +736,21 @@ export class Renderer {
     underground: boolean,
     lit: boolean,
     occupied: boolean,
+    subset: string,
   ): void {
     switch (kind) {
       case "lobby":
         return this.drawLobbyInterior(x, y, w, h, facade, underground, lit);
       case "office":
-        return this.drawOfficeInterior(x, y, w, h, facade, underground, lit, occupied);
+        return this.drawOfficeInterior(x, y, w, h, facade, underground, lit, occupied, subset);
       case "medical":
-        return this.drawMedicalInterior(x, y, w, h, facade, underground, lit, occupied);
+        return this.drawMedicalInterior(x, y, w, h, facade, underground, lit, occupied, subset);
       case "apartment":
         return this.drawApartmentInterior(x, y, w, h, facade, underground, lit, occupied);
       case "store":
-        return this.drawStoreInterior(x, y, w, h, facade, underground, lit, occupied);
+        return this.drawStoreInterior(x, y, w, h, facade, underground, lit, occupied, subset);
       case "restaurant":
-        return this.drawRestaurantInterior(x, y, w, h, facade, underground, lit, occupied);
+        return this.drawRestaurantInterior(x, y, w, h, facade, underground, lit, occupied, subset);
       case "hotel":
         return this.drawHotelInterior(x, y, w, h, facade, underground, lit, occupied);
       default:
@@ -999,6 +1001,33 @@ export class Renderer {
     this.ctx.fillRect(p.x - hw, p.y - hh, hw * 2, hh);
   }
 
+  /** A small object hanging from the ceiling (a lantern/lamp): a cord + colored dot. */
+  private hangDot(s: RoomShell, f: number, drop: number, rFrac: number, color: string): void {
+    const { ctx } = this;
+    const top = s.ceil(f, 0.55);
+    const at = s.lp(top, s.floor(f, 0.55), drop);
+    ctx.strokeStyle = "rgba(20,20,25,0.55)";
+    ctx.lineWidth = Math.max(0.5, s.w * 0.006);
+    ctx.beginPath();
+    ctx.moveTo(top.x, top.y);
+    ctx.lineTo(at.x, at.y);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(at.x, at.y, Math.max(1.5, s.w * rFrac), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /** A grid of coloured cells on the back wall (book spines, listings, product). */
+  private wallGrid(s: RoomShell, f0: number, f1: number, g0: number, g1: number, cols: number, rows: number, colors: string[]): void {
+    const fw = (f1 - f0) / cols;
+    const gw = (g1 - g0) / rows;
+    let i = 0;
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < cols; c++)
+        this.wallBand(s, f0 + c * fw + 0.004, f0 + (c + 1) * fw - 0.004, g0 + r * gw + 0.003, g0 + (r + 1) * gw - 0.003, colors[i++ % colors.length]);
+  }
+
   /** Recessed rectangular ceiling light panels at the given centre fractions. */
   private ceilingPanels(s: RoomShell, cfs: number[]): void {
     for (const cf of cfs) {
@@ -1067,35 +1096,116 @@ export class Renderer {
     if (lit) this.ceilingPanels(s, [0.28, 0.72]);
   }
 
-  /** Office: bare shell when vacant; desks + glowing monitors when leased. */
-  private drawOfficeInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean, occupied: boolean): void {
+  /** Office: bare shell when vacant; subset-specific furniture when leased. */
+  private drawOfficeInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean, occupied: boolean, subset: string): void {
     const s = this.roomShell(x, y, w, h, [91, 143, 176], {}, lit);
     this.drawFacade(s, facade, ug);
-    if (occupied) {
-      for (const g of [0.44, 0.74])
-        for (const f of [0.26, 0.52, 0.78]) {
-          this.floorRect(s, f - 0.1, f + 0.1, g - 0.05, g + 0.05, this.dimC("#3b414b", lit)); // desk
-          this.standUp(s, f, g - 0.03, 0.035, 0.1, lit ? "#7fd4ff" : this.dimC("#26303a", lit)); // monitor
-          this.standUp(s, f, g + 0.07, 0.03, 0.05, this.dimC("#2f353d", lit)); // chair back
-        }
-    }
+    if (occupied) this.drawOfficeFurniture(s, subset, lit);
     if (lit) this.ceilingPanels(s, [0.32, 0.68]);
   }
 
-  /** Clinic: green cross always; an exam bed + cabinet when leased. */
-  private drawMedicalInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean, occupied: boolean): void {
+  private drawOfficeFurniture(s: RoomShell, subset: string, lit: boolean): void {
+    const D = (c: string): string => this.dimC(c, lit);
+    const deskRow = (gs: number[], fs: number[], mon: string): void => {
+      for (const g of gs)
+        for (const f of fs) {
+          this.floorRect(s, f - 0.1, f + 0.1, g - 0.05, g + 0.05, D("#3b414b"));
+          this.standUp(s, f, g - 0.03, 0.03, 0.09, lit ? mon : D("#26303a"));
+          this.standUp(s, f, g + 0.07, 0.028, 0.045, D("#2f353d"));
+        }
+    };
+    switch (subset) {
+      case "law": // bookshelves + two formal desks
+        this.wallGrid(s, 0.06, 0.94, 0.16, 0.5, 11, 3, lit ? ["#6b4a2c", "#7a3b2a", "#5a4326", "#4a5a3a", "#6a5240"] : [D("#3a2f22")]);
+        this.floorRect(s, 0.16, 0.44, 0.55, 0.8, D("#4a3521"));
+        this.floorRect(s, 0.56, 0.84, 0.55, 0.8, D("#4a3521"));
+        break;
+      case "software": // clusters of glowing monitors + a couch accent
+        for (const g of [0.44, 0.74])
+          for (const f of [0.26, 0.52, 0.78]) {
+            this.floorRect(s, f - 0.1, f + 0.1, g - 0.05, g + 0.05, D("#3b414b"));
+            this.standUp(s, f - 0.05, g - 0.03, 0.026, 0.085, lit ? "#6fe0c0" : D("#26303a"));
+            this.standUp(s, f + 0.05, g - 0.03, 0.026, 0.085, lit ? "#7fb0ff" : D("#26303a"));
+          }
+        this.floorRect(s, 0.05, 0.19, 0.78, 0.9, D("#c85a6a")); // beanbag/couch
+        break;
+      case "consulting": // one big conference table + chairs
+        this.floorRect(s, 0.28, 0.72, 0.5, 0.82, D("#3a3f47"));
+        for (const f of [0.24, 0.42, 0.58, 0.76]) this.standUp(s, f, 0.47, 0.02, 0.045, D("#2f353d"));
+        for (const f of [0.32, 0.5, 0.68]) this.standUp(s, f, 0.86, 0.024, 0.055, D("#2f353d"));
+        break;
+      case "media": // lounge: wall screen + sofa + coffee table
+        this.wallBand(s, 0.32, 0.68, 0.16, 0.44, lit ? "#1b2734" : D("#12161c"));
+        this.floorRect(s, 0.14, 0.55, 0.6, 0.86, D("#3a4655"));
+        this.floorRect(s, 0.66, 0.86, 0.62, 0.82, D("#4a4030"));
+        break;
+      case "realty": // desks + a colourful listings wall
+        this.wallGrid(s, 0.1, 0.9, 0.15, 0.45, 8, 2, lit ? ["#5fae5f", "#4a86e0", "#e0b23f", "#c85a6a", "#7bab6e", "#6a7fc0"] : [D("#2a3038")]);
+        for (const f of [0.3, 0.7]) {
+          this.floorRect(s, f - 0.11, f + 0.11, 0.58, 0.82, D("#3b414b"));
+          this.standUp(s, f, 0.6, 0.03, 0.075, lit ? "#7fb0ff" : D("#26303a"));
+        }
+        break;
+      case "architecture": // angled drafting tables + a scale model
+        for (const f of [0.28, 0.6]) {
+          this.floorRect(s, f - 0.12, f + 0.12, 0.5, 0.74, D("#c9c2b0"));
+          this.standUp(s, f, 0.5, 0.12, 0.02, D("#9a9482"));
+        }
+        this.floorRect(s, 0.78, 0.92, 0.64, 0.82, D("#8a8f98"));
+        break;
+      case "accounting": // rows of desks + a filing cabinet
+        deskRow([0.5, 0.78], [0.28, 0.5, 0.72], "#8fd0a0");
+        this.wallBand(s, 0.82, 0.94, 0.5, 0.9, D("#7a828c"));
+        break;
+      default: // insurance / generic: desks with blue monitors
+        deskRow([0.46, 0.74], [0.28, 0.55, 0.82], "#7fd4ff");
+        break;
+    }
+  }
+
+  /** Clinic: green cross always; subset-specific equipment when leased. */
+  private drawMedicalInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean, occupied: boolean, subset: string): void {
     const base = [75, 181, 166];
     const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [222, 230, 228], 0.6)) }, lit);
     this.drawFacade(s, facade, ug);
     this.wallBand(s, 0.44, 0.56, 0.62, 0.92, "rgba(40,160,96,0.92)"); // cross (vertical)
     this.wallBand(s, 0.36, 0.64, 0.7, 0.8, "rgba(40,160,96,0.92)"); // cross (horizontal)
-    if (occupied) {
-      this.floorRect(s, 0.3, 0.72, 0.5, 0.78, this.dimC("#e6ecef", lit)); // exam bed
-      this.standUp(s, 0.34, 0.5, 0.03, 0.05, this.dimC("#cfd6da", lit)); // pillow
-      this.floorRect(s, 0.08, 0.24, 0.55, 0.75, this.dimC("#5a6a72", lit)); // cart
-      this.standUp(s, 0.86, 0.5, 0.035, 0.13, this.dimC("#aeb6bc", lit)); // cabinet
-    }
+    if (occupied) this.drawMedicalFurniture(s, subset, lit);
     if (lit) this.ceilingPanels(s, [0.3, 0.7]);
+  }
+
+  private drawMedicalFurniture(s: RoomShell, subset: string, lit: boolean): void {
+    const D = (c: string): string => this.dimC(c, lit);
+    switch (subset) {
+      case "dental": // dental chair + overhead light + tray
+        this.floorRect(s, 0.32, 0.66, 0.5, 0.78, D("#bcd0d8"));
+        this.standUp(s, 0.4, 0.5, 0.06, 0.06, D("#9ab0b8"));
+        if (lit) this.standUp(s, 0.5, 0.48, 0.03, 0.1, "#fff6d0");
+        this.floorRect(s, 0.1, 0.24, 0.55, 0.72, D("#8a9aa2"));
+        break;
+      case "optometry": // exam chair + phoropter arm + eye chart
+        this.floorRect(s, 0.34, 0.64, 0.55, 0.8, D("#6a7078"));
+        this.standUp(s, 0.5, 0.5, 0.04, 0.12, D("#3a4048"));
+        this.wallGrid(s, 0.74, 0.92, 0.18, 0.5, 3, 5, lit ? ["#e6ecef", "#20242a"] : [D("#20242a")]);
+        break;
+      case "physio": // treatment table + equipment
+        this.floorRect(s, 0.24, 0.7, 0.55, 0.72, D("#4a86c0"));
+        if (lit) this.standUp(s, 0.82, 0.72, 0.05, 0.05, "#e0653f");
+        this.wallBand(s, 0.08, 0.2, 0.16, 0.5, D("#7a828c"));
+        break;
+      case "pediatrics": // exam bed + colourful toys
+        this.floorRect(s, 0.3, 0.72, 0.5, 0.78, D("#e6ecef"));
+        if (lit)
+          for (const [f, c] of [[0.12, "#e0503f"], [0.18, "#4a86e0"], [0.24, "#e0b23f"]] as const)
+            this.standUp(s, f, 0.82, 0.028, 0.045, c);
+        break;
+      default: // primary / dermatology: exam bed + cabinet
+        this.floorRect(s, 0.3, 0.72, 0.5, 0.78, D("#e6ecef"));
+        this.standUp(s, 0.34, 0.5, 0.03, 0.05, D("#cfd6da"));
+        this.floorRect(s, 0.08, 0.24, 0.55, 0.75, D("#5a6a72"));
+        this.standUp(s, 0.86, 0.5, 0.035, 0.13, D("#aeb6bc"));
+        break;
+    }
   }
 
   /** Flat: built-in kitchenette; a sofa, bed and lamp when leased. */
@@ -1116,47 +1226,119 @@ export class Renderer {
     if (lit) this.trackLights(s, [0.5]);
   }
 
-  /** Retail: empty shelving; stocked aisles + counter (and a shutter when shut) when leased. */
-  private drawStoreInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean, occupied: boolean): void {
+  /** Retail: empty shelving when vacant; subset-specific fit-out when leased. */
+  private drawStoreInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean, occupied: boolean, subset: string): void {
     const base = [208, 138, 79];
     const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix(base, [236, 226, 212], 0.62)) }, lit);
     this.drawFacade(s, facade, ug);
-    this.wallLines(s, 0.1, 0.9, [0.62, 0.74, 0.86], "rgba(70,50,32,0.5)"); // shelves
-    this.wallVLines(s, [0.3, 0.5, 0.7], 0.6, 0.9, "rgba(70,50,32,0.4)");
-    if (occupied) {
-      for (const f of [0.24, 0.44, 0.64]) this.floorRect(s, f - 0.05, f + 0.05, 0.42, 0.86, this.dimC("#7a5636", lit)); // aisles
-      this.floorRect(s, 0.78, 0.94, 0.5, 0.82, this.dimC("#5a4326", lit)); // checkout counter
-      if (lit) {
-        const prod = ["#e0653f", "#e0b23f", "#5fae5f", "#4a86e0", "#c94ad1"];
-        let i = 0;
-        for (const gg of [0.65, 0.77, 0.89]) for (const f of [0.2, 0.35, 0.5, 0.65, 0.8]) this.wallBand(s, f - 0.04, f + 0.04, gg - 0.04, gg - 0.005, prod[i++ % prod.length]);
-      } else {
-        this.wallBand(s, 0.03, 0.97, 0.05, 0.6, "rgba(58,62,68,0.94)"); // shutter down when closed
-      }
+    if (!occupied) {
+      this.wallLines(s, 0.1, 0.9, [0.62, 0.74, 0.86], "rgba(70,50,32,0.5)"); // empty shelves
+      this.wallVLines(s, [0.3, 0.5, 0.7], 0.6, 0.9, "rgba(70,50,32,0.4)");
+    } else if (!lit) {
+      this.wallBand(s, 0.03, 0.97, 0.05, 0.6, "rgba(58,62,68,0.94)"); // security shutter (closed)
+    } else {
+      this.drawStoreFurniture(s, subset);
     }
     if (lit) this.trackLights(s, [0.25, 0.5, 0.75]);
   }
 
-  /** Dining room: back bar; dressed tables when open, chairs stacked when closed. */
-  private drawRestaurantInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean, occupied: boolean): void {
+  private drawStoreFurniture(s: RoomShell, subset: string): void {
+    switch (subset) {
+      case "apparel": // clothing racks with colourful garments
+        for (const g of [0.55, 0.82]) {
+          this.floorRect(s, 0.15, 0.85, g - 0.008, g + 0.008, "#8a8f98");
+          const cols = ["#e0653f", "#4a86e0", "#5fae5f", "#e0b23f", "#c94ad1", "#6a7fc0"];
+          for (let i = 0; i < 6; i++) this.standUp(s, 0.18 + i * 0.11, g, 0.02, 0.055, cols[i]);
+        }
+        break;
+      case "bookstore": // walls of book spines + a reading table
+        this.wallGrid(s, 0.06, 0.94, 0.16, 0.55, 14, 3, ["#6b4a2c", "#7a3b2a", "#4a5a3a", "#5a4326", "#6a5240", "#3a5a6a", "#7a5636"]);
+        this.floorRect(s, 0.35, 0.65, 0.66, 0.84, "#4a3521");
+        break;
+      case "electronics": // display counters with glowing screens + wall TVs
+        this.floorRect(s, 0.14, 0.86, 0.62, 0.82, "#3a3f47");
+        for (const f of [0.25, 0.45, 0.65]) this.standUp(s, f, 0.62, 0.05, 0.05, "#6fb0ff");
+        this.wallGrid(s, 0.2, 0.8, 0.16, 0.4, 4, 2, ["#1b2734", "#2a3644"]);
+        break;
+      case "pharmacy": // shelves of bottles + counter + cross
+        this.wallGrid(s, 0.06, 0.94, 0.16, 0.55, 12, 3, ["#e6ecef", "#dfe6ea", "#cfe0e6"]);
+        this.floorRect(s, 0.55, 0.9, 0.6, 0.82, "#5a6a72");
+        this.wallBand(s, 0.1, 0.16, 0.2, 0.44, "#40a060");
+        this.wallBand(s, 0.06, 0.2, 0.28, 0.36, "#40a060");
+        break;
+      case "bakery": // display case of pastries + bread shelves
+        this.floorRect(s, 0.12, 0.88, 0.6, 0.8, "#c9b088");
+        for (let i = 0; i < 7; i++) this.standUp(s, 0.16 + i * 0.1, 0.63, 0.02, 0.028, ["#d8a05a", "#c07a3a", "#e0c06a", "#b8863a"][i % 4]);
+        this.wallGrid(s, 0.1, 0.9, 0.2, 0.45, 6, 2, ["#c9a86a", "#b8935a"]);
+        break;
+      default: // convenience / grocer: aisles + fridge + counter
+        for (const f of [0.24, 0.44, 0.64]) this.floorRect(s, f - 0.05, f + 0.05, 0.42, 0.86, "#7a5636");
+        this.floorRect(s, 0.78, 0.94, 0.5, 0.82, "#5a4326");
+        this.wallBand(s, 0.06, 0.2, 0.16, 0.55, "#9fd0e0"); // fridge
+        break;
+    }
+  }
+
+  /** Dining room: back bar; subset-specific tables/fit-out when leased & open. */
+  private drawRestaurantInterior(x: number, y: number, w: number, h: number, facade: Facade, ug: boolean, lit: boolean, occupied: boolean, subset: string): void {
     const base = [200, 90, 106];
     const s = this.roomShell(x, y, w, h, base, { floor: rgb(mix([110, 66, 40], [54, 32, 18], 0.4)) }, lit);
     this.drawFacade(s, facade, ug);
     this.wallBand(s, 0.08, 0.92, 0.72, 0.86, "rgba(48,30,26,0.95)"); // bar counter
     this.wallLines(s, 0.12, 0.88, [0.6, 0.68], "rgba(200,170,120,0.5)"); // bottle shelves
-    if (occupied) {
-      for (const [f, g] of [[0.28, 0.5], [0.62, 0.5], [0.28, 0.82], [0.62, 0.82]] as const) {
-        this.floorRect(s, f - 0.08, f + 0.08, g - 0.05, g + 0.05, this.dimC(lit ? "#d8d2c4" : "#4a4640", lit)); // table
-        if (lit) {
-          this.standUp(s, f - 0.11, g, 0.02, 0.05, this.dimC("#5a3f28", lit)); // chairs
-          this.standUp(s, f + 0.11, g, 0.02, 0.05, this.dimC("#5a3f28", lit));
-          this.standUp(s, f, g, 0.012, 0.03, "#ffcf9a"); // candle glow
-        } else {
-          this.standUp(s, f, g, 0.05, 0.07, this.dimC("#3a2f22", lit)); // chairs stacked on the table
-        }
-      }
-    }
+    if (occupied) this.drawRestaurantFurniture(s, subset, lit);
     if (lit) this.pendantLights(s, [0.28, 0.5, 0.72]);
+  }
+
+  private drawRestaurantFurniture(s: RoomShell, subset: string, lit: boolean): void {
+    const D = (c: string): string => this.dimC(c, lit);
+    // A table with chairs (open) or chairs stacked on top (closed).
+    const table = (f: number, g: number, r: number, top: string): void => {
+      this.floorRect(s, f - r, f + r * 1, g - r * 0.7, g + r * 0.7, D(top));
+      if (lit) {
+        this.standUp(s, f - r - 0.01, g, 0.015, 0.04, D("#5a3f28"));
+        this.standUp(s, f + r + 0.01, g, 0.015, 0.04, D("#5a3f28"));
+      } else {
+        this.standUp(s, f, g, r * 0.7, 0.05, D("#3a2f22")); // chairs up on the table
+      }
+    };
+    switch (subset) {
+      case "chinese": // round red tables + hanging lanterns
+        for (const [f, g] of [[0.3, 0.55], [0.6, 0.55], [0.3, 0.82], [0.6, 0.82]] as const) table(f, g, 0.08, lit ? "#c94a3a" : "#3a2622");
+        if (lit) for (const f of [0.25, 0.5, 0.75]) this.hangDot(s, f, 0.32, 0.03, "#e0503f");
+        break;
+      case "pizza": // service counter + a domed oven
+        this.floorRect(s, 0.1, 0.7, 0.7, 0.86, D("#7a5636"));
+        this.wallBand(s, 0.74, 0.94, 0.5, 0.78, D("#8a8f98"));
+        if (lit) this.standUp(s, 0.84, 0.62, 0.06, 0.06, "#e0803f"); // oven glow
+        table(0.32, 0.94, 0.06, lit ? "#d8d2c4" : "#4a4640");
+        break;
+      case "sushi": // a sushi bar with stools + a lit display case
+        this.floorRect(s, 0.08, 0.92, 0.55, 0.72, D("#5a4326"));
+        if (lit) {
+          this.wallBand(s, 0.2, 0.8, 0.62, 0.68, "#cfe8f0");
+          for (const f of [0.2, 0.4, 0.6, 0.8]) this.standUp(s, f, 0.82, 0.02, 0.045, D("#3a2f22"));
+        }
+        break;
+      case "cafe": // small round tables + a coffee counter
+        for (const [f, g] of [[0.3, 0.62], [0.52, 0.84], [0.72, 0.62]] as const) table(f, g, 0.06, lit ? "#c9b088" : "#3a3228");
+        this.floorRect(s, 0.06, 0.24, 0.55, 0.8, D("#4a3521"));
+        if (lit) this.standUp(s, 0.15, 0.58, 0.04, 0.06, "#c0c6cc"); // espresso machine
+        break;
+      case "american": // booths + a diner counter with stools
+        this.floorRect(s, 0.06, 0.2, 0.5, 0.9, D("#8a3a3a"));
+        this.floorRect(s, 0.8, 0.94, 0.5, 0.9, D("#8a3a3a"));
+        this.floorRect(s, 0.28, 0.72, 0.55, 0.72, D("#5a4326"));
+        if (lit) for (const f of [0.34, 0.5, 0.66]) this.standUp(s, f, 0.8, 0.02, 0.045, D("#c0c6cc"));
+        break;
+      default: // mexican / bistro: warm tables + a cactus
+        for (const [f, g] of [[0.28, 0.55], [0.62, 0.55], [0.28, 0.82], [0.62, 0.82]] as const) table(f, g, 0.07, lit ? "#d8b06a" : "#3a2f22");
+        if (lit) {
+          this.standUp(s, 0.87, 0.6, 0.02, 0.13, "#3f9a52");
+          this.standUp(s, 0.87, 0.5, 0.045, 0.04, "#3f9a52");
+        }
+        break;
+    }
   }
 
   /** Hotel room: headboard; a made bed, nightstand and lamp when leased. */

@@ -1,5 +1,5 @@
 import type { GameState, Plot } from "./types";
-import { TICKS_PER_DAY, UNIT_DEFS } from "./constants";
+import { TICKS_PER_DAY, TICK_MINUTES, UNIT_DEFS } from "./constants";
 import { roomSatisfaction } from "./heatmaps";
 import { servicedRows } from "./elevator";
 import { generateTenant, hasTrades } from "./tenants";
@@ -36,10 +36,18 @@ export function advanceTick(state: GameState): void {
         if (!serviced) unit.tenant = null; // no elevator service → tenant leaves
       } else if (serviced) {
         const appeal = roomSatisfaction(plot, unit);
-        const roll = hashString(`${plot.id}:${unit.id}:${state.tick}`) % 1000;
-        if (appeal > 0 && roll < appeal * 140) {
-          // Identity is stable per room; appeal at move-in sets the rent.
-          unit.tenant = generateTenant(unit.kind, `${plot.id}:${unit.id}`, appeal, unit.width);
+        if (appeal > 0) {
+          // Appeal% is the chance a tenant signs a lease on THIS day; if they do,
+          // they arrive at a random hour of the day (deterministic per day).
+          const day = Math.floor(state.tick / TICKS_PER_DAY);
+          const signs = hashString(`${plot.id}:${unit.id}:movein:${day}`) % 10000 < appeal * 10000;
+          if (signs) {
+            const moveHour = 6 + (hashString(`${plot.id}:${unit.id}:hour:${day}`) % 14); // 6am–7pm
+            const moveTick = day * TICKS_PER_DAY + moveHour * (60 / TICK_MINUTES);
+            if (state.tick >= moveTick) {
+              unit.tenant = generateTenant(unit.kind, `${plot.id}:${unit.id}`, appeal, unit.width);
+            }
+          }
         }
       }
       unit.occupancy = unit.tenant ? 1 : 0;
