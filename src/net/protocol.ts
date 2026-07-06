@@ -14,6 +14,7 @@ export type { ColorOption };
 export interface GameSummary {
   id: string;
   cityName: string;
+  archetype: string;
   playerCount: number;
   maxPlayers: number;
   plotCount: number;
@@ -26,6 +27,7 @@ export interface GameSummary {
 /** Request to create a new game (and join it as the first player). */
 export interface CreateGameConfig {
   cityName: string;
+  archetype: string;
   plotCount: number;
   maxPlayers: number;
   /** Plaintext password or null. On a real server this would be sent over TLS and hashed. */

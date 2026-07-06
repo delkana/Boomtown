@@ -31,9 +31,12 @@ npm run typecheck  # tsc --noEmit
 
 **1. Lobby.** On load you get a lobby:
 
-- **Create a City** — set the city name (this names the game), number of
-  properties (plots), max players (≤ 20), your name, and pick a color (each
-  color can only be used by one player in a game). Optionally password-protect it.
+- **Create a City** — pick a **city archetype** (Pacifica, Japan, USSR, Gulf
+  Emirates, African Union, … 15 in all, each with its own flag, background, and
+  themed property names), then name the city (or 🎲 roll a random name drawn from
+  that region's real skyscraper-cities and fictional ones). Set the number of
+  properties (plots), max players (≤ 20), your name, and pick a color (each color
+  can only be used by one player in a game). Optionally password-protect it.
 - **Join a City** — the list shows existing cities (a few demo cities are
   pre-seeded). Joining asks for your name and a color (colors already taken in
   that game are disabled), plus the password if the city has one. Cities you've
@@ -90,6 +93,7 @@ Two rules drive the layout:
 | -------------------------- | -------- | ------------------------------------------------------------------------------------ |
 | `src/game/types.ts`        | STATE    | Serializable domain types (`GameState`, `Plot`, `Unit`, `Player`, `GameConfig`).     |
 | `src/game/constants.ts`    | STATE    | Deterministic tuning: grid, costs, income, tick rate, player color palette.          |
+| `src/game/archetypes.ts`   | STATE    | 15 city archetypes: blurbs, real+fictional city-name pools, themed property names.   |
 | `src/game/state.ts`        | STATE    | `createGameState` + `serialize` / `deserialize` (the snapshot format).               |
 | `src/game/commands.ts`     | STATE    | `Command` union (`CLAIM_PLOT`, `PLACE_UNIT`, `SELL_UNIT`) — **the wire protocol for intents**. |
 | `src/game/reducer.ts`      | STATE    | `applyCommand` — pure, fully validated, authoritative state transitions.             |
@@ -103,7 +107,8 @@ Two rules drive the layout:
 | `src/input/input.ts`       | INPUT    | Pointer/keyboard → commands (via connection) + camera panning.                       |
 | `src/engine/loop.ts`       | LOOP     | Per-frame render loop (the tick is server-side now).                                  |
 | `src/ui/hud.ts`            | UI       | In-game DOM: header, player chip, stats, build toolbar. Read-only on state.          |
-| `src/ui/lobby.ts`          | UI       | Lobby screen: create / browse / join, color picker, password prompt.                 |
+| `src/ui/lobby.ts`          | UI       | Lobby screen: archetype picker, create / browse / join, color picker, password prompt. |
+| `src/ui/flags.ts`          | UI       | Stylized SVG national flag per archetype (lobby, game list, in-game topbar).          |
 | `src/main.ts`              | wiring   | Composition root: lobby → in-game, wires a connection to render/input/HUD.           |
 
 ### Key invariants

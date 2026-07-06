@@ -1,7 +1,9 @@
 import { BUILD_ORDER, CLAIM_COST, TICK_SECONDS, UNIT_DEFS } from "../game/constants";
+import { archetype } from "../game/archetypes";
 import { projectedNet } from "../game/tick";
 import type { GameConnection } from "../net/connection";
 import type { Tool } from "../render/renderer";
+import { flagSvg } from "./flags";
 
 /**
  * HUD: the DOM-based in-game UI (city header, player chip, stats, build
@@ -9,6 +11,7 @@ import type { Tool } from "../render/renderer";
  * the connection) and turns clicks into tool selections; it never mutates state.
  */
 export class Hud {
+  private cityFlagEl = must("city-flag");
   private cityEl = must("city-name");
   private chipEl = must("player-chip");
   private statsEl = must("stats");
@@ -26,7 +29,9 @@ export class Hud {
 
   private buildHeader(): void {
     const state = this.conn.getState();
+    this.cityFlagEl.innerHTML = flagSvg(state.config.archetype);
     this.cityEl.textContent = state.config.cityName;
+    this.cityEl.title = archetype(state.config.archetype).name;
     const s = this.conn.session;
     this.chipEl.innerHTML = `<span class="dot" style="background:${s.colorHex}"></span>${escapeHtml(
       s.playerName,

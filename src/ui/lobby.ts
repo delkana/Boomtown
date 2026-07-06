@@ -4,9 +4,11 @@ import {
   MIN_PLOTS,
   type ColorOption,
 } from "../game/constants";
+import { ARCHETYPES, DEFAULT_ARCHETYPE, archetype, randomCityName } from "../game/archetypes";
 import type { GameConnection } from "../net/connection";
 import type { ConnectResult, GameServer } from "../net/localServer";
 import type { GameSummary, PlayerSession } from "../net/protocol";
+import { flagSvg } from "./flags";
 
 /**
  * LobbyScreen: the pre-game DOM UI. Create a city or browse/join existing ones.
@@ -21,6 +23,7 @@ export class LobbyScreen {
   private joined = new Map<string, PlayerSession>();
   private palette: ColorOption[];
   private createColor: string;
+  private createArchetype = DEFAULT_ARCHETYPE;
   private joinColor: string | null = null;
   private joinTaken = new Set<string>();
   private joiningGameId: string | null = null;
@@ -63,12 +66,39 @@ export class LobbyScreen {
     max.max = String(MAX_PLAYERS_LIMIT);
 
     this.renderCreateColors();
+    this.renderArchetypes();
+
+    this.q("#cf-random").addEventListener("click", () => {
+      this.q<HTMLInputElement>("#cf-city").value = randomCityName(this.createArchetype);
+    });
 
     const pwToggle = this.q<HTMLInputElement>("#cf-pw-toggle");
     const pw = this.q<HTMLInputElement>("#cf-pw");
     pwToggle.addEventListener("change", () => pw.classList.toggle("hidden", !pwToggle.checked));
 
     this.q("#cf-create").addEventListener("click", () => this.submitCreate());
+  }
+
+  private renderArchetypes(): void {
+    const grid = this.q("#cf-archetypes");
+    grid.innerHTML = "";
+    for (const a of ARCHETYPES) {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "archetype-card" + (a.id === this.createArchetype ? " selected" : "");
+      card.innerHTML = `<span class="flag">${flagSvg(a.id)}</span><span class="arch-name">${a.name}</span>`;
+      card.addEventListener("click", () => {
+        this.createArchetype = a.id;
+        this.renderArchetypes();
+        this.updateBlurb();
+      });
+      grid.appendChild(card);
+    }
+    this.updateBlurb();
+  }
+
+  private updateBlurb(): void {
+    this.q("#cf-blurb").textContent = archetype(this.createArchetype).blurb;
   }
 
   private renderCreateColors(): void {
@@ -81,6 +111,7 @@ export class LobbyScreen {
   private submitCreate(): void {
     const result = this.server.createGame({
       cityName: this.q<HTMLInputElement>("#cf-city").value,
+      archetype: this.createArchetype,
       plotCount: Number(this.q<HTMLInputElement>("#cf-plots").value),
       maxPlayers: Number(this.q<HTMLInputElement>("#cf-max").value),
       password: this.q<HTMLInputElement>("#cf-pw-toggle").checked
@@ -118,9 +149,10 @@ export class LobbyScreen {
     const disabled = !joined && full ? "disabled" : "";
     return `
       <div class="game-row">
+        <span class="flag list-flag">${flagSvg(g.archetype)}</span>
         <div class="game-info">
           <div class="game-title">${g.hasPassword ? "🔒 " : ""}${escapeHtml(g.cityName)}</div>
-          <div class="game-meta">${g.playerCount}/${g.maxPlayers} players · ${g.claimedPlots}/${g.plotCount} plots claimed</div>
+          <div class="game-meta">${escapeHtml(archetype(g.archetype).name)} · ${g.playerCount}/${g.maxPlayers} players · ${g.claimedPlots}/${g.plotCount} plots claimed</div>
           <div class="dots">${dots || '<span class="muted">no players yet</span>'}</div>
         </div>
         <button class="primary" data-join="${g.id}" ${disabled}>${label}</button>
@@ -243,9 +275,16 @@ const SHELL = `
     <div class="lobby-cols">
       <section class="lobby-card">
         <h2>Create a City</h2>
+        <div class="field">City archetype
+          <div id="cf-archetypes" class="archetype-grid"></div>
+          <p id="cf-blurb" class="blurb"></p>
+        </div>
         <label class="field">City name
-          <input id="cf-city" type="text" maxlength="28" placeholder="e.g. Harbor City" />
-          <span class="field-note">This becomes the city's name.</span>
+          <div class="city-input-row">
+            <input id="cf-city" type="text" maxlength="28" placeholder="Name your city" />
+            <button id="cf-random" type="button" class="dice" title="Random name for this archetype">🎲</button>
+          </div>
+          <span class="field-note">Pick an archetype, then name it or roll a random one.</span>
         </label>
         <div class="field-row">
           <label class="field">Properties<input id="cf-plots" type="number" value="12" /></label>

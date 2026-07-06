@@ -42,6 +42,8 @@ export interface Plot {
   id: string;
   /** Index along the city strip, 0-based left to right. */
   index: number;
+  /** Themed property name (from the city archetype), e.g. "Redwood Spire". */
+  name: string;
   /** Owning player id, or `null` if the plot is unclaimed / for sale. */
   ownerId: string | null;
   units: Unit[];
@@ -60,6 +62,8 @@ export interface Player {
 export interface GameConfig {
   /** Display name of the city (also the basis for the game id). */
   cityName: string;
+  /** City archetype id (theme/region), see src/game/archetypes.ts. */
+  archetype: string;
   /** Number of plots in the city strip. */
   plotCount: number;
   /** Max concurrent players (hard-capped by MAX_PLAYERS_LIMIT). */

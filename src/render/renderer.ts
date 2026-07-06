@@ -139,19 +139,22 @@ export class Renderer {
       ctx.fillText(def.label, x + 4, y + 6);
     }
 
-    // Nameplate under the plot.
-    ctx.font = "12px system-ui, sans-serif";
+    // Nameplate under the plot: themed property name, then owner / status.
     ctx.textBaseline = "top";
     ctx.textAlign = "center";
     const cx = leftScreen + plotPxW / 2;
+
+    ctx.font = "600 12px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(231,238,245,0.9)";
+    ctx.fillText(plot.name, cx, groundY + 9);
+
+    ctx.font = "11px system-ui, sans-serif";
     if (!plot.ownerId) {
-      ctx.fillStyle = "rgba(150,210,150,0.8)";
-      ctx.fillText("Available", cx, groundY + 10);
-      ctx.fillStyle = "rgba(150,210,150,0.55)";
-      ctx.fillText(`$${CLAIM_COST.toLocaleString()}`, cx, groundY + 26);
+      ctx.fillStyle = "rgba(150,210,150,0.85)";
+      ctx.fillText(`Available · $${CLAIM_COST.toLocaleString()}`, cx, groundY + 25);
     } else {
       ctx.fillStyle = ownerColor;
-      ctx.fillText(isOwn ? `★ You (${owner?.name ?? ""})` : owner?.name ?? "", cx, groundY + 10);
+      ctx.fillText(isOwn ? `★ You · ${owner?.name ?? ""}` : owner?.name ?? "", cx, groundY + 25);
     }
     ctx.textAlign = "left";
   }

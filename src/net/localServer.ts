@@ -6,6 +6,7 @@ import {
   PLAYER_COLORS,
   type ColorOption,
 } from "../game/constants";
+import { isArchetype } from "../game/archetypes";
 import type { UnitKind } from "../game/types";
 import { AuthoritativeGame } from "./authoritativeGame";
 import { LocalConnection, type GameConnection } from "./connection";
@@ -80,11 +81,13 @@ export class LocalServer implements GameServer {
     const colorHex = colorHexById(cfg.playerColor);
     if (!colorHex) return err("Pick a color");
 
+    if (!isArchetype(cfg.archetype)) return err("Pick a city archetype");
+
     const password = cfg.password && cfg.password.length > 0 ? cfg.password : null;
     const id = this.uniqueId(cityName);
     const game = new AuthoritativeGame(
       id,
-      { cityName, plotCount, maxPlayers, hasPassword: password !== null },
+      { cityName, archetype: cfg.archetype, plotCount, maxPlayers, hasPassword: password !== null },
       password,
     );
     this.games.set(id, game);
@@ -158,26 +161,35 @@ export class LocalServer implements GameServer {
   }
 
   private seedDemoCities(): void {
-    // "New Boston": open, no password, three established owners.
-    const boston = new AuthoritativeGame(
-      "new-boston",
-      { cityName: "New Boston", plotCount: 14, maxPlayers: 8, hasPassword: false },
+    // "New Angeles" (Pacifica): open, three established owners.
+    const angeles = new AuthoritativeGame(
+      "new-angeles",
+      { cityName: "New Angeles", archetype: "pacifica", plotCount: 14, maxPlayers: 8, hasPassword: false },
       null,
     );
-    this.games.set("new-boston", boston);
-    seedOwner(boston, "Vesta Corp", "#3fb96b", [2], [7]);
-    seedOwner(boston, "Nakamura Holdings", "#4a86e0", [5, 6], [6, 9]);
-    seedOwner(boston, "Rook & Vale", "#e79a2f", [10], [5]);
+    this.games.set("new-angeles", angeles);
+    seedOwner(angeles, "Redwood Spire Group", "#3fb96b", [2], [7]);
+    seedOwner(angeles, "Neon Bay Holdings", "#4a86e0", [5, 6], [6, 9]);
+    seedOwner(angeles, "Cascade Systems", "#e79a2f", [10], [5]);
 
-    // "Fort Lockwood": password-protected, smaller, two owners.
-    const fort = new AuthoritativeGame(
-      "fort-lockwood",
-      { cityName: "Fort Lockwood", plotCount: 8, maxPlayers: 4, hasPassword: true },
+    // "Neo-Kyoto" (Japan): password-protected, two zaibatsu.
+    const kyoto = new AuthoritativeGame(
+      "neo-kyoto",
+      { cityName: "Neo-Kyoto", archetype: "japan", plotCount: 8, maxPlayers: 4, hasPassword: true },
       "1234",
     );
-    this.games.set("fort-lockwood", fort);
-    seedOwner(fort, "Onyx Group", "#c94ad1", [1], [6]);
-    seedOwner(fort, "Brightside Ltd", "#e0503f", [4, 5], [8, 4]);
+    this.games.set("neo-kyoto", kyoto);
+    seedOwner(kyoto, "Zaibatsu Prime", "#c94ad1", [1], [6]);
+    seedOwner(kyoto, "Mirai Systems", "#e0503f", [4, 5], [8, 4]);
+
+    // "Kosmograd" (USSR): open, one big state combine.
+    const kosmograd = new AuthoritativeGame(
+      "kosmograd",
+      { cityName: "Kosmograd", archetype: "ussr", plotCount: 12, maxPlayers: 6, hasPassword: false },
+      null,
+    );
+    this.games.set("kosmograd", kosmograd);
+    seedOwner(kosmograd, "Red October Combine", "#e0503f", [3, 4, 7], [9, 5, 7]);
   }
 }
 

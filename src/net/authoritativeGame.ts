@@ -67,6 +67,7 @@ export class AuthoritativeGame {
     return {
       id: this.state.id,
       cityName: this.state.config.cityName,
+      archetype: this.state.config.archetype,
       playerCount: players.length,
       maxPlayers: this.state.config.maxPlayers,
       plotCount: this.state.config.plotCount,

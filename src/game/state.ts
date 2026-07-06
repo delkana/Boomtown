@@ -1,4 +1,5 @@
 import type { GameConfig, GameState, Plot } from "./types";
+import { propertyNameFor } from "./archetypes";
 
 /**
  * State construction + (de)serialization.
@@ -11,7 +12,13 @@ import type { GameConfig, GameState, Plot } from "./types";
 export function createGameState(id: string, config: GameConfig): GameState {
   const plots: Record<number, Plot> = {};
   for (let i = 0; i < config.plotCount; i++) {
-    plots[i] = { id: `${id}:plot:${i}`, index: i, ownerId: null, units: [] };
+    plots[i] = {
+      id: `${id}:plot:${i}`,
+      index: i,
+      name: propertyNameFor(config.archetype, i),
+      ownerId: null,
+      units: [],
+    };
   }
   return {
     id,
