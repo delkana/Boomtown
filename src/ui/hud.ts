@@ -397,7 +397,7 @@ export class Hud {
       this.hintEl.textContent = `Elevator shaft ($${UNIT_DEFS.elevator.cost.toLocaleString()}) — a new shaft includes its first car (+$${ELEVATOR_CAR_COST.toLocaleString()}); add up to 8. Needs girders underneath.`;
       this.hintEl.className = "panel";
     } else if (sel) {
-      this.hintEl.textContent = `Placing ${UNIT_DEFS[sel].label} — needs girders underneath. Click a framed cell. Right-click sells. Esc deselects.`;
+      this.hintEl.textContent = `Placing ${UNIT_DEFS[sel].label} — needs girders underneath. Click a framed cell. Use the Destroy tool to remove. Esc deselects.`;
       this.hintEl.className = "panel";
     } else {
       this.hintEl.textContent = `Girders first (G, drag to paint), then rooms (1–7), a shaft (8) + its cars (9). C to claim. Drag or arrows to pan.`;

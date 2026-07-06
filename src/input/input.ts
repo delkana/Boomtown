@@ -298,13 +298,13 @@ export class InputController {
     this.lastPaintPt = { x, y };
   }
 
-  /** Right-click also destroys the room / bare girder under the cursor. */
+  /**
+   * Suppress the browser context menu on the canvas. Right-click deliberately
+   * does NOT delete anything — demolition is only via the Destroy tool, so it
+   * can't be triggered by accident.
+   */
   private onContextMenu = (e: MouseEvent): void => {
     e.preventDefault();
-    const { x, y } = this.localPointer(e);
-    const cell = this.camera.screenToCell(x, y);
-    if (!cell) return;
-    this.tryDestroy(cell.plotIndex, cell.col, cell.row, x, y);
   };
 
   /**
