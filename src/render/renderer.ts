@@ -201,38 +201,56 @@ export class Renderer {
         ctx.fill();
       }
     } else if (kind === "river") {
-      // Water channel filling the plot's ground, with a bridge deck across it.
-      const water = ctx.createLinearGradient(0, groundY - cell * 0.4, 0, camera.viewH);
+      // The bridge sits flush with the surrounding ground; the water runs in a
+      // lowered channel beneath it.
+      const gm = camera.groundMargin;
+      // Carve the channel out of the ground band (under-bridge shadow).
+      ctx.fillStyle = "#16232f";
+      ctx.fillRect(leftScreen, groundY, plotPxW, gm);
+      // Lowered water at the bottom of the channel.
+      const waterY = groundY + gm * 0.58;
+      const water = ctx.createLinearGradient(0, waterY, 0, groundY + gm);
       water.addColorStop(0, "#3a7bb0");
       water.addColorStop(1, "#1e4a70");
       ctx.fillStyle = water;
-      ctx.fillRect(leftScreen, groundY - cell * 0.3, plotPxW, camera.groundMargin + cell * 0.3);
-      // Bridge deck.
-      const deckY = groundY - cell * 0.45;
-      ctx.fillStyle = "#6b7079";
-      ctx.fillRect(leftScreen - cell * 0.1, deckY, plotPxW + cell * 0.2, cell * 0.3);
-      ctx.fillStyle = "#8a9099"; // rail
-      ctx.fillRect(leftScreen - cell * 0.1, deckY - 3, plotPxW + cell * 0.2, 3);
-      // Pylons.
-      ctx.fillStyle = "#565b63";
+      ctx.fillRect(leftScreen, waterY, plotPxW, groundY + gm - waterY);
+      // Bridge deck — its surface is level with the ground line.
+      const deckH = Math.max(6, cell * 0.28);
+      ctx.fillStyle = "#565b63"; // pylons, drawn first so the deck caps them
       for (const f of [0.3, 0.7]) {
-        ctx.fillRect(leftScreen + plotPxW * f - cell * 0.06, deckY, cell * 0.12, camera.groundMargin);
+        ctx.fillRect(leftScreen + plotPxW * f - cell * 0.06, groundY + deckH, cell * 0.12, waterY - (groundY + deckH));
       }
+      ctx.fillStyle = "#6b7079";
+      ctx.fillRect(leftScreen - cell * 0.1, groundY, plotPxW + cell * 0.2, deckH);
+      ctx.fillStyle = "#8a9099"; // railing just above the deck
+      ctx.fillRect(leftScreen - cell * 0.1, groundY - 3, plotPxW + cell * 0.2, 3);
     } else {
-      // Elevated highway: deck a few floors up on pillars, with a couple of cars.
+      // Elevated highway: deck a few floors up on wide pillars, with concrete
+      // edge walls and a couple of cars.
       const deckY = camera.rowTopScreenY(3);
       const deckH = cell * 0.5;
-      ctx.fillStyle = "#4a4e56"; // pillars
-      for (const f of [0.2, 0.5, 0.8]) {
-        ctx.fillRect(leftScreen + plotPxW * f - cell * 0.08, deckY + deckH, cell * 0.16, groundY - (deckY + deckH));
+      const pillarW = cell * 0.34; // >= 2x the old width
+      ctx.fillStyle = "#4a4e56"; // pillars, pushed toward the plot edges
+      for (const f of [0.12, 0.5, 0.88]) {
+        ctx.fillRect(leftScreen + plotPxW * f - pillarW / 2, deckY + deckH, pillarW, groundY - (deckY + deckH));
       }
-      ctx.fillStyle = "#6b7079"; // deck
+      // Deck slab.
+      ctx.fillStyle = "#6b7079";
       ctx.fillRect(leftScreen - cell * 0.1, deckY, plotPxW + cell * 0.2, deckH);
-      ctx.fillStyle = "#2a2d33"; // road surface
-      ctx.fillRect(leftScreen - cell * 0.1, deckY + deckH * 0.2, plotPxW + cell * 0.2, deckH * 0.35);
-      for (const [f, col] of [[0.3, "#e0d24a"], [0.6, "#e0503f"]] as const) {
+      // Road surface, inset between the edge walls.
+      const wall = Math.max(2, deckH * 0.16);
+      const roadY = deckY + wall;
+      const roadH = deckH - wall * 2;
+      ctx.fillStyle = "#2a2d33";
+      ctx.fillRect(leftScreen - cell * 0.1, roadY, plotPxW + cell * 0.2, roadH);
+      // Concrete edge walls (top + bottom) so cars can't drive off.
+      ctx.fillStyle = "#9aa0a8";
+      ctx.fillRect(leftScreen - cell * 0.1, deckY, plotPxW + cell * 0.2, wall);
+      ctx.fillRect(leftScreen - cell * 0.1, deckY + deckH - wall, plotPxW + cell * 0.2, wall);
+      // Cars on the road.
+      for (const [f, col] of [[0.34, "#e0d24a"], [0.62, "#e0503f"]] as const) {
         ctx.fillStyle = col;
-        ctx.fillRect(leftScreen + plotPxW * f, deckY + deckH * 0.22, cell * 0.5, deckH * 0.28);
+        ctx.fillRect(leftScreen + plotPxW * f, roadY + roadH * 0.2, cell * 0.5, roadH * 0.6);
       }
     }
 
