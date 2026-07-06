@@ -129,24 +129,31 @@ export class Renderer {
     this.drawPopups();
   }
 
-  /** Tint each cell of an owned plot by a normalized heatmap rating. */
+  /**
+   * Tint each STRUCTURAL cell (a girder or room) of an owned plot by a
+   * normalized heatmap rating. Empty airspace is left untinted.
+   */
   private drawHeatmap(plot: Plot, kind: HeatmapKind): void {
     const { ctx, camera } = this;
     const cell = camera.scale(CELL_SIZE);
     const leftScreen = camera.worldToScreenX(camera.plotLeftWorldX(plot.index));
     if (leftScreen + plot.cols * cell < 0 || leftScreen > camera.viewW) return;
 
-    let maxRow = 0;
-    for (const u of plot.units) maxRow = Math.max(maxRow, u.row);
-    for (const g of plot.girders ?? []) maxRow = Math.max(maxRow, g.row);
-    const top = Math.min(MAX_ROWS - 1, Math.max(7, maxRow + 3));
+    // Collect the cells that have structure (deduped).
+    const cells = new Set<number>();
+    const key = (c: number, r: number): number => r * 1000 + c;
+    for (const g of plot.girders ?? []) cells.add(key(g.col, g.row));
+    for (const u of plot.units) {
+      for (let c = u.col; c < u.col + u.width; c++) cells.add(key(c, u.row));
+    }
 
-    for (let row = 0; row <= top; row++) {
+    for (const k of cells) {
+      const row = Math.floor(k / 1000);
+      const col = k % 1000;
+      const x = camera.worldToScreenX(camera.plotLeftWorldX(plot.index) + col * CELL_SIZE);
       const y = camera.rowTopScreenY(row);
-      for (let col = 0; col < plot.cols; col++) {
-        ctx.fillStyle = heatColor(heatT(kind, plot, col, row));
-        ctx.fillRect(leftScreen + col * cell + 1, y + 1, cell - 2, cell - 2);
-      }
+      ctx.fillStyle = heatColor(heatT(kind, plot, col, row));
+      ctx.fillRect(x + 1, y + 1, cell - 2, cell - 2);
     }
   }
 

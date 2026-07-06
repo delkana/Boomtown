@@ -421,8 +421,20 @@ describe("game clock", () => {
   const TICKS_PER_DAY = (24 * 60) / 5; // 288
   const TICKS_PER_WEEK = TICKS_PER_DAY * 7; // 2016 (one week == one month)
 
-  it("starts at Year 1, Jan, Monday 00:00", () => {
-    expect(gameTime(0)).toMatchObject({ year: 1, month: 1, monthName: "Jan", dayName: "Mon", time: "00:00" });
+  it("starts at Year 1, Jan, Monday 12:00 AM", () => {
+    expect(gameTime(0)).toMatchObject({
+      year: 1, month: 1, monthName: "Jan", dayFull: "Monday", time12: "12:00 AM",
+    });
+  });
+
+  it("labels year-first with full weekday and AM/PM time", () => {
+    expect(gameTime(0).label).toBe("Year 1 · Jan · Monday · 12:00 AM");
+  });
+
+  it("formats time in 12-hour AM/PM", () => {
+    expect(gameTime(144).time12).toBe("12:00 PM"); // noon
+    expect(gameTime(163).time12).toBe("1:35 PM"); // 13:35
+    expect(gameTime(6).time12).toBe("12:30 AM"); // 00:30
   });
 
   it("advances 5 in-game minutes per tick", () => {
